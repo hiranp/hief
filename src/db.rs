@@ -27,9 +27,10 @@ impl Database {
 
         let conn = db.connect().map_err(HiefError::Database)?;
 
-        // Enable WAL mode for concurrent read safety
+        // Enable WAL mode and NORMAL synchronous for concurrent read/write safety and performance
         // Use query (not execute) because PRAGMA journal_mode returns a result row
         let _ = conn.query("PRAGMA journal_mode=WAL", ()).await.map_err(HiefError::Database)?;
+        let _ = conn.execute("PRAGMA synchronous=NORMAL", ()).await.map_err(HiefError::Database)?;
         let _ = conn.query("PRAGMA foreign_keys=ON", ()).await.map_err(HiefError::Database)?;
 
         let database = Self { conn };

@@ -113,11 +113,7 @@ fn extract_variables_fallback(template: &str) -> Vec<String> {
     while let Some(start) = rest.find("{{") {
         if let Some(end) = rest[start + 2..].find("}}") {
             let var_name = rest[start + 2..start + 2 + end].trim();
-            if !var_name.is_empty()
-                && var_name
-                    .chars()
-                    .all(|c| c.is_alphanumeric() || c == '_')
-            {
+            if !var_name.is_empty() && var_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
                 if !vars.contains(&var_name.to_string()) {
                     vars.push(var_name.to_string());
                 }
@@ -165,7 +161,10 @@ pub fn resolve_template(project_root: &Path, template_id: &str) -> Result<String
                 e
             ))
         })?;
-        tracing::debug!("Using file-based template override: {}", override_path.display());
+        tracing::debug!(
+            "Using file-based template override: {}",
+            override_path.display()
+        );
         return Ok(content);
     }
 
@@ -283,8 +282,7 @@ pub async fn auto_populate_from_index(
         .map(|(lang, count)| format!("{} ({} files)", lang, count))
         .collect::<Vec<_>>()
         .join(", ");
-    vars.entry("languages".to_string())
-        .or_insert(lang_list);
+    vars.entry("languages".to_string()).or_insert(lang_list);
 
     Ok(())
 }
@@ -355,10 +353,7 @@ pub fn scaffold_docs_dirs(project_root: &Path, config: &DocsConfig) -> Result<Do
     };
 
     // Directories to create
-    let dirs = [
-        &config.specs_path,
-        &config.harness_path,
-    ];
+    let dirs = [&config.specs_path, &config.harness_path];
 
     for dir in &dirs {
         let full_path = project_root.join(dir);
@@ -382,12 +377,16 @@ pub fn scaffold_docs_dirs(project_root: &Path, config: &DocsConfig) -> Result<Do
         report.already_existed.push(".hief/templates/".to_string());
     } else {
         std::fs::create_dir_all(&templates_dir)?;
-        report.directories_created.push(".hief/templates/".to_string());
+        report
+            .directories_created
+            .push(".hief/templates/".to_string());
 
         // Write a README explaining template overrides
         let readme = templates_dir.join("README.md");
         std::fs::write(&readme, TEMPLATES_README)?;
-        report.files_created.push(".hief/templates/README.md".to_string());
+        report
+            .files_created
+            .push(".hief/templates/README.md".to_string());
     }
 
     report.templates_dir = templates_dir.display().to_string();
@@ -447,7 +446,10 @@ pub fn check_docs_structure(project_root: &Path, config: &DocsConfig) -> DocsChe
 
     // Check for key documents
     let key_docs = [
-        ("constitution", config.specs_path.clone() + "/constitution.md"),
+        (
+            "constitution",
+            config.specs_path.clone() + "/constitution.md",
+        ),
         ("data_model", config.specs_path.clone() + "/data-model.md"),
     ];
 
@@ -510,7 +512,11 @@ pub fn check_docs_structure(project_root: &Path, config: &DocsConfig) -> DocsChe
             checks.push(DocsCheckItem {
                 name: "feature_specs".to_string(),
                 status: "ok".to_string(),
-                message: format!("{} feature spec{} found", spec_count, if spec_count == 1 { "" } else { "s" }),
+                message: format!(
+                    "{} feature spec{} found",
+                    spec_count,
+                    if spec_count == 1 { "" } else { "s" }
+                ),
             });
         }
     }
@@ -540,6 +546,59 @@ pub fn check_docs_structure(project_root: &Path, config: &DocsConfig) -> DocsChe
         }
     }
 
+    // AST LINT: Check data-model.md structs against codebase
+    let data_model_path = project_root.join(&config.specs_path).join("data-model.md");
+    if data_model_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&data_model_path) {
+            let mut expected_structs = Vec::new();
+            for line in content.lines() {
+                if line.starts_with("pub struct ") {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 3 {
+                        let name = parts[2].trim_end_matches('{').trim();
+                        if !name.is_empty() {
+                            expected_structs.push(name.to_string());
+                        }
+                    }
+                }
+            }
+
+            for root_struct in expected_structs {
+                let pattern = format!("pub struct {} $$$", root_struct);
+                let query = crate::index::structural::StructuralQuery {
+                    pattern,
+                    language: "rust".to_string(),
+                    top_k: 1,
+                };
+
+                match crate::index::structural::search(project_root, &query) {
+                    Ok(matches) => {
+                        if matches.is_empty() {
+                            checks.push(DocsCheckItem {
+                                name: format!("data_model_sync_{}", root_struct),
+                                status: "warning".to_string(),
+                                message: format!("Struct '{}' from data-model.md not found in codebase (AST lint)", root_struct),
+                            });
+                        } else {
+                            checks.push(DocsCheckItem {
+                                name: format!("data_model_sync_{}", root_struct),
+                                status: "ok".to_string(),
+                                message: format!("Struct '{}' aligns with codebase", root_struct),
+                            });
+                        }
+                    }
+                    Err(_) => {
+                        checks.push(DocsCheckItem {
+                            name: format!("data_model_sync_{}", root_struct),
+                            status: "warning".to_string(),
+                            message: format!("Failed to run AST lint for struct '{}'", root_struct),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     let healthy = checks.iter().all(|c| c.status != "missing");
 
     DocsCheckReport { healthy, checks }
@@ -561,11 +620,7 @@ fn count_matching_files(dir: &Path, prefix: &str) -> usize {
         .map(|entries| {
             entries
                 .filter_map(|e| e.ok())
-                .filter(|e| {
-                    e.file_name()
-                        .to_string_lossy()
-                        .starts_with(prefix)
-                })
+                .filter(|e| e.file_name().to_string_lossy().starts_with(prefix))
                 .count()
         })
         .unwrap_or(0)
@@ -711,7 +766,10 @@ mod tests {
         let vars = HashMap::new();
 
         let path = resolve_output_path(root, &config, "constitution", &vars, None);
-        assert_eq!(path, PathBuf::from("/tmp/project/docs/specs/constitution.md"));
+        assert_eq!(
+            path,
+            PathBuf::from("/tmp/project/docs/specs/constitution.md")
+        );
     }
 
     #[test]
@@ -722,7 +780,10 @@ mod tests {
         vars.insert("feature".to_string(), "search".to_string());
 
         let path = resolve_output_path(root, &config, "spec", &vars, None);
-        assert_eq!(path, PathBuf::from("/tmp/project/docs/specs/spec-search.md"));
+        assert_eq!(
+            path,
+            PathBuf::from("/tmp/project/docs/specs/spec-search.md")
+        );
     }
 
     #[test]
@@ -893,7 +954,10 @@ mod tests {
         let content = templates::get_template_content("golden").unwrap();
         let mut vars = HashMap::new();
         vars.insert("name".to_string(), "quality-check".to_string());
-        vars.insert("description".to_string(), "Basic quality checks".to_string());
+        vars.insert(
+            "description".to_string(),
+            "Basic quality checks".to_string(),
+        );
 
         let result = render_template(content, &vars);
         assert!(result.contains("name = \"quality-check\""));

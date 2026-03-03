@@ -8,9 +8,9 @@ use serde::Serialize;
 use std::path::Path;
 use tracing::debug;
 
+use ast_grep_core::AstGrep;
 use ast_grep_core::language::TSLanguage;
 use ast_grep_core::matcher::Pattern;
-use ast_grep_core::AstGrep;
 
 use crate::errors::{HiefError, Result};
 use crate::index::walker::FileWalker;
@@ -71,21 +71,33 @@ fn get_ts_language(language: &str) -> Option<TSLanguage> {
 /// This walks all source files matching the given language, parses them
 /// with tree-sitter, and uses ast-grep's pattern matching to find
 /// structural matches.
-pub fn search(
-    project_root: &Path,
-    query: &StructuralQuery,
-) -> Result<Vec<StructuralMatch>> {
-    let ts_lang = get_ts_language(&query.language).ok_or_else(|| {
-        HiefError::UnsupportedLanguage(query.language.clone())
-    })?;
+pub fn search(project_root: &Path, query: &StructuralQuery) -> Result<Vec<StructuralMatch>> {
+    let ts_lang = get_ts_language(&query.language)
+        .ok_or_else(|| HiefError::UnsupportedLanguage(query.language.clone()))?;
 
     // Validate the pattern by trying to parse it
-    let pattern = Pattern::try_new(&query.pattern, ts_lang.clone()).map_err(|e| {
-        HiefError::ParseError {
-            file: "(pattern)".to_string(),
-            message: format!("Invalid structural pattern '{}': {}", query.pattern, e),
-        }
-    })?;
+    static PATTERN_CACHE: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<(String, String), Pattern<TSLanguage>>>,
+    > = std::sync::OnceLock::new();
+    let cache_key = (query.pattern.clone(), query.language.clone());
+
+    let mut cache = PATTERN_CACHE
+        .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+        .lock()
+        .unwrap();
+    let pattern = if let Some(p) = cache.get(&cache_key) {
+        p.clone()
+    } else {
+        let p = Pattern::try_new(&query.pattern, ts_lang.clone()).map_err(|e| {
+            HiefError::ParseError {
+                file: "(pattern)".to_string(),
+                message: format!("Invalid structural pattern '{}': {}", query.pattern, e),
+            }
+        })?;
+        cache.insert(cache_key.clone(), p.clone());
+        p
+    };
+    drop(cache);
 
     let walker = FileWalker::new(project_root);
     let files = walker.walk()?;
@@ -97,9 +109,9 @@ pub fn search(
         // Filter by language
         if file_entry.language.as_deref() != Some(&query.language) {
             // Also check file extension match as fallback
-            let has_ext = lang_extensions.iter().any(|ext| {
-                file_entry.rel_path.ends_with(ext)
-            });
+            let has_ext = lang_extensions
+                .iter()
+                .any(|ext| file_entry.rel_path.ends_with(ext));
             if !has_ext {
                 continue;
             }
@@ -162,15 +174,12 @@ pub fn search_source(
     language: &str,
     file_path: &str,
 ) -> Result<Vec<StructuralMatch>> {
-    let ts_lang = get_ts_language(language).ok_or_else(|| {
-        HiefError::UnsupportedLanguage(language.to_string())
-    })?;
+    let ts_lang = get_ts_language(language)
+        .ok_or_else(|| HiefError::UnsupportedLanguage(language.to_string()))?;
 
-    let pat = Pattern::try_new(pattern, ts_lang.clone()).map_err(|e| {
-        HiefError::ParseError {
-            file: "(pattern)".to_string(),
-            message: format!("Invalid structural pattern '{}': {}", pattern, e),
-        }
+    let pat = Pattern::try_new(pattern, ts_lang.clone()).map_err(|e| HiefError::ParseError {
+        file: "(pattern)".to_string(),
+        message: format!("Invalid structural pattern '{}': {}", pattern, e),
     })?;
 
     let grep = AstGrep::new(source, ts_lang);
@@ -249,7 +258,11 @@ fn world(x: i32) -> bool {
         let m1 = search_source(source, "fn $NAME($$$) $BODY", "rust", "test.rs").unwrap();
         let m2 = search_source(source, "fn $NAME($$$) -> $RET $BODY", "rust", "test.rs").unwrap();
         let total = m1.len() + m2.len();
-        assert!(total >= 2, "Should find at least 2 function declarations, got {}", total);
+        assert!(
+            total >= 2,
+            "Should find at least 2 function declarations, got {}",
+            total
+        );
     }
 
     #[test]
@@ -264,8 +277,14 @@ struct Color(u8, u8, u8);
 "#;
         // Use pattern matching the struct item node
         let matches = search_source(source, "struct $NAME $BODY", "rust", "test.rs").unwrap();
-        assert!(matches.len() >= 1, "Should find at least 1 struct definition, got {}", matches.len());
-        assert!(matches[0].matched_text.contains("Point") || matches[0].matched_text.contains("Color"));
+        assert!(
+            matches.len() >= 1,
+            "Should find at least 1 struct definition, got {}",
+            matches.len()
+        );
+        assert!(
+            matches[0].matched_text.contains("Point") || matches[0].matched_text.contains("Color")
+        );
     }
 
     #[test]
@@ -276,7 +295,12 @@ struct Color(u8, u8, u8);
         let source = "x = 42\ny = \"hello\"\n";
         // Literal pattern (no meta-variables) should work
         let matches = search_source(source, "x = 42", "python", "test.py").unwrap();
-        assert_eq!(matches.len(), 1, "Should find literal Python match, got {}", matches.len());
+        assert_eq!(
+            matches.len(),
+            1,
+            "Should find literal Python match, got {}",
+            matches.len()
+        );
     }
 
     #[test]
@@ -289,8 +313,18 @@ const add = (a: number, b: number): number => {
 const sub = (a: number, b: number) => a - b;
 "#;
         // Find arrow functions assigned to const
-        let matches = search_source(source, "const $NAME = ($$$) => $BODY", "typescript", "test.ts").unwrap();
-        assert!(matches.len() >= 1, "Should find arrow functions, got {}", matches.len());
+        let matches = search_source(
+            source,
+            "const $NAME = ($$$) => $BODY",
+            "typescript",
+            "test.ts",
+        )
+        .unwrap();
+        assert!(
+            matches.len() >= 1,
+            "Should find arrow functions, got {}",
+            matches.len()
+        );
     }
 
     #[test]
@@ -317,13 +351,17 @@ fn safe_function() -> Result<(), Error> {
 }
 "#;
         let matches = search_source(source, "$X.unwrap()", "rust", "test.rs").unwrap();
-        assert!(matches.is_empty(), "Should find no unwrap calls in safe code");
+        assert!(
+            matches.is_empty(),
+            "Should find no unwrap calls in safe code"
+        );
     }
 
     #[test]
     fn test_match_positions_are_correct() {
         let source = "fn hello() {\n    println!(\"hi\");\n}\n";
-        let matches = search_source(source, "fn $NAME($$$) { $$$BODY }", "rust", "test.rs").unwrap();
+        let matches =
+            search_source(source, "fn $NAME($$$) { $$$BODY }", "rust", "test.rs").unwrap();
         if !matches.is_empty() {
             assert_eq!(matches[0].start_line, 0, "Function should start at line 0");
         }

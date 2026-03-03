@@ -1,6 +1,5 @@
 //! Intent graph: SQL-based task dependency tracking.
 
-pub mod crdt;
 pub mod edges;
 pub mod intent;
 pub mod query;
@@ -337,7 +336,9 @@ mod tests {
         let intent = Intent::new("feature", "Test", None, None);
         create_intent(&db, &intent).await.unwrap();
 
-        assign_intent(&db, &intent.id, "agent-claude").await.unwrap();
+        assign_intent(&db, &intent.id, "agent-claude")
+            .await
+            .unwrap();
         let fetched = get_intent(&db, &intent.id).await.unwrap();
         assert_eq!(fetched.assigned_to, Some("agent-claude".to_string()));
     }
@@ -363,7 +364,10 @@ mod tests {
         let ready = ready_intents(&db).await.unwrap();
         let ready_ids: Vec<&str> = ready.iter().map(|i| i.id.as_str()).collect();
         assert!(ready_ids.contains(&i1.id.as_str()), "i1 should be ready");
-        assert!(!ready_ids.contains(&i2.id.as_str()), "i2 should NOT be ready");
+        assert!(
+            !ready_ids.contains(&i2.id.as_str()),
+            "i2 should NOT be ready"
+        );
 
         // Now move i1 to verified
         update_status(&db, &i1.id, "in_progress").await.unwrap();
@@ -373,7 +377,10 @@ mod tests {
         // Now i2 should be ready
         let ready = ready_intents(&db).await.unwrap();
         let ready_ids: Vec<&str> = ready.iter().map(|i| i.id.as_str()).collect();
-        assert!(ready_ids.contains(&i2.id.as_str()), "i2 should now be ready");
+        assert!(
+            ready_ids.contains(&i2.id.as_str()),
+            "i2 should now be ready"
+        );
     }
 
     #[tokio::test]
@@ -440,11 +447,19 @@ mod tests {
     #[tokio::test]
     async fn test_intent_with_description() {
         let db = crate::db::Database::open_memory().await.unwrap();
-        let intent = Intent::new("feature", "Title", Some("Detailed description".to_string()), None);
+        let intent = Intent::new(
+            "feature",
+            "Title",
+            Some("Detailed description".to_string()),
+            None,
+        );
         create_intent(&db, &intent).await.unwrap();
 
         let fetched = get_intent(&db, &intent.id).await.unwrap();
-        assert_eq!(fetched.description, Some("Detailed description".to_string()));
+        assert_eq!(
+            fetched.description,
+            Some("Detailed description".to_string())
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -454,8 +469,18 @@ mod tests {
     #[test]
     fn test_hash_id_format() {
         let intent = Intent::new("feature", "Test", None, None);
-        assert!(intent.id.starts_with("hief-"), "ID should start with 'hief-', got: {}", intent.id);
-        assert_eq!(intent.id.len(), 13, "ID should be 13 chars (hief- + 8 hex), got: {} ({})", intent.id.len(), intent.id);
+        assert!(
+            intent.id.starts_with("hief-"),
+            "ID should start with 'hief-', got: {}",
+            intent.id
+        );
+        assert_eq!(
+            intent.id.len(),
+            13,
+            "ID should be 13 chars (hief- + 8 hex), got: {} ({})",
+            intent.id.len(),
+            intent.id
+        );
     }
 
     #[test]
@@ -468,7 +493,11 @@ mod tests {
         let mut unique = ids.clone();
         unique.sort();
         unique.dedup();
-        assert_eq!(unique.len(), ids.len(), "All generated IDs should be unique");
+        assert_eq!(
+            unique.len(),
+            ids.len(),
+            "All generated IDs should be unique"
+        );
     }
 
     #[test]

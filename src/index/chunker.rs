@@ -62,9 +62,21 @@ impl Chunker {
             return self.chunk_lines(source, language, file_path);
         }
 
-        let Some(tree) = parser.parse(source, None) else {
+        static TREE_CACHE: std::sync::OnceLock<
+            std::sync::Mutex<std::collections::HashMap<String, tree_sitter::Tree>>,
+        > = std::sync::OnceLock::new();
+        let mut cache = TREE_CACHE
+            .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+            .lock()
+            .unwrap();
+
+        let old_tree = cache.get(file_path);
+        let Some(tree) = parser.parse(source, old_tree) else {
             return self.chunk_lines(source, language, file_path);
         };
+
+        cache.insert(file_path.to_string(), tree.clone());
+        drop(cache);
 
         let root = tree.root_node();
         let mut chunks = Vec::new();
@@ -146,11 +158,7 @@ impl Chunker {
             return self.chunk_lines(source, language, file_path);
         }
 
-        debug!(
-            "Chunked {} into {} chunks (AST)",
-            file_path,
-            chunks.len()
-        );
+        debug!("Chunked {} into {} chunks (AST)", file_path, chunks.len());
         chunks
     }
 
@@ -340,7 +348,9 @@ fn hello() {
 "#;
         let chunks = chunker().chunk(source, "rust", "test.rs");
         assert!(!chunks.is_empty());
-        let fn_chunk = chunks.iter().find(|c| c.symbol_kind.as_deref() == Some("function_item"));
+        let fn_chunk = chunks
+            .iter()
+            .find(|c| c.symbol_kind.as_deref() == Some("function_item"));
         assert!(fn_chunk.is_some(), "Should find a function_item chunk");
         let fn_chunk = fn_chunk.unwrap();
         assert_eq!(fn_chunk.symbol_name.as_deref(), Some("hello"));
@@ -367,9 +377,15 @@ impl Point {
 }
 "#;
         let chunks = chunker().chunk(source, "rust", "point.rs");
-        assert!(chunks.len() >= 2, "Should have struct + impl chunks, got {}", chunks.len());
+        assert!(
+            chunks.len() >= 2,
+            "Should have struct + impl chunks, got {}",
+            chunks.len()
+        );
 
-        let struct_chunk = chunks.iter().find(|c| c.symbol_kind.as_deref() == Some("struct_item"));
+        let struct_chunk = chunks
+            .iter()
+            .find(|c| c.symbol_kind.as_deref() == Some("struct_item"));
         assert!(struct_chunk.is_some(), "Should find struct_item");
         assert_eq!(struct_chunk.unwrap().symbol_name.as_deref(), Some("Point"));
     }
@@ -383,8 +399,13 @@ use std::path::Path;
 fn main() {}
 "#;
         let chunks = chunker().chunk(source, "rust", "main.rs");
-        let preamble = chunks.iter().find(|c| c.symbol_kind.as_deref() == Some("preamble"));
-        assert!(preamble.is_some(), "Should capture preamble (use statements)");
+        let preamble = chunks
+            .iter()
+            .find(|c| c.symbol_kind.as_deref() == Some("preamble"));
+        assert!(
+            preamble.is_some(),
+            "Should capture preamble (use statements)"
+        );
         let preamble = preamble.unwrap();
         assert!(preamble.content.contains("use std::io"));
     }
@@ -401,7 +422,9 @@ def greet(name):
 "#;
         let chunks = chunker().chunk(source, "python", "greet.py");
         assert!(!chunks.is_empty());
-        let fn_chunk = chunks.iter().find(|c| c.symbol_kind.as_deref() == Some("function_definition"));
+        let fn_chunk = chunks
+            .iter()
+            .find(|c| c.symbol_kind.as_deref() == Some("function_definition"));
         assert!(fn_chunk.is_some(), "Should find function_definition");
         assert_eq!(fn_chunk.unwrap().symbol_name.as_deref(), Some("greet"));
     }
@@ -418,7 +441,9 @@ class Dog:
 "#;
         let chunks = chunker().chunk(source, "python", "dog.py");
         assert!(!chunks.is_empty());
-        let class_chunk = chunks.iter().find(|c| c.symbol_kind.as_deref() == Some("class_definition"));
+        let class_chunk = chunks
+            .iter()
+            .find(|c| c.symbol_kind.as_deref() == Some("class_definition"));
         assert!(class_chunk.is_some(), "Should find class_definition");
         assert_eq!(class_chunk.unwrap().symbol_name.as_deref(), Some("Dog"));
     }
@@ -436,7 +461,9 @@ function add(a: number, b: number): number {
 "#;
         let chunks = chunker().chunk(source, "typescript", "math.ts");
         assert!(!chunks.is_empty());
-        let fn_chunk = chunks.iter().find(|c| c.symbol_kind.as_deref() == Some("function_declaration"));
+        let fn_chunk = chunks
+            .iter()
+            .find(|c| c.symbol_kind.as_deref() == Some("function_declaration"));
         assert!(fn_chunk.is_some(), "Should find function_declaration");
         assert_eq!(fn_chunk.unwrap().symbol_name.as_deref(), Some("add"));
     }
@@ -466,7 +493,11 @@ function add(a: number, b: number): number {
         let lines: Vec<String> = (0..120).map(|i| format!("// line {}", i)).collect();
         let source = lines.join("\n");
         let chunks = chunker().chunk(&source, "text", "big.txt");
-        assert!(chunks.len() >= 2, "Should split into multiple chunks, got {}", chunks.len());
+        assert!(
+            chunks.len() >= 2,
+            "Should split into multiple chunks, got {}",
+            chunks.len()
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -480,7 +511,11 @@ function add(a: number, b: number): number {
         assert!(!chunks.is_empty());
         for chunk in &chunks {
             assert!(!chunk.content_hash.is_empty(), "Hash should be non-empty");
-            assert_eq!(chunk.content_hash.len(), 64, "Blake3 hex hash should be 64 chars");
+            assert_eq!(
+                chunk.content_hash.len(),
+                64,
+                "Blake3 hex hash should be 64 chars"
+            );
         }
     }
 
@@ -490,8 +525,14 @@ function add(a: number, b: number): number {
         let chunks1 = chunker().chunk(source, "rust", "a.rs");
         let chunks2 = chunker().chunk(source, "rust", "b.rs");
         // Same content should produce same hash even with different file paths
-        let fn_chunks1: Vec<_> = chunks1.iter().filter(|c| c.symbol_kind.as_deref() == Some("function_item")).collect();
-        let fn_chunks2: Vec<_> = chunks2.iter().filter(|c| c.symbol_kind.as_deref() == Some("function_item")).collect();
+        let fn_chunks1: Vec<_> = chunks1
+            .iter()
+            .filter(|c| c.symbol_kind.as_deref() == Some("function_item"))
+            .collect();
+        let fn_chunks2: Vec<_> = chunks2
+            .iter()
+            .filter(|c| c.symbol_kind.as_deref() == Some("function_item"))
+            .collect();
         if !fn_chunks1.is_empty() && !fn_chunks2.is_empty() {
             assert_eq!(fn_chunks1[0].content_hash, fn_chunks2[0].content_hash);
         }

@@ -137,34 +137,110 @@ pub async fn detect_cycles(db: &Database) -> Result<Vec<String>> {
     let mut rows = db
         .conn()
         .query(
-            "WITH RECURSIVE path(start_node, node, depth, visited) AS (
-                SELECT from_id, to_id, 1, from_id || ',' || to_id
-                FROM intent_edges
-                WHERE kind = 'depends_on'
-
-                UNION ALL
-
-                SELECT p.start_node, e.to_id, p.depth + 1,
-                       p.visited || ',' || e.to_id
-                FROM intent_edges e
-                JOIN path p ON e.from_id = p.node
-                WHERE p.depth < 100
-                  AND e.kind = 'depends_on'
-                  AND p.start_node = e.to_id
-             )
-             SELECT DISTINCT start_node FROM path WHERE start_node = node",
+            "SELECT from_id, to_id FROM intent_edges WHERE kind = 'depends_on'",
             (),
         )
         .await
         .map_err(HiefError::Database)?;
 
-    let mut cycle_nodes = Vec::new();
+    let mut adj: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    let mut nodes: std::collections::HashSet<String> = std::collections::HashSet::new();
+
     while let Some(row) = rows.next().await.map_err(HiefError::Database)? {
-        let id: String = row.get(0).map_err(HiefError::Database)?;
-        cycle_nodes.push(id);
+        let from: String = row.get(0).unwrap();
+        let to: String = row.get(1).unwrap();
+        adj.entry(from.clone()).or_default().push(to.clone());
+        nodes.insert(from);
+        nodes.insert(to);
     }
 
-    Ok(cycle_nodes)
+    let mut index = 0;
+    let mut stack: Vec<String> = Vec::new();
+    let mut on_stack: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut indices: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut lowlinks: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut cycle_nodes = std::collections::HashSet::new();
+
+    fn strongconnect(
+        v: &String,
+        index: &mut usize,
+        stack: &mut Vec<String>,
+        on_stack: &mut std::collections::HashSet<String>,
+        indices: &mut std::collections::HashMap<String, usize>,
+        lowlinks: &mut std::collections::HashMap<String, usize>,
+        adj: &std::collections::HashMap<String, Vec<String>>,
+        cycle_nodes: &mut std::collections::HashSet<String>,
+    ) {
+        indices.insert(v.clone(), *index);
+        lowlinks.insert(v.clone(), *index);
+        *index += 1;
+        stack.push(v.clone());
+        on_stack.insert(v.clone());
+
+        if let Some(neighbors) = adj.get(v) {
+            for w in neighbors {
+                if !indices.contains_key(w) {
+                    strongconnect(
+                        w,
+                        index,
+                        stack,
+                        on_stack,
+                        indices,
+                        lowlinks,
+                        adj,
+                        cycle_nodes,
+                    );
+                    let low_v = *lowlinks.get(v).unwrap();
+                    let low_w = *lowlinks.get(w).unwrap();
+                    lowlinks.insert(v.clone(), std::cmp::min(low_v, low_w));
+                } else if on_stack.contains(w) {
+                    let low_v = *lowlinks.get(v).unwrap();
+                    let idx_w = *indices.get(w).unwrap();
+                    lowlinks.insert(v.clone(), std::cmp::min(low_v, idx_w));
+                }
+            }
+        }
+
+        if lowlinks.get(v) == indices.get(v) {
+            let mut scc = Vec::new();
+            loop {
+                let w = stack.pop().unwrap();
+                on_stack.remove(&w);
+                scc.push(w.clone());
+                if w == *v {
+                    break;
+                }
+            }
+            if scc.len() > 1 {
+                for node in scc {
+                    cycle_nodes.insert(node);
+                }
+            } else if let Some(neighbors) = adj.get(v) {
+                if neighbors.contains(v) {
+                    cycle_nodes.insert(v.clone());
+                }
+            }
+        }
+    }
+
+    for v in &nodes {
+        if !indices.contains_key(v) {
+            strongconnect(
+                v,
+                &mut index,
+                &mut stack,
+                &mut on_stack,
+                &mut indices,
+                &mut lowlinks,
+                &adj,
+                &mut cycle_nodes,
+            );
+        }
+    }
+
+    let mut result: Vec<String> = cycle_nodes.into_iter().collect();
+    result.sort();
+    Ok(result)
 }
 
 /// Automatically block intents that depend on rejected nodes.
