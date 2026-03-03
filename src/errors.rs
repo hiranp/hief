@@ -45,6 +45,12 @@ pub enum HiefError {
         kind: String,
     },
 
+    #[error("ambiguous intent ID prefix '{prefix}' matches {count} intents: {matches_str}", count = matches.len(), matches_str = matches.join(", "))]
+    AmbiguousId {
+        prefix: String,
+        matches: Vec<String>,
+    },
+
     // Eval errors
     #[error("golden set not found: {0}")]
     GoldenSetNotFound(String),

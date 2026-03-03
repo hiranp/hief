@@ -11,6 +11,7 @@ use crate::errors::{HiefError, Result};
 
 pub use self::edges::IntentEdge;
 pub use self::intent::Intent;
+pub use self::intent::resolve_id;
 
 /// An intent with its dependency context.
 #[derive(Debug, Clone, Serialize)]
@@ -443,5 +444,83 @@ mod tests {
 
         let fetched = get_intent(&db, &intent.id).await.unwrap();
         assert_eq!(fetched.description, Some("Detailed description".to_string()));
+    }
+
+    // -----------------------------------------------------------------------
+    // Hash-based ID tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_hash_id_format() {
+        let intent = Intent::new("feature", "Test", None, None);
+        assert!(intent.id.starts_with("hief-"), "ID should start with 'hief-', got: {}", intent.id);
+        assert_eq!(intent.id.len(), 13, "ID should be 13 chars (hief- + 8 hex), got: {} ({})", intent.id.len(), intent.id);
+    }
+
+    #[test]
+    fn test_hash_id_uniqueness() {
+        let ids: Vec<String> = (0..100)
+            .map(|_| Intent::new("feature", "Test", None, None).id)
+            .collect();
+
+        // All IDs should be unique
+        let mut unique = ids.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(unique.len(), ids.len(), "All generated IDs should be unique");
+    }
+
+    #[test]
+    fn test_hash_id_hex_chars() {
+        let intent = Intent::new("feature", "Test", None, None);
+        let hex_part = &intent.id[5..]; // After "hief-"
+        assert!(
+            hex_part.chars().all(|c| c.is_ascii_hexdigit()),
+            "Hash part should be hex, got: {}",
+            hex_part
+        );
+    }
+
+    #[tokio::test]
+    async fn test_resolve_id_full_match() {
+        let db = crate::db::Database::open_memory().await.unwrap();
+        let intent = Intent::new("feature", "Test", None, None);
+        create_intent(&db, &intent).await.unwrap();
+
+        let resolved = resolve_id(&db, &intent.id).await.unwrap();
+        assert_eq!(resolved, intent.id);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_id_prefix_match() {
+        let db = crate::db::Database::open_memory().await.unwrap();
+        let intent = Intent::new("feature", "Test", None, None);
+        create_intent(&db, &intent).await.unwrap();
+
+        // Use just the first 6 chars of the hash (after "hief-")
+        let short = &intent.id[..9]; // "hief-XXXX" (4 hex chars)
+        let resolved = resolve_id(&db, short).await.unwrap();
+        assert_eq!(resolved, intent.id);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_id_without_prefix() {
+        let db = crate::db::Database::open_memory().await.unwrap();
+        let intent = Intent::new("feature", "Test", None, None);
+        create_intent(&db, &intent).await.unwrap();
+
+        // Use just the hex part without "hief-"
+        let hex_part = &intent.id[5..]; // 8 hex chars
+        let resolved = resolve_id(&db, hex_part).await.unwrap();
+        assert_eq!(resolved, intent.id);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_id_not_found() {
+        let db = crate::db::Database::open_memory().await.unwrap();
+        let result = resolve_id(&db, "nonexistent").await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("intent not found"), "got: {err}");
     }
 }

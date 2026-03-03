@@ -1,0 +1,127 @@
+{
+  "name": "vscode-hief",
+  "displayName": "HIEF — Intent & Evaluation Viewer",
+  "description": "Visualize intents, dependency graphs, evaluation scores, and approve/reject work from VS Code",
+  "version": "0.1.0",
+  "publisher": "hief",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hiranp/hief"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "workspaceContains:.hief",
+    "workspaceContains:hief.toml"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "hief.showKanban",
+        "title": "HIEF: Show Intent Kanban Board"
+      },
+      {
+        "command": "hief.showIntents",
+        "title": "HIEF: Show Intent List"
+      },
+      {
+        "command": "hief.showDashboard",
+        "title": "HIEF: Show Dashboard"
+      },
+      {
+        "command": "hief.showGraph",
+        "title": "HIEF: Show Dependency Graph"
+      },
+      {
+        "command": "hief.searchCode",
+        "title": "HIEF: Search Code Index"
+      },
+      {
+        "command": "hief.runDoctor",
+        "title": "HIEF: Run Doctor"
+      },
+      {
+        "command": "hief.runEval",
+        "title": "HIEF: Run Evaluation"
+      },
+      {
+        "command": "hief.approveIntent",
+        "title": "HIEF: Approve Intent"
+      },
+      {
+        "command": "hief.rejectIntent",
+        "title": "HIEF: Reject Intent"
+      },
+      {
+        "command": "hief.createIntent",
+        "title": "HIEF: Create Intent"
+      },
+      {
+        "command": "hief.refresh",
+        "title": "HIEF: Refresh"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "hief",
+          "title": "HIEF",
+          "icon": "media/hief-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "hief": [
+        {
+          "type": "webview",
+          "id": "hief.intentsPanel",
+          "name": "Intents"
+        },
+        {
+          "type": "webview",
+          "id": "hief.dashboardPanel",
+          "name": "Dashboard"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "hief.refresh",
+          "group": "navigation",
+          "when": "view =~ /^hief\\./"
+        },
+        {
+          "command": "hief.createIntent",
+          "group": "navigation",
+          "when": "view == hief.intentsPanel"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --platform=node --format=cjs && esbuild src/webview/index.tsx --bundle --outfile=dist/webview.js --platform=browser --format=iife",
+    "watch": "npm run build -- --watch",
+    "lint": "eslint src --ext ts,tsx",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.20.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  }
+}

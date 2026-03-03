@@ -46,6 +46,17 @@ pub enum Commands {
     #[command(subcommand)]
     Eval(EvalCmd),
 
+    /// Health checks: index staleness, graph integrity, eval drift
+    Doctor {
+        /// Attempt to auto-fix detected issues
+        #[arg(long)]
+        fix: bool,
+    },
+
+    /// Git hook management
+    #[command(subcommand)]
+    Hooks(HooksCmd),
+
     /// Start the MCP server
     Serve(ServeArgs),
 
@@ -106,12 +117,12 @@ pub enum GraphCmd {
     },
     /// Show intent details with dependencies
     Show {
-        /// Intent ID (UUID)
+        /// Intent ID or prefix (e.g., hief-a1b2 or a1b2)
         id: String,
     },
     /// Update an intent
     Update {
-        /// Intent ID (UUID)
+        /// Intent ID or prefix (e.g., hief-a1b2 or a1b2)
         id: String,
         /// New status
         #[arg(short, long)]
@@ -154,6 +165,16 @@ pub enum EvalCmd {
 pub enum GoldenCmd {
     /// List all golden sets
     List,
+}
+
+#[derive(Subcommand)]
+pub enum HooksCmd {
+    /// Install git hooks for auto-indexing and intent sync
+    Install,
+    /// Remove HIEF git hooks
+    Uninstall,
+    /// Show current hook status
+    Status,
 }
 
 #[derive(clap::Args)]

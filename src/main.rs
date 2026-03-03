@@ -20,7 +20,7 @@ use std::process;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-use cli::{Cli, Commands, EvalCmd, GoldenCmd, GraphCmd, IndexCmd};
+use cli::{Cli, Commands, EvalCmd, GoldenCmd, GraphCmd, HooksCmd, IndexCmd};
 use config::Config;
 use db::Database;
 
@@ -178,6 +178,28 @@ async fn run(cli: Cli, project_root: PathBuf) -> anyhow::Result<()> {
                 }
                 EvalCmd::Golden(GoldenCmd::List) => {
                     cli::commands::eval_golden_list(&project_root, &config, json)?;
+                }
+            }
+        }
+
+        Commands::Doctor { fix } => {
+            let config = Config::load(&config_path)?;
+            let db_path = Config::db_path(&project_root);
+            let db = Database::open(&db_path).await?;
+
+            cli::commands::doctor(&db, &project_root, &config, fix, json).await?;
+        }
+
+        Commands::Hooks(cmd) => {
+            match cmd {
+                HooksCmd::Install => {
+                    cli::commands::hooks_install(&project_root, json)?;
+                }
+                HooksCmd::Uninstall => {
+                    cli::commands::hooks_uninstall(&project_root, json)?;
+                }
+                HooksCmd::Status => {
+                    cli::commands::hooks_status(&project_root, json)?;
                 }
             }
         }

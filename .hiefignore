@@ -1,4 +1,4 @@
-+# HIEF ignore patterns (in addition to .gitignore)
+# HIEF ignore patterns (in addition to .gitignore)
 # These files/directories will be skipped during indexing
 
 # Build artifacts
@@ -31,3 +31,7 @@ pnpm-lock.yaml
 .idea/
 *.swp
 *.swo
+
+# VSCode extension
+vscode-hief/node_modules/
+vscode-hief/dist/

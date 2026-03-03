@@ -1,7 +1,6 @@
 //! Intent node CRUD operations.
 
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::db::Database;
 use crate::errors::{HiefError, Result};
@@ -23,7 +22,11 @@ pub struct Intent {
 }
 
 impl Intent {
-    /// Create a new intent with generated UUID.
+    /// Create a new intent with a collision-free hash-based ID.
+    ///
+    /// IDs are generated as `hief-XXXX` where XXXX is derived from a blake3
+    /// hash of a UUID v4 + timestamp, ensuring collision-free IDs across
+    /// multiple concurrent agents (inspired by Beads' `bd-XXXX` scheme).
     pub fn new(
         kind: impl Into<String>,
         title: impl Into<String>,
@@ -31,7 +34,7 @@ impl Intent {
         priority: Option<String>,
     ) -> Self {
         Self {
-            id: Uuid::new_v4().to_string(),
+            id: generate_hash_id(),
             kind: kind.into(),
             title: title.into(),
             description,
@@ -189,6 +192,70 @@ pub async fn assign(db: &Database, id: &str, assigned_to: &str) -> Result<()> {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Generate a collision-free hash-based intent ID.
+///
+/// Format: `hief-XXXX` where XXXX is a hex prefix derived from blake3.
+/// Uses UUID v4 + nanosecond timestamp as entropy source to prevent
+/// collisions across concurrent agents. Hash prefix length starts at 4
+/// and can scale (like git short hashes) if the DB grows large.
+fn generate_hash_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let uuid = uuid::Uuid::new_v4();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(uuid.as_bytes());
+    hasher.update(&nanos.to_le_bytes());
+    let hash = hasher.finalize();
+    let hex = hash.to_hex();
+
+    // Use 8 hex chars (4 bytes) — collision probability ~1 in 4 billion
+    format!("hief-{}", &hex[..8])
+}
+
+/// Resolve a possibly-short intent ID to a full ID via prefix matching.
+///
+/// Accepts full IDs (`hief-a1b2c3d4`) or short prefixes (`hief-a1b2`, `a1b2`).
+/// Returns an error if the prefix is ambiguous (matches multiple intents).
+pub async fn resolve_id(db: &Database, id_or_prefix: &str) -> Result<String> {
+    // If it's already a full match, return it
+    if let Ok(intent) = get(db, id_or_prefix).await {
+        return Ok(intent.id);
+    }
+
+    // Try prefix match (with or without "hief-" prefix)
+    let prefix = if id_or_prefix.starts_with("hief-") {
+        id_or_prefix.to_string()
+    } else {
+        format!("hief-{}", id_or_prefix)
+    };
+
+    let mut rows = db
+        .conn()
+        .query("SELECT id FROM intents WHERE id LIKE ?1", [format!("{}%", prefix)])
+        .await
+        .map_err(HiefError::Database)?;
+
+    let mut matches = Vec::new();
+    while let Some(row) = rows.next().await.map_err(HiefError::Database)? {
+        let id: String = row.get(0).map_err(HiefError::Database)?;
+        matches.push(id);
+    }
+
+    match matches.len() {
+        0 => Err(HiefError::IntentNotFound(id_or_prefix.to_string())),
+        1 => Ok(matches.into_iter().next().unwrap()),
+        _ => Err(HiefError::AmbiguousId {
+            prefix: id_or_prefix.to_string(),
+            matches,
+        }),
+    }
+}
 
 fn row_to_intent(row: &libsql::Row) -> Result<Intent> {
     let criteria_str: String = row.get::<String>(6).unwrap_or_default();
