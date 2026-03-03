@@ -1,0 +1,33 @@
++# HIEF ignore patterns (in addition to .gitignore)
+# These files/directories will be skipped during indexing
+
+# Build artifacts
+target/
+dist/
+build/
+node_modules/
+__pycache__/
+*.pyc
+
+# Generated files
+*.generated.*
+*.min.js
+*.min.css
+
+# Large binary files
+*.wasm
+*.so
+*.dylib
+*.dll
+
+# Lock files
+Cargo.lock
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo

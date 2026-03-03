@@ -1,0 +1,30 @@
+# HIEF Configuration
+# See: docs/plan/00-overview.md
+
+[hief]
+version = "0.1.0"
+
+[index]
+chunk_strategy = "ast"      # ast | fixed
+max_chunk_tokens = 512
+languages = ["rust", "python", "typescript"]
+
+# Optional: enable vector search via local LLM
+# [index.embeddings]
+# provider = "ollama"
+# model = "nomic-embed-text"
+# base_url = "http://localhost:11434"
+# dimensions = 768
+
+[graph]
+require_approval = true     # Intents must be human-approved before work
+
+[eval]
+golden_set_path = ".hief/golden/"
+min_score = 0.85
+fail_on_regression = true
+
+[serve]
+transport = "stdio"         # stdio | http
+host = "127.0.0.1"
+port = 3100                 # only used for http transport

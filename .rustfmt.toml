@@ -1,0 +1,4 @@
+edition = "2021"
+
+# Use more conservative width to keep agent-generated code tidy
+max_width = 100
