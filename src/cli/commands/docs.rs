@@ -26,6 +26,20 @@ pub fn docs_init(project_root: &Path, config: &Config, json: bool) -> Result<()>
             report.templates_dir
         );
         println!("   Run `hief docs list` to see available templates.");
+
+        if report.prompt_created {
+            println!(
+                "\n🤖 SDD LLM Prompt generated: {}/SDD_LLM_PROMPT.md",
+                report.templates_dir
+            );
+            println!(
+                "   Copy & paste its contents to your AI assistant to effortlessly draft detailed SDD documents."
+            );
+            println!(
+                "   Check {}/frameworks/ for language-specific rules.",
+                report.templates_dir
+            );
+        }
     }
 
     Ok(())

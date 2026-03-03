@@ -10,14 +10,14 @@ export interface Intent {
   title: string;
   description?: string;
   status:
-    | "draft"
-    | "approved"
-    | "in_progress"
-    | "in_review"
-    | "verified"
-    | "merged"
-    | "rejected"
-    | "blocked";
+  | "draft"
+  | "approved"
+  | "in_progress"
+  | "in_review"
+  | "verified"
+  | "merged"
+  | "rejected"
+  | "blocked";
   priority: "critical" | "high" | "medium" | "low";
   criteria: string[];
   labels: string[];
@@ -72,6 +72,19 @@ export interface EvalViolation {
   kind: string;
   pattern: string;
   file: string;
+}
+
+export interface SearchResult {
+  file_path: string;
+  symbol_name?: string;
+  symbol_kind?: string;
+  parent_scope?: string;
+  language: string;
+  content: string;
+  start_line: number;
+  end_line: number;
+  rank: number;
+  snippet: string;
 }
 
 export interface IndexStats {

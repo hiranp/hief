@@ -8,12 +8,12 @@
 
 import { exec } from "child_process";
 import { promisify } from "util";
-import type { Intent, DoctorReport, EvalResult, IntentWithDeps, IndexStats } from "./types";
+import type { Intent, DoctorReport, EvalResult, IntentWithDeps, IndexStats, SearchResult } from "./types";
 
 const execAsync = promisify(exec);
 
 export class HiefProjectManager {
-  constructor(private workspaceRoot: string) {}
+  constructor(private workspaceRoot: string) { }
 
   /** Execute a hief CLI command and return parsed JSON. */
   private async run<T>(args: string): Promise<T> {
@@ -43,19 +43,24 @@ export class HiefProjectManager {
     kind: string,
     title: string,
     priority: string = "medium",
-    description?: string
+    description?: string,
+    dependsOn?: string
   ): Promise<Intent> {
     let args = `graph create --kind ${kind} --title "${title}" --priority ${priority}`;
     if (description) args += ` --description "${description}"`;
+    if (dependsOn) args += ` --depends-on "${dependsOn}"`;
     return this.run<Intent>(args);
   }
 
-  async updateIntent(id: string, status: string): Promise<Intent> {
-    return this.run<Intent>(`graph update ${id} --status ${status}`);
-  }
-
-  async assignIntent(id: string, assignee: string): Promise<Intent> {
-    return this.run<Intent>(`graph update ${id} --assign ${assignee}`);
+  async updateIntent(
+    id: string,
+    status?: string,
+    assignee?: string
+  ): Promise<Intent> {
+    let args = `graph update ${id}`;
+    if (status) args += ` --status ${status}`;
+    if (assignee) args += ` --assign ${assignee}`;
+    return this.run<Intent>(args);
   }
 
   async readyIntents(): Promise<Intent[]> {
@@ -76,6 +81,16 @@ export class HiefProjectManager {
 
   async indexBuild(): Promise<any> {
     return this.run<any>("index build");
+  }
+
+  async structuralSearch(
+    pattern: string,
+    language: string,
+    topK: number = 50
+  ): Promise<SearchResult[]> {
+    return this.run<SearchResult[]>(
+      `index structural "${pattern}" --language ${language} -k ${topK}`
+    );
   }
 
   // -----------------------------------------------------------------------

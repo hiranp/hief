@@ -1,0 +1,47 @@
+# Example Golden Set Evaluation
+# Inspired by AWS Kiro's review-and-monitor step:
+# https://aws.amazon.com/startups/prompt-library/kiro-project-init
+
+[metadata]
+name = "code-quality"
+description = "Ensures the codebase adheres to the project constitution's code quality rules"
+
+# --- Case 1: No bare unwraps in production code ---
+[[cases]]
+id = "no-bare-unwrap"
+name = "No bare .unwrap() in src/"
+priority = "critical"
+[cases.checks]
+must_not_contain = [".unwrap()"]
+file_patterns = ["src/**/*.rs"]
+# Exclude test files where .unwrap() is acceptable
+exclude_patterns = ["src/**/*_test.rs", "tests/**/*.rs"]
+
+# --- Case 2: All public functions have doc comments ---
+[[cases]]
+id = "pub-fn-doc-comments"
+name = "Public functions should have doc comments"
+priority = "high"
+[cases.checks]
+# This is a heuristic — look for pub fn without a preceding ///
+must_not_contain = ["pub fn "]
+file_patterns = ["src/**/*.rs"]
+# NOTE: This is illustrative; real enforcement uses structural_search
+
+# --- Case 3: No hardcoded paths ---
+[[cases]]
+id = "no-hardcoded-paths"
+name = "No hardcoded /home or /Users paths"
+priority = "high"
+[cases.checks]
+must_not_contain = ["/home/", "/Users/"]
+file_patterns = ["src/**/*.rs"]
+
+# --- Case 4: Tokio runtime only ---
+[[cases]]
+id = "no-async-std"
+name = "Codebase must not use async-std"
+priority = "critical"
+[cases.checks]
+must_not_contain = ["async-std", "async_std"]
+file_patterns = ["Cargo.toml", "src/**/*.rs"]
