@@ -165,7 +165,7 @@ export function deactivate() {
 // Helper panels
 // ---------------------------------------------------------------------------
 
-function showDependencyGraph(context: vscode.ExtensionContext) {
+function showDependencyGraph(_context: vscode.ExtensionContext) {
   const panel = vscode.window.createWebviewPanel(
     "hief.graph",
     "HIEF Dependency Graph",

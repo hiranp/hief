@@ -15,7 +15,7 @@ export class IntentBoardProvider implements vscode.WebviewViewProvider {
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly projectManager: HiefProjectManager
-  ) {}
+  ) { }
 
   resolveWebviewView(
     webviewView: vscode.WebviewView,
@@ -65,7 +65,7 @@ export class IntentBoardProvider implements vscode.WebviewViewProvider {
   }
 
   /** Open full Kanban board in a separate panel. */
-  showKanbanPanel(context: vscode.ExtensionContext) {
+  showKanbanPanel(_context: vscode.ExtensionContext) {
     const panel = vscode.window.createWebviewPanel(
       "hief.kanban",
       "HIEF Kanban Board",
@@ -88,7 +88,7 @@ export class IntentBoardProvider implements vscode.WebviewViewProvider {
   }
 
   /** Open intent list in a separate panel. */
-  showIntentListPanel(context: vscode.ExtensionContext) {
+  showIntentListPanel(_context: vscode.ExtensionContext) {
     const panel = vscode.window.createWebviewPanel(
       "hief.intentList",
       "HIEF Intent List",
@@ -124,14 +124,13 @@ export class IntentBoardProvider implements vscode.WebviewViewProvider {
         <span class="status">${statusIcon[i.status] || "❓"}</span>
         <span class="title">${escapeHtml(i.title)}</span>
         <span class="id">${i.id}</span>
-        ${
-          i.status === "in_review"
+        ${i.status === "in_review"
             ? `<div class="actions">
             <button onclick="approve('${i.id}')" class="btn-approve" title="Approve">✅</button>
             <button onclick="reject('${i.id}')" class="btn-reject" title="Reject">❌</button>
           </div>`
             : ""
-        }
+          }
       </div>`
       )
       .join("");
@@ -182,14 +181,13 @@ export class IntentBoardProvider implements vscode.WebviewViewProvider {
               <span class="card-kind">${i.kind}</span>
               <span class="card-priority priority-${i.priority}">${i.priority}</span>
             </div>
-            ${
-              col.key === "in_review"
+            ${col.key === "in_review"
                 ? `<div class="card-actions">
                 <button onclick="updateStatus('${i.id}', 'verified')" class="btn-sm approve">✅ Approve</button>
                 <button onclick="updateStatus('${i.id}', 'rejected')" class="btn-sm reject">❌ Reject</button>
               </div>`
                 : ""
-            }
+              }
           </div>`
           )
           .join("");

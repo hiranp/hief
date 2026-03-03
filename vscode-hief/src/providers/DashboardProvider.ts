@@ -14,7 +14,7 @@ export class DashboardProvider implements vscode.WebviewViewProvider {
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly projectManager: HiefProjectManager
-  ) {}
+  ) { }
 
   resolveWebviewView(
     webviewView: vscode.WebviewView,
@@ -30,7 +30,7 @@ export class DashboardProvider implements vscode.WebviewViewProvider {
     this.updateContent();
   }
 
-  showDashboardPanel(context: vscode.ExtensionContext) {
+  showDashboardPanel(_context: vscode.ExtensionContext) {
     const panel = vscode.window.createWebviewPanel(
       "hief.dashboardFull",
       "HIEF Dashboard",
@@ -49,8 +49,8 @@ export class DashboardProvider implements vscode.WebviewViewProvider {
   }
 
   private async buildDashboardHtml(): Promise<string> {
-    let intentSummary = { total: 0, byStatus: {} as Record<string, number> };
-    let indexInfo = { files: 0, chunks: 0, dbSize: "0" };
+    const intentSummary = { total: 0, byStatus: {} as Record<string, number> };
+    const indexInfo = { files: 0, chunks: 0, dbSize: "0" };
     let doctorHealthy = true;
 
     try {
