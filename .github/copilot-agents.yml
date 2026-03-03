@@ -25,6 +25,26 @@ agents:
     description: "Launch the HIEF MCP server (http transport shown)."
     command: |
       hief serve --transport http --port 3100
+  - name: Build
+    description: "Compile the project in debug or release mode."
+    command: |
+      echo "cargo build --release"
+  - name: Format
+    description: "Check or apply rustfmt formatting."
+    command: |
+      echo "cargo fmt -- --check"
+  - name: Lint
+    description: "Run Clippy to catch warnings and improve code quality."
+    command: |
+      echo "cargo clippy --all-targets --all-features -- -D warnings"
+  - name: Test
+    description: "Execute the unit test suite."
+    command: |
+      echo "cargo test"
+  - name: RunBinary
+    description: "Run the compiled HIEF binary with arguments."
+    command: |
+      echo "./target/debug/hief $*"
 
 hints:
   - "Always create or update an intent before editing code."
@@ -32,3 +52,5 @@ hints:
   - "Run evaluations (`hief eval run`) before requesting human review."
   - "Commit and push results regularly; the git history is the memory."
   - "Refer to AGENTS.md in the project root for detailed workflow and additional tools."
+  - "Use `cargo fmt`, `cargo clippy`, and `cargo test` frequently to maintain code hygiene."
+  - "Keep the intent graph clean: merge or close stale intents; don’t let them linger."

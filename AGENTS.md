@@ -1,9 +1,15 @@
 # AGENTS.md
 
-This project uses **HIEF** (Hybrid Intent‑Evaluation Framework) for agent coordination, indexing, and
-evaluation. The document follows the AAIF AGENTS.md conventions and has been augmented with
-HIEF‑specific best practices so that any AI coding agent (Copilot, Claude Code, Windsurf, etc.) can
-read and act on them.
+**Project:** Hybrid Intent‑Evaluation Framework (HIEF)
+
+This repository implements a Rust sidecar that provides local context indexing,
+a git‑backed intent graph, and evaluation tooling for AI‑assisted development. The
+ultimate goal is to serve as a low‑latency plugin for agents like Copilot, Claude
+Code, Windsurf, etc., enabling them to perform safe, auditable modifications in
+large, multi‑agent codebases.
+
+This document follows the AAIF AGENTS.md conventions and has been augmented with
+HIEF‑specific best practices so that any AI coding agent can read and act on them.
 
 ## Local MCP Server
 
@@ -15,6 +21,25 @@ hief serve --transport http --port 3100   # http transport
 ```
 
 Keep the server running in the background; agents connect here for all tooling operations.
+
+## Typical Workflow
+
+### CLI Reference
+
+The host exposes a set of subcommands via the `hief` binary; agents can call these
+through the MCP interface. Common helpers include:
+
+```text
+hief search-code <query>        # full‑text/semantic search over indexed files
+hief intent create/update/list   # manage graph intents
+hief eval run/check              # run evaluation against golden sets
+hief harness <name>              # generate/run a temporary harness
+hief serve [--transport ...]     # start MCP server
+hief doctor [--fix] [--json]       # run health checks, auto-fixable
+hief hooks install|uninstall|status # manage git hooks for indexing/eval
+```
+
+Use `hief --help` for complete options.
 
 ## Typical Workflow
 
@@ -57,3 +82,9 @@ Keep the server running in the background; agents connect here for all tooling o
   changes.
 * Treat the local git repo as the single source of truth; replayable agent runs must always start
   from a clean checkout.
+
+## VS Code Extension (optional)
+
+A companion extension (`vscode-hief/`) provides a graphical interface for the
+Kanban board, dashboard, search results, and hook status. It talks to `hief`
+via its JSON CLI output and can be installed locally for human reviewers.
