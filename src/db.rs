@@ -218,3 +218,210 @@ CREATE TABLE IF NOT EXISTS eval_runs (
 
 CREATE INDEX IF NOT EXISTS idx_eval_set ON eval_runs(golden_set, created_at);
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_open_memory_database() {
+        let db = Database::open_memory().await;
+        assert!(db.is_ok(), "Should create in-memory database");
+    }
+
+    #[tokio::test]
+    async fn test_migrations_applied() {
+        let db = Database::open_memory().await.unwrap();
+
+        // Verify the migrations table exists and has entries
+        let mut rows = db
+            .conn()
+            .query("SELECT name FROM _migrations ORDER BY id", ())
+            .await
+            .unwrap();
+
+        let mut names = Vec::new();
+        while let Some(row) = rows.next().await.unwrap() {
+            let name: String = row.get(0).unwrap();
+            names.push(name);
+        }
+
+        assert_eq!(names, vec!["001_chunks", "002_intents", "003_eval_runs"]);
+    }
+
+    #[tokio::test]
+    async fn test_chunks_table_exists() {
+        let db = Database::open_memory().await.unwrap();
+
+        // Insert a chunk
+        db.conn()
+            .execute(
+                "INSERT INTO chunks (file_path, language, content, start_line, end_line, content_hash)
+                 VALUES ('test.rs', 'rust', 'fn main() {}', 0, 0, 'abc123')",
+                (),
+            )
+            .await
+            .unwrap();
+
+        // Verify it was inserted
+        let mut rows = db
+            .conn()
+            .query("SELECT COUNT(*) FROM chunks", ())
+            .await
+            .unwrap();
+        let row = rows.next().await.unwrap().unwrap();
+        let count: i64 = row.get(0).unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_fts5_table_exists() {
+        let db = Database::open_memory().await.unwrap();
+
+        // Insert a chunk (triggers FTS sync)
+        db.conn()
+            .execute(
+                "INSERT INTO chunks (file_path, symbol_name, language, content, start_line, end_line, content_hash)
+                 VALUES ('test.rs', 'main', 'rust', 'fn main() { println!(\"hello\"); }', 0, 0, 'abc')",
+                (),
+            )
+            .await
+            .unwrap();
+
+        // Search via FTS5
+        let mut rows = db
+            .conn()
+            .query("SELECT file_path FROM chunks_fts WHERE chunks_fts MATCH 'hello'", ())
+            .await
+            .unwrap();
+
+        let row = rows.next().await.unwrap();
+        assert!(row.is_some(), "FTS5 should find the content");
+    }
+
+    #[tokio::test]
+    async fn test_intents_table_exists() {
+        let db = Database::open_memory().await.unwrap();
+
+        db.conn()
+            .execute(
+                "INSERT INTO intents (id, kind, title) VALUES ('test-id', 'feature', 'Test')",
+                (),
+            )
+            .await
+            .unwrap();
+
+        let mut rows = db
+            .conn()
+            .query("SELECT title FROM intents WHERE id = 'test-id'", ())
+            .await
+            .unwrap();
+        let row = rows.next().await.unwrap().unwrap();
+        let title: String = row.get(0).unwrap();
+        assert_eq!(title, "Test");
+    }
+
+    #[tokio::test]
+    async fn test_eval_runs_table_exists() {
+        let db = Database::open_memory().await.unwrap();
+
+        db.conn()
+            .execute(
+                "INSERT INTO eval_runs (id, golden_set, overall_score, passed)
+                 VALUES ('run-1', 'basic', 0.95, 1)",
+                (),
+            )
+            .await
+            .unwrap();
+
+        let mut rows = db
+            .conn()
+            .query("SELECT overall_score FROM eval_runs WHERE id = 'run-1'", ())
+            .await
+            .unwrap();
+        let row = rows.next().await.unwrap().unwrap();
+        let score: f64 = row.get(0).unwrap();
+        assert!((score - 0.95).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_file_meta_table() {
+        let db = Database::open_memory().await.unwrap();
+
+        db.conn()
+            .execute(
+                "INSERT INTO file_meta (file_path, content_hash, chunk_count, language)
+                 VALUES ('src/main.rs', 'deadbeef', 5, 'rust')",
+                (),
+            )
+            .await
+            .unwrap();
+
+        let mut rows = db
+            .conn()
+            .query("SELECT chunk_count FROM file_meta WHERE file_path = 'src/main.rs'", ())
+            .await
+            .unwrap();
+        let row = rows.next().await.unwrap().unwrap();
+        let count: i64 = row.get(0).unwrap();
+        assert_eq!(count, 5);
+    }
+
+    #[tokio::test]
+    async fn test_open_file_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+
+        let db = Database::open(&db_path).await;
+        assert!(db.is_ok(), "Should create file-based database");
+        assert!(db_path.exists(), "Database file should exist");
+    }
+
+    #[tokio::test]
+    async fn test_migrations_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+
+        // Open twice — migrations should not fail on second open
+        {
+            let _db = Database::open(&db_path).await.unwrap();
+        }
+        {
+            let db = Database::open(&db_path).await.unwrap();
+            // Verify still works
+            let mut rows = db
+                .conn()
+                .query("SELECT COUNT(*) FROM _migrations", ())
+                .await
+                .unwrap();
+            let row = rows.next().await.unwrap().unwrap();
+            let count: i64 = row.get(0).unwrap();
+            assert_eq!(count, 3);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_foreign_keys_enabled() {
+        let db = Database::open_memory().await.unwrap();
+
+        // Create an intent
+        db.conn()
+            .execute(
+                "INSERT INTO intents (id, kind, title) VALUES ('i1', 'feature', 'Test')",
+                (),
+            )
+            .await
+            .unwrap();
+
+        // Try to insert an edge referencing a non-existent intent
+        let result = db
+            .conn()
+            .execute(
+                "INSERT INTO intent_edges (from_id, to_id, kind) VALUES ('i1', 'nonexistent', 'depends_on')",
+                (),
+            )
+            .await;
+
+        assert!(result.is_err(), "Foreign key constraint should prevent invalid references");
+    }
+}

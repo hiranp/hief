@@ -318,3 +318,196 @@ fn extract_symbol_info(node: &tree_sitter::Node, source: &str) -> (Option<String
 
     (name, kind)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn chunker() -> Chunker {
+        Chunker::new(512)
+    }
+
+    // -----------------------------------------------------------------------
+    // Rust chunking
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_chunk_rust_function() {
+        let source = r#"
+fn hello() {
+    println!("Hello, world!");
+}
+"#;
+        let chunks = chunker().chunk(source, "rust", "test.rs");
+        assert!(!chunks.is_empty());
+        let fn_chunk = chunks.iter().find(|c| c.symbol_kind.as_deref() == Some("function_item"));
+        assert!(fn_chunk.is_some(), "Should find a function_item chunk");
+        let fn_chunk = fn_chunk.unwrap();
+        assert_eq!(fn_chunk.symbol_name.as_deref(), Some("hello"));
+        assert_eq!(fn_chunk.language, "rust");
+        assert!(fn_chunk.content.contains("println!"));
+    }
+
+    #[test]
+    fn test_chunk_rust_struct_and_impl() {
+        let source = r#"
+struct Point {
+    x: f64,
+    y: f64,
+}
+
+impl Point {
+    fn new(x: f64, y: f64) -> Self {
+        Self { x, y }
+    }
+
+    fn distance(&self) -> f64 {
+        (self.x * self.x + self.y * self.y).sqrt()
+    }
+}
+"#;
+        let chunks = chunker().chunk(source, "rust", "point.rs");
+        assert!(chunks.len() >= 2, "Should have struct + impl chunks, got {}", chunks.len());
+
+        let struct_chunk = chunks.iter().find(|c| c.symbol_kind.as_deref() == Some("struct_item"));
+        assert!(struct_chunk.is_some(), "Should find struct_item");
+        assert_eq!(struct_chunk.unwrap().symbol_name.as_deref(), Some("Point"));
+    }
+
+    #[test]
+    fn test_chunk_rust_preamble() {
+        let source = r#"
+use std::io;
+use std::path::Path;
+
+fn main() {}
+"#;
+        let chunks = chunker().chunk(source, "rust", "main.rs");
+        let preamble = chunks.iter().find(|c| c.symbol_kind.as_deref() == Some("preamble"));
+        assert!(preamble.is_some(), "Should capture preamble (use statements)");
+        let preamble = preamble.unwrap();
+        assert!(preamble.content.contains("use std::io"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Python chunking
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_chunk_python_function() {
+        let source = r#"
+def greet(name):
+    print(f"Hello, {name}!")
+"#;
+        let chunks = chunker().chunk(source, "python", "greet.py");
+        assert!(!chunks.is_empty());
+        let fn_chunk = chunks.iter().find(|c| c.symbol_kind.as_deref() == Some("function_definition"));
+        assert!(fn_chunk.is_some(), "Should find function_definition");
+        assert_eq!(fn_chunk.unwrap().symbol_name.as_deref(), Some("greet"));
+    }
+
+    #[test]
+    fn test_chunk_python_class() {
+        let source = r#"
+class Dog:
+    def __init__(self, name):
+        self.name = name
+
+    def bark(self):
+        return "Woof!"
+"#;
+        let chunks = chunker().chunk(source, "python", "dog.py");
+        assert!(!chunks.is_empty());
+        let class_chunk = chunks.iter().find(|c| c.symbol_kind.as_deref() == Some("class_definition"));
+        assert!(class_chunk.is_some(), "Should find class_definition");
+        assert_eq!(class_chunk.unwrap().symbol_name.as_deref(), Some("Dog"));
+    }
+
+    // -----------------------------------------------------------------------
+    // TypeScript chunking
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_chunk_typescript_function() {
+        let source = r#"
+function add(a: number, b: number): number {
+    return a + b;
+}
+"#;
+        let chunks = chunker().chunk(source, "typescript", "math.ts");
+        assert!(!chunks.is_empty());
+        let fn_chunk = chunks.iter().find(|c| c.symbol_kind.as_deref() == Some("function_declaration"));
+        assert!(fn_chunk.is_some(), "Should find function_declaration");
+        assert_eq!(fn_chunk.unwrap().symbol_name.as_deref(), Some("add"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Fallback (unknown language)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_chunk_unknown_language_fallback() {
+        let source = "line1\nline2\nline3\nline4\nline5\n";
+        let chunks = chunker().chunk(source, "cobol", "legacy.cob");
+        assert!(!chunks.is_empty());
+        assert_eq!(chunks[0].symbol_kind.as_deref(), Some("block"));
+        assert_eq!(chunks[0].language, "cobol");
+    }
+
+    #[test]
+    fn test_chunk_empty_source() {
+        let chunks = chunker().chunk("", "rust", "empty.rs");
+        assert!(chunks.is_empty());
+    }
+
+    #[test]
+    fn test_chunk_large_file_line_fallback() {
+        // Generate >50 lines to test multi-chunk line splitting
+        let lines: Vec<String> = (0..120).map(|i| format!("// line {}", i)).collect();
+        let source = lines.join("\n");
+        let chunks = chunker().chunk(&source, "text", "big.txt");
+        assert!(chunks.len() >= 2, "Should split into multiple chunks, got {}", chunks.len());
+    }
+
+    // -----------------------------------------------------------------------
+    // Content hashing
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_chunk_content_hash() {
+        let source = "fn foo() {}\n";
+        let chunks = chunker().chunk(source, "rust", "foo.rs");
+        assert!(!chunks.is_empty());
+        for chunk in &chunks {
+            assert!(!chunk.content_hash.is_empty(), "Hash should be non-empty");
+            assert_eq!(chunk.content_hash.len(), 64, "Blake3 hex hash should be 64 chars");
+        }
+    }
+
+    #[test]
+    fn test_same_content_same_hash() {
+        let source = "fn foo() {}\n";
+        let chunks1 = chunker().chunk(source, "rust", "a.rs");
+        let chunks2 = chunker().chunk(source, "rust", "b.rs");
+        // Same content should produce same hash even with different file paths
+        let fn_chunks1: Vec<_> = chunks1.iter().filter(|c| c.symbol_kind.as_deref() == Some("function_item")).collect();
+        let fn_chunks2: Vec<_> = chunks2.iter().filter(|c| c.symbol_kind.as_deref() == Some("function_item")).collect();
+        if !fn_chunks1.is_empty() && !fn_chunks2.is_empty() {
+            assert_eq!(fn_chunks1[0].content_hash, fn_chunks2[0].content_hash);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Language detection helpers
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_get_tree_sitter_language() {
+        assert!(get_tree_sitter_language("rust").is_some());
+        assert!(get_tree_sitter_language("python").is_some());
+        assert!(get_tree_sitter_language("typescript").is_some());
+        assert!(get_tree_sitter_language("javascript").is_some());
+        assert!(get_tree_sitter_language("go").is_none());
+        assert!(get_tree_sitter_language("cobol").is_none());
+    }
+}

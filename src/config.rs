@@ -215,3 +215,100 @@ impl Default for Config {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn test_default_config() {
+        let config = Config::default();
+        assert_eq!(config.index.chunk_strategy, "ast");
+        assert_eq!(config.index.max_chunk_tokens, 512);
+        assert_eq!(config.index.languages.len(), 3);
+        assert!(config.graph.require_approval);
+        assert_eq!(config.eval.min_score, 0.85);
+        assert!(config.eval.fail_on_regression);
+        assert_eq!(config.serve.transport, "stdio");
+        assert_eq!(config.serve.host, "127.0.0.1");
+        assert_eq!(config.serve.port, 3100);
+    }
+
+    #[test]
+    fn test_load_nonexistent_file_returns_defaults() {
+        let config = Config::load(Path::new("/nonexistent/hief.toml")).unwrap();
+        assert_eq!(config.index.max_chunk_tokens, 512);
+        assert_eq!(config.serve.port, 3100);
+    }
+
+    #[test]
+    fn test_load_valid_toml() {
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        write!(
+            tmp,
+            r#"
+[hief]
+version = "0.1.0"
+
+[index]
+max_chunk_tokens = 1024
+languages = ["rust"]
+
+[serve]
+port = 8080
+"#
+        )
+        .unwrap();
+
+        let config = Config::load(tmp.path()).unwrap();
+        assert_eq!(config.index.max_chunk_tokens, 1024);
+        assert_eq!(config.index.languages, vec!["rust"]);
+        assert_eq!(config.serve.port, 8080);
+    }
+
+    #[test]
+    fn test_load_invalid_toml_returns_error() {
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        write!(tmp, "this is {{ not valid toml").unwrap();
+
+        let result = Config::load(tmp.path());
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("config error"), "got: {err}");
+    }
+
+    #[test]
+    fn test_write_default_and_reload() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("hief.toml");
+
+        Config::write_default(&path).unwrap();
+        assert!(path.exists());
+
+        let config = Config::load(&path).unwrap();
+        assert_eq!(config.index.chunk_strategy, "ast");
+        assert_eq!(config.serve.transport, "stdio");
+    }
+
+    #[test]
+    fn test_db_path() {
+        let root = Path::new("/tmp/project");
+        assert_eq!(Config::db_path(root), PathBuf::from("/tmp/project/.hief/hief.db"));
+    }
+
+    #[test]
+    fn test_hief_dir() {
+        let root = Path::new("/tmp/project");
+        assert_eq!(Config::hief_dir(root), PathBuf::from("/tmp/project/.hief"));
+    }
+
+    #[test]
+    fn test_config_serialization_roundtrip() {
+        let original = Config::default();
+        let toml_str = toml::to_string_pretty(&original).unwrap();
+        let deserialized: Config = toml::from_str(&toml_str).unwrap();
+        assert_eq!(deserialized.index.max_chunk_tokens, original.index.max_chunk_tokens);
+        assert_eq!(deserialized.serve.port, original.serve.port);
+    }
+}

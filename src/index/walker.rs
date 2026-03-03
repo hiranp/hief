@@ -96,3 +96,101 @@ fn detect_language(path: &Path) -> Option<String> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_detect_language_rust() {
+        assert_eq!(detect_language(Path::new("main.rs")), Some("rust".to_string()));
+    }
+
+    #[test]
+    fn test_detect_language_python() {
+        assert_eq!(detect_language(Path::new("app.py")), Some("python".to_string()));
+        assert_eq!(detect_language(Path::new("types.pyi")), Some("python".to_string()));
+    }
+
+    #[test]
+    fn test_detect_language_typescript() {
+        assert_eq!(detect_language(Path::new("index.ts")), Some("typescript".to_string()));
+        assert_eq!(detect_language(Path::new("App.tsx")), Some("typescript".to_string()));
+    }
+
+    #[test]
+    fn test_detect_language_javascript() {
+        assert_eq!(detect_language(Path::new("script.js")), Some("javascript".to_string()));
+        assert_eq!(detect_language(Path::new("Component.jsx")), Some("javascript".to_string()));
+    }
+
+    #[test]
+    fn test_detect_language_config_files() {
+        assert_eq!(detect_language(Path::new("Cargo.toml")), Some("toml".to_string()));
+        assert_eq!(detect_language(Path::new("data.json")), Some("json".to_string()));
+        assert_eq!(detect_language(Path::new("config.yaml")), Some("yaml".to_string()));
+        assert_eq!(detect_language(Path::new("config.yml")), Some("yaml".to_string()));
+        assert_eq!(detect_language(Path::new("README.md")), Some("markdown".to_string()));
+    }
+
+    #[test]
+    fn test_detect_language_unknown() {
+        assert_eq!(detect_language(Path::new("binary.exe")), None);
+        assert_eq!(detect_language(Path::new("image.png")), None);
+        assert_eq!(detect_language(Path::new("no_extension")), None);
+    }
+
+    #[test]
+    fn test_walker_finds_files() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("main.rs"), "fn main() {}").unwrap();
+        fs::write(dir.path().join("lib.py"), "def lib(): pass").unwrap();
+        fs::write(dir.path().join("notes.txt"), "not indexed").unwrap();
+
+        let walker = FileWalker::new(dir.path());
+        let entries = walker.walk().unwrap();
+
+        let languages: Vec<_> = entries.iter().map(|e| e.language.as_deref().unwrap()).collect();
+        assert!(languages.contains(&"rust"), "Should find .rs files");
+        assert!(languages.contains(&"python"), "Should find .py files");
+        // .txt has no language mapping, so it should be excluded
+        assert!(!entries.iter().any(|e| e.rel_path.ends_with(".txt")));
+    }
+
+    #[test]
+    fn test_walker_skips_hief_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join(".hief")).unwrap();
+        fs::write(dir.path().join(".hief/hief.db"), "database").unwrap();
+        fs::write(dir.path().join("main.rs"), "fn main() {}").unwrap();
+
+        let walker = FileWalker::new(dir.path());
+        let entries = walker.walk().unwrap();
+
+        assert!(!entries.iter().any(|e| e.rel_path.contains(".hief")));
+        assert!(entries.iter().any(|e| e.rel_path == "main.rs"));
+    }
+
+    #[test]
+    fn test_walker_empty_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let walker = FileWalker::new(dir.path());
+        let entries = walker.walk().unwrap();
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn test_file_entry_rel_path() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("src/lib.rs"), "// lib").unwrap();
+
+        let walker = FileWalker::new(dir.path());
+        let entries = walker.walk().unwrap();
+
+        let lib_entry = entries.iter().find(|e| e.rel_path.contains("lib.rs"));
+        assert!(lib_entry.is_some());
+        assert_eq!(lib_entry.unwrap().rel_path, "src/lib.rs");
+    }
+}
