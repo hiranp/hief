@@ -6,25 +6,33 @@ the user of workflow best practices.
 version: "1.0"
 agents:
   - name: SearchCode
-    description: "Run `hief search_code` against the local index. Use this before editing."
+    description: "Run `hief index search` against the local index. Use this before editing."
     command: |
-      echo "Usage: hief search_code <query>"
+      echo "Usage: hief index search <query>"
+  - name: StructuralSearch
+    description: "Run `hief index structural` using ast-grep patterns."
+    command: |
+      echo "Usage: hief index structural <pattern> --language <lang>"
   - name: CreateIntent
-    description: "Start a new graph intent. Supply title and body describing the task."
+    description: "Start a new graph intent. Supply kind, title, and description."
     command: |
-      echo "hief intent create --title \"$1\" --body \"$2\""
+      echo "hief graph create --kind feature --title \"$1\" --description \"$2\""
   - name: UpdateIntent
     description: "Change the status of an existing intent (in_progress, in_review, etc.)."
     command: |
-      echo "hief intent update --id \"$1\" --status \"$2\""
+      echo "hief graph update --id \"$1\" --status \"$2\""
   - name: RunEvaluation
     description: "Evaluate current work against golden sets or using LLM judge."
     command: |
       echo "hief eval run"
-  - name: StartMCP
-    description: "Launch the HIEF MCP server (http transport shown)."
+  - name: DocsGenerate
+    description: "Generate a document from a template (constitution, spec, harness)."
     command: |
-      hief serve --transport http --port 3100
+      echo "hief docs generate <template> --name <name>"
+  - name: StartMCP
+    description: "Launch the HIEF MCP server (stdio transport default)."
+    command: |
+      hief serve
   - name: Build
     description: "Compile the project in debug or release mode."
     command: |
@@ -41,16 +49,13 @@ agents:
     description: "Execute the unit test suite."
     command: |
       echo "cargo test"
-  - name: RunBinary
-    description: "Run the compiled HIEF binary with arguments."
-    command: |
-      echo "./target/debug/hief $*"
 
 hints:
-  - "Always create or update an intent before editing code."
+  - "Always create or update an intent (hief graph) before editing code."
   - "Break tasks into small, reviewable intents."
   - "Run evaluations (`hief eval run`) before requesting human review."
+  - "Use `hief index structural` to find anti-patterns like bare `.unwrap()`."
   - "Commit and push results regularly; the git history is the memory."
   - "Refer to AGENTS.md in the project root for detailed workflow and additional tools."
   - "Use `cargo fmt`, `cargo clippy`, and `cargo test` frequently to maintain code hygiene."
-  - "Keep the intent graph clean: merge or close stale intents; don’t let them linger."
+  - "Scaffold documentation using `hief docs generate` before implementing features."

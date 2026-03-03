@@ -8,83 +8,67 @@ ultimate goal is to serve as a low‑latency plugin for agents like Copilot, Cla
 Code, Windsurf, etc., enabling them to perform safe, auditable modifications in
 large, multi‑agent codebases.
 
-This document follows the AAIF AGENTS.md conventions and has been augmented with
-HIEF‑specific best practices so that any AI coding agent can read and act on them.
-
 ## Local MCP Server
 
-Start the host agent’s local MCP server before doing anything:
+Start the HIEF MCP server before doing anything:
 
 ```sh
-hief serve         # stdio transport
+hief serve         # stdio transport (default)
 hief serve --transport http --port 3100   # http transport
 ```
 
 Keep the server running in the background; agents connect here for all tooling operations.
 
-## Typical Workflow
+## Available MCP Tools
 
-### CLI Reference
+Agents should utilize these tools for context and task management:
 
-The host exposes a set of subcommands via the `hief` binary; agents can call these
-through the MCP interface. Common helpers include:
-
-```text
-hief search-code <query>        # full‑text/semantic search over indexed files
-hief intent create/update/list   # manage graph intents
-hief eval run/check              # run evaluation against golden sets
-hief harness <name>              # generate/run a temporary harness
-hief serve [--transport ...]     # start MCP server
-hief doctor [--fix] [--json]       # run health checks, auto-fixable
-hief hooks install|uninstall|status # manage git hooks for indexing/eval
-```
-
-Use `hief --help` for complete options.
+* `search_code`: Search indexed code using FTS5 (text/prefix search).
+* `structural_search`: Search code by AST structure using `ast-grep` patterns (e.g., `"$X.unwrap()"`).
+* `index_status`: Get statistics on indexed files and languages.
+* `create_intent`: Create a new task node in the intent graph.
+* `list_intents`: List intents filtered by status or kind.
+* `update_intent`: Update intent status (`in_progress`, `in_review`, etc.) or assignee.
+* `ready_intents`: Show intents whose dependencies are satisfied.
+* `run_evaluation`: Execute golden set evaluations.
+* `get_eval_scores`: Retrieve history for a golden set.
+* `get_project_context`: High-level overview of index stats and active intents.
+* `git_blame`: Get git authorship info for a file range.
 
 ## Typical Workflow
 
-1. **Search code**  
-   Use the `search_code` tool to find definitions, examples, or related logic before touching files.
-2. **Create an intent**  
-   Every change must begin with `hief intent create …`. The intent is a git‑tracked graph node that
-   captures the task description, status, and metadata.
-3. **Update intent status**  
-   * `in_progress` when you start working.  
-   * `in_review` when you believe the work is complete.  
-   * `approved`/`rejected` after human review.
-4. **Run evaluation**  
-   Before merging, run `hief eval run` or `hief eval check` to apply golden‑set criteria and LLM‑judged
-   style checks.
-5. **Commit & push**  
-   All intents, evaluation results, and agent memory live in git; make sure to commit frequently and
-   push.
+### 1. Discovery & Bootstrapping
+If no specs exist, use the "Bootstrap Strategy":
+1. Run `index_status` to assess project scale.
+2. Use `structural_search` and `search_code` to discover architecture and conventions.
+3. Run `hief docs init` (via CLI) to scaffold `docs/specs/` and `docs/harness/`.
+4. Generate core docs: `hief docs generate constitution`, `hief docs generate data-model`.
+
+### 2. Implementation Loop
+1. **Search code**: Use `search_code` and `structural_search` to find relevant logic.
+2. **Create intent**: Every change must begin with `create_intent`.
+3. **Update status**: Set to `in_progress` when starting work.
+4. **Develop & Verify**:
+   * Use `structural_search` for quality checks (e.g., finding bare `.unwrap()`).
+   * Run evaluations frequently via `run_evaluation`.
+5. **Request Review**: Set intent status to `in_review`.
 
 ## Best Practices
 
-* **Avoid spec drift.**  Update intents and documentation as you modify code; the graph tracker
-  prevents divergence.
-* **Zero‑latency context.**  Always rely on the local index (`hief search_code`) rather than remote
-  LLM calls for reference.
-* **Small, atomic intents.**  Break large features into bite‑sized nodes that can be reviewed
-  independently.
-* **Harness before merge.**  When adding new behavior, write a temporary harness (`hief harness …`)
-  and validate with LATS.
-* **Human sanity check.**  No agent is allowed to mark its own intent `approved`; a human reviewer
-  must intervene.
-* **Keep AGENTS.md current.**  Add any new tooling commands or workflow conventions here so
-  other agents can discover them programmatically.
-* **.hiefignore.**  Exclude generated artefacts and large binaries from indexing.
+* **Zero‑latency context.** Rely on the local index tools rather than remote LLM calls for reference.
+* **Structural Search vs. Text Search.** Use `structural_search` for finding code by *shape* (e.g., "all public functions with 3 arguments").
+* **Small, atomic intents.** Break large features into bite‑sized nodes.
+* **Inviolable Rules.** Refer to `docs/specs/constitution.md` for project rules.
+* **Harness before merge.** Validate complex behaviors with temporary harnesses (see `docs/harness/`).
+* **Human sanity check.** No agent is allowed to mark its own intent `approved`; a human reviewer must intervene.
+* **Keep AGENTS.md current.** Add any new tooling commands or workflow conventions here.
 
 ## Safety & Identity
 
 * Trust only signed requests to the MCP server.
-* Maintain an explicit `agents` section in your intents to record which model or instance made
-  changes.
-* Treat the local git repo as the single source of truth; replayable agent runs must always start
-  from a clean checkout.
+* Maintain an explicit `assigned_to` field in your intents.
+* The local git repo + `.hief/hief.db` is the single source of truth.
 
 ## VS Code Extension (optional)
 
-A companion extension (`vscode-hief/`) provides a graphical interface for the
-Kanban board, dashboard, search results, and hook status. It talks to `hief`
-via its JSON CLI output and can be installed locally for human reviewers.
+A companion extension (`vscode-hief/`) provides a graphical Kanban board, dashboard, and search results. It is highly recommended for human reviewers.

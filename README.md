@@ -1,7 +1,7 @@
 # HIEF
 
 Hybrid Intent‑Evaluation Framework (HIEF) is a Rust‑based sidecar tool designed
-for AI coding agents (e.g. Copilot, Claude Code) to provide **zero‑latency local
+for AI coding agents (e.g. Copilot, Claude Code, Cursor) to provide **zero‑latency local
 context**, **git‑backed intent graph tracking**, and **continuous evaluation**
 for complex, multi‑agent repositories.
 
@@ -12,15 +12,17 @@ research report (`docs/Strategic Architecture …`). Its high‑level goals are:
 2. Track agent tasks as git‑versioned graph intents instead of static markdown.
 3. Offer a portable MCP server exposing search, intent, and evaluation tools.
 4. Support high‑fidelity evaluation (golden sets, LLM judge) before human review.
+5. Scaffold SDD/HDD documentation (Constitution, Specs, Harnesses) from existing code.
 
-The architecture follows four sequential phases: **Index → Graph → Eval → CLI/MCP**
+The architecture follows four sequential phases: **Index → Graph → Eval → Docs → CLI/MCP**
 (see `docs/plan/00-overview.md` for details).
 
 ## Quick Start
 
-1. Install Rust (stable channel) and ensure `cargo` is on your PATH.
+1. Install Rust (stable channel, MSRV 1.85+) and ensure `cargo` is on your PATH.
 2. Run `cargo build` to compile the binary.
-3. Start the MCP server with `hief serve` and use the provided CLI tools.
+3. Initialize the project: `hief init`
+4. Start the MCP server: `hief serve`
 
 See `AGENTS.md` for workflow and agent instructions.
 
@@ -28,6 +30,7 @@ See `AGENTS.md` for workflow and agent instructions.
 
 - `docs/plan/` – implementation plan with phase descriptions
 - `docs/Strategic Architecture …` – research report and design rationale
+- `docs/sdd-hdd-guide.md` – guide for bootstrapping SDD/HDD on existing codebases
 
 ### Building & Testing
 
@@ -45,6 +48,10 @@ hief doctor --fix
 # manage git hooks for auto‑indexing and eval gating
 hief hooks install
 hief hooks status
+
+# search indexed code
+hief index search "query"
+hief index structural "$X.unwrap()" --language rust
 ```
 
 ```sh
