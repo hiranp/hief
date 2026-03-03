@@ -1,7 +1,7 @@
 //! Document scaffolding and template engine for SDD/HDD artifacts.
 //!
 //! Provides:
-//! - Variable-driven template substitution (`{{var_name}}` syntax)
+//! - MiniJinja-powered template rendering (`{{ var_name }}` Jinja2 syntax)
 //! - Embedded default templates with file-based override support
 //! - Auto-population of variables from config, git, and codebase index
 //! - Directory scaffolding for docs structure
@@ -11,36 +11,108 @@ pub mod templates;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use minijinja::{Environment, Value};
 use serde::Serialize;
 
 use crate::config::DocsConfig;
 use crate::errors::{HiefError, Result};
 
 // ---------------------------------------------------------------------------
-// Template engine
+// Template engine (powered by MiniJinja)
 // ---------------------------------------------------------------------------
 
-/// Substitutes `{{variable_name}}` placeholders in a template string.
+/// Renders a template string with variable substitution using MiniJinja.
 ///
-/// Variables that exist in the map are replaced; unresolved variables
-/// remain as `{{variable_name}}` placeholders for the user/agent to fill.
+/// Variables present in `variables` are substituted; unresolved variables
+/// remain as `{{variable_name}}` placeholders for the user/agent to fill in.
+///
+/// Falls back to simple string replacement if MiniJinja encounters a
+/// parsing error (e.g. malformed Jinja2 syntax in a template).
 pub fn render_template(template: &str, variables: &HashMap<String, String>) -> String {
+    match render_with_minijinja(template, variables) {
+        Ok(rendered) => rendered,
+        Err(e) => {
+            tracing::warn!("MiniJinja render failed, using fallback: {}", e);
+            render_fallback(template, variables)
+        }
+    }
+}
+
+/// Primary render path using MiniJinja.
+///
+/// 1. Compiles the template source.
+/// 2. Discovers all referenced variables via `undeclared_variables()`.
+/// 3. Builds a context where provided variables get their values and
+///    unresolved variables get `"{{var_name}}"` as their value (preserving
+///    the placeholder in the output).
+/// 4. Renders the template.
+fn render_with_minijinja(
+    template: &str,
+    variables: &HashMap<String, String>,
+) -> std::result::Result<String, minijinja::Error> {
+    let env = Environment::new();
+    let tmpl = env.template_from_str(template)?;
+
+    // Discover every variable referenced in the template AST
+    let all_vars = tmpl.undeclared_variables(true);
+
+    // Build context: user-supplied values + literal placeholder strings
+    // for anything the user didn't provide.
+    let mut context: HashMap<String, String> = HashMap::new();
+    for var_name in &all_vars {
+        if let Some(value) = variables.get(var_name.as_str()) {
+            context.insert(var_name.clone(), value.clone());
+        } else {
+            // Inject the placeholder string literally so it shows up in
+            // the rendered output for the user to fill in later.
+            context.insert(var_name.clone(), format!("{{{{{}}}}}", var_name));
+        }
+    }
+
+    let rendered = tmpl.render(Value::from_serialize(&context))?;
+    Ok(rendered)
+}
+
+/// Fallback renderer: simple `{{key}}` string replacement (no Jinja2
+/// features). Used when MiniJinja cannot parse the template source.
+fn render_fallback(template: &str, variables: &HashMap<String, String>) -> String {
     let mut result = template.to_string();
     for (key, value) in variables {
-        let placeholder = format!("{{{{{}}}}}", key); // produces {{key}}
+        let placeholder = format!("{{{{{}}}}}", key);
         result = result.replace(&placeholder, value);
     }
     result
 }
 
-/// Extracts all `{{variable_name}}` placeholders from a template string.
+/// Extracts all variable names referenced in a template.
+///
+/// Uses MiniJinja's AST analysis (`undeclared_variables`) for accurate
+/// parsing of Jinja2 syntax, falling back to a simple regex-like scan
+/// on parse error.
 pub fn extract_variables(template: &str) -> Vec<String> {
+    match extract_variables_jinja(template) {
+        Some(vars) => vars,
+        None => extract_variables_fallback(template),
+    }
+}
+
+/// Primary extraction path: compile with MiniJinja and query the AST.
+fn extract_variables_jinja(template: &str) -> Option<Vec<String>> {
+    let env = Environment::new();
+    let tmpl = env.template_from_str(template).ok()?;
+    let vars = tmpl.undeclared_variables(true);
+    let mut sorted: Vec<String> = vars.into_iter().collect();
+    sorted.sort();
+    Some(sorted)
+}
+
+/// Fallback extraction: scan for `{{var_name}}` patterns manually.
+fn extract_variables_fallback(template: &str) -> Vec<String> {
     let mut vars = Vec::new();
     let mut rest = template;
     while let Some(start) = rest.find("{{") {
         if let Some(end) = rest[start + 2..].find("}}") {
-            let var_name = &rest[start + 2..start + 2 + end];
-            // Only add valid variable names (alphanumeric + underscore)
+            let var_name = rest[start + 2..start + 2 + end].trim();
             if !var_name.is_empty()
                 && var_name
                     .chars()
@@ -59,8 +131,11 @@ pub fn extract_variables(template: &str) -> Vec<String> {
 }
 
 /// Count how many unresolved `{{variable}}` placeholders remain in rendered output.
+///
+/// Scans the rendered string for `{{...}}` patterns (the literal placeholders
+/// that were preserved during rendering for unresolved variables).
 pub fn count_unresolved(rendered: &str) -> usize {
-    extract_variables(rendered).len()
+    extract_variables_fallback(rendered).len()
 }
 
 // ---------------------------------------------------------------------------
@@ -706,5 +781,158 @@ mod tests {
 
         let report = check_docs_structure(root, &config);
         assert!(report.healthy); // dirs exist now
+    }
+
+    // -----------------------------------------------------------------------
+    // MiniJinja-specific tests — Jinja2 features beyond simple substitution
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_minijinja_conditionals() {
+        let template = "{% if has_api %}API: {{api_name}}{% else %}No API{% endif %}";
+        let mut vars = HashMap::new();
+        vars.insert("has_api".to_string(), "true".to_string());
+        vars.insert("api_name".to_string(), "search_code".to_string());
+
+        let result = render_template(template, &vars);
+        assert_eq!(result, "API: search_code");
+    }
+
+    #[test]
+    fn test_minijinja_conditionals_false_branch() {
+        // MiniJinja treats empty string as falsy
+        let template = "{% if has_api %}API: {{api_name}}{% else %}No API{% endif %}";
+        let mut vars = HashMap::new();
+        vars.insert("has_api".to_string(), "".to_string());
+
+        let result = render_template(template, &vars);
+        assert_eq!(result, "No API");
+    }
+
+    #[test]
+    fn test_minijinja_loops() {
+        let template = "Languages: {% for lang in languages %}{{lang}}{% if not loop.last %}, {% endif %}{% endfor %}";
+        // MiniJinja needs a list value; pass via render_with_minijinja directly
+        let env = Environment::new();
+        let tmpl = env.template_from_str(template).unwrap();
+        let ctx = minijinja::context! {
+            languages => vec!["rust", "python", "typescript"],
+        };
+        let result = tmpl.render(ctx).unwrap();
+        assert_eq!(result, "Languages: rust, python, typescript");
+    }
+
+    #[test]
+    fn test_minijinja_filters() {
+        let template = "Project: {{name|upper}}";
+        let mut vars = HashMap::new();
+        vars.insert("name".to_string(), "hief".to_string());
+
+        let result = render_template(template, &vars);
+        assert_eq!(result, "Project: HIEF");
+    }
+
+    #[test]
+    fn test_minijinja_default_filter() {
+        let template = "Author: {{author|default('unknown')}}";
+        let vars: HashMap<String, String> = HashMap::new();
+
+        // MiniJinja with default filter — the placeholder won't be preserved
+        // because `default()` explicitly handles undefined
+        let env = Environment::new();
+        let tmpl = env.template_from_str(template).unwrap();
+        let result = tmpl.render(Value::from_serialize(&vars)).unwrap();
+        assert_eq!(result, "Author: unknown");
+    }
+
+    #[test]
+    fn test_minijinja_whitespace_in_braces() {
+        // MiniJinja handles both {{ var }} and {{var}} identically
+        let template = "Hello {{ name }} and {{project}}!";
+        let mut vars = HashMap::new();
+        vars.insert("name".to_string(), "Alice".to_string());
+        vars.insert("project".to_string(), "HIEF".to_string());
+
+        let result = render_template(template, &vars);
+        assert_eq!(result, "Hello Alice and HIEF!");
+    }
+
+    #[test]
+    fn test_minijinja_renders_embedded_constitution() {
+        let content = templates::get_template_content("constitution").unwrap();
+        let mut vars = HashMap::new();
+        vars.insert("project_name".to_string(), "TestProject".to_string());
+
+        let result = render_template(content, &vars);
+        assert!(result.contains("# Project Constitution: TestProject"));
+        assert!(result.contains("**Name:** TestProject"));
+        // Unresolved vars should be preserved as placeholders
+        assert!(result.contains("{{purpose}}"));
+        assert!(result.contains("{{architecture}}"));
+    }
+
+    #[test]
+    fn test_minijinja_renders_embedded_spec() {
+        let content = templates::get_template_content("spec").unwrap();
+        let mut vars = HashMap::new();
+        vars.insert("feature".to_string(), "code-search".to_string());
+        vars.insert("id".to_string(), "abc123".to_string());
+        vars.insert("actor".to_string(), "developer".to_string());
+
+        let result = render_template(content, &vars);
+        assert!(result.contains("# Feature Spec: code-search"));
+        assert!(result.contains("**Intent:** hief-abc123"));
+        assert!(result.contains("**As a** developer"));
+        // Unresolved vars preserved
+        assert!(result.contains("{{action}}"));
+        assert!(result.contains("{{benefit}}"));
+    }
+
+    #[test]
+    fn test_minijinja_renders_embedded_golden() {
+        let content = templates::get_template_content("golden").unwrap();
+        let mut vars = HashMap::new();
+        vars.insert("name".to_string(), "quality-check".to_string());
+        vars.insert("description".to_string(), "Basic quality checks".to_string());
+
+        let result = render_template(content, &vars);
+        assert!(result.contains("name = \"quality-check\""));
+        assert!(result.contains("description = \"Basic quality checks\""));
+    }
+
+    #[test]
+    fn test_fallback_when_minijinja_fails() {
+        // Template with malformed Jinja2 syntax should fall back gracefully
+        let template = "Hello {{name}}! {% broken tag %}";
+        let mut vars = HashMap::new();
+        vars.insert("name".to_string(), "Alice".to_string());
+
+        let result = render_template(template, &vars);
+        // Fallback renderer does simple string replacement
+        assert!(result.contains("Hello Alice!"));
+    }
+
+    #[test]
+    fn test_extract_variables_from_all_templates() {
+        // Ensure extract_variables works on every embedded template
+        for meta in templates::TEMPLATES {
+            let content = templates::get_template_content(meta.id).unwrap();
+            let vars = extract_variables(content);
+            assert!(
+                !vars.is_empty(),
+                "Template '{}' should have at least one variable",
+                meta.id
+            );
+            // Every primary variable listed in meta should appear in the template
+            for &expected_var in meta.variables {
+                assert!(
+                    vars.contains(&expected_var.to_string()),
+                    "Template '{}' metadata lists variable '{}' but it wasn't found in template content. Found: {:?}",
+                    meta.id,
+                    expected_var,
+                    vars,
+                );
+            }
+        }
     }
 }
