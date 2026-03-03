@@ -15,6 +15,7 @@ pub enum HiefError {
     #[error("config error: {0}")]
     Config(String),
 
+    #[allow(dead_code)]
     #[error("config file not found: {0}")]
     ConfigNotFound(String),
 
@@ -25,6 +26,7 @@ pub enum HiefError {
     #[error("parse error in {file}: {message}")]
     ParseError { file: String, message: String },
 
+    #[allow(dead_code)]
     #[error("index not initialized — run `hief init` first")]
     IndexNotInitialized,
 
@@ -35,6 +37,7 @@ pub enum HiefError {
     #[error("invalid status transition: {from} → {to}")]
     InvalidTransition { from: String, to: String },
 
+    #[allow(dead_code)]
     #[error("cycle detected in intent graph: {0}")]
     CycleDetected(String),
 
@@ -58,6 +61,7 @@ pub enum HiefError {
     #[error("golden set parse error: {0}")]
     GoldenSetParse(String),
 
+    #[allow(dead_code)]
     #[error("evaluation failed: {0}")]
     EvalFailed(String),
 

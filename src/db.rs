@@ -2,7 +2,7 @@
 
 use libsql::{Builder, Connection};
 use std::path::Path;
-use tracing::{info, debug};
+use tracing::{debug, info};
 
 use crate::errors::{HiefError, Result};
 
@@ -29,9 +29,18 @@ impl Database {
 
         // Enable WAL mode and NORMAL synchronous for concurrent read/write safety and performance
         // Use query (not execute) because PRAGMA journal_mode returns a result row
-        let _ = conn.query("PRAGMA journal_mode=WAL", ()).await.map_err(HiefError::Database)?;
-        let _ = conn.execute("PRAGMA synchronous=NORMAL", ()).await.map_err(HiefError::Database)?;
-        let _ = conn.query("PRAGMA foreign_keys=ON", ()).await.map_err(HiefError::Database)?;
+        let _ = conn
+            .query("PRAGMA journal_mode=WAL", ())
+            .await
+            .map_err(HiefError::Database)?;
+        let _ = conn
+            .execute("PRAGMA synchronous=NORMAL", ())
+            .await
+            .map_err(HiefError::Database)?;
+        let _ = conn
+            .query("PRAGMA foreign_keys=ON", ())
+            .await
+            .map_err(HiefError::Database)?;
 
         let database = Self { conn };
         database.run_migrations().await?;
@@ -39,6 +48,7 @@ impl Database {
     }
 
     /// Open an in-memory database (for testing).
+    #[cfg(test)]
     pub async fn open_memory() -> Result<Self> {
         let db = Builder::new_local(":memory:")
             .build()
@@ -46,7 +56,9 @@ impl Database {
             .map_err(HiefError::Database)?;
 
         let conn = db.connect().map_err(HiefError::Database)?;
-        conn.execute("PRAGMA foreign_keys=ON", ()).await.map_err(HiefError::Database)?;
+        conn.execute("PRAGMA foreign_keys=ON", ())
+            .await
+            .map_err(HiefError::Database)?;
 
         let database = Self { conn };
         database.run_migrations().await?;
@@ -90,10 +102,7 @@ impl Database {
                     .map_err(|e| HiefError::Migration(format!("{}: {}", name, e)))?;
 
                 self.conn
-                    .execute(
-                        "INSERT INTO _migrations (name) VALUES (?1)",
-                        [*name],
-                    )
+                    .execute("INSERT INTO _migrations (name) VALUES (?1)", [*name])
                     .await
                     .map_err(HiefError::Database)?;
 
@@ -293,7 +302,10 @@ mod tests {
         // Search via FTS5
         let mut rows = db
             .conn()
-            .query("SELECT file_path FROM chunks_fts WHERE chunks_fts MATCH 'hello'", ())
+            .query(
+                "SELECT file_path FROM chunks_fts WHERE chunks_fts MATCH 'hello'",
+                (),
+            )
             .await
             .unwrap();
 
@@ -361,7 +373,10 @@ mod tests {
 
         let mut rows = db
             .conn()
-            .query("SELECT chunk_count FROM file_meta WHERE file_path = 'src/main.rs'", ())
+            .query(
+                "SELECT chunk_count FROM file_meta WHERE file_path = 'src/main.rs'",
+                (),
+            )
             .await
             .unwrap();
         let row = rows.next().await.unwrap().unwrap();
@@ -424,6 +439,9 @@ mod tests {
             )
             .await;
 
-        assert!(result.is_err(), "Foreign key constraint should prevent invalid references");
+        assert!(
+            result.is_err(),
+            "Foreign key constraint should prevent invalid references"
+        );
     }
 }

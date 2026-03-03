@@ -23,9 +23,11 @@ pub struct IntentWithDeps {
 }
 
 /// Valid intent kinds.
+#[allow(dead_code)]
 pub const VALID_KINDS: &[&str] = &["feature", "bug", "refactor", "spike", "test", "chore"];
 
 /// Valid intent statuses.
+#[allow(dead_code)]
 pub const VALID_STATUSES: &[&str] = &[
     "draft",
     "approved",
@@ -38,9 +40,11 @@ pub const VALID_STATUSES: &[&str] = &[
 ];
 
 /// Valid intent priorities.
+#[allow(dead_code)]
 pub const VALID_PRIORITIES: &[&str] = &["critical", "high", "medium", "low"];
 
 /// Valid edge kinds.
+#[allow(dead_code)]
 pub const VALID_EDGE_KINDS: &[&str] =
     &["depends_on", "blocks", "implements", "tests", "related_to"];
 

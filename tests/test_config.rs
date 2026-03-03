@@ -1,8 +1,5 @@
 //! Tests for configuration loading and defaults.
 
-use std::io::Write;
-use tempfile::NamedTempFile;
-
 // We test the config module via the public binary interface,
 // but since config is internal, we test it as an integration test
 // using the same logic.
@@ -43,8 +40,14 @@ host = "0.0.0.0"
 port = 8080
 "#;
     let config: toml::Value = toml::from_str(toml_str).unwrap();
-    assert_eq!(config["index"]["max_chunk_tokens"].as_integer().unwrap(), 1024);
-    assert_eq!(config["graph"]["require_approval"].as_bool().unwrap(), false);
+    assert_eq!(
+        config["index"]["max_chunk_tokens"].as_integer().unwrap(),
+        1024
+    );
+    assert_eq!(
+        config["graph"]["require_approval"].as_bool().unwrap(),
+        false
+    );
     assert_eq!(config["eval"]["min_score"].as_float().unwrap(), 0.90);
     assert_eq!(config["serve"]["port"].as_integer().unwrap(), 8080);
 }

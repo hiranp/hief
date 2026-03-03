@@ -27,16 +27,19 @@ impl SearchQuery {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_top_k(mut self, k: usize) -> Self {
         self.top_k = k;
         self
     }
 
+    #[allow(dead_code)]
     pub fn with_language(mut self, lang: impl Into<String>) -> Self {
         self.language = Some(lang.into());
         self
     }
 
+    #[allow(dead_code)]
     pub fn with_symbol_kind(mut self, kind: impl Into<String>) -> Self {
         self.symbol_kind = Some(kind.into());
         self
@@ -102,30 +105,23 @@ pub async fn search(db: &Database, query: &SearchQuery) -> Result<Vec<SearchResu
 
     // Execute with dynamic params
     let mut rows = match params.len() {
-        1 => {
-            conn.query(&sql, [params[0].as_str()])
-                .await
-                .map_err(HiefError::Database)?
-        }
-        2 => {
-            conn.query(&sql, [params[0].as_str(), params[1].as_str()])
-                .await
-                .map_err(HiefError::Database)?
-        }
-        3 => {
-            conn.query(
+        1 => conn
+            .query(&sql, [params[0].as_str()])
+            .await
+            .map_err(HiefError::Database)?,
+        2 => conn
+            .query(&sql, [params[0].as_str(), params[1].as_str()])
+            .await
+            .map_err(HiefError::Database)?,
+        3 => conn
+            .query(
                 &sql,
-                [
-                    params[0].as_str(),
-                    params[1].as_str(),
-                    params[2].as_str(),
-                ],
+                [params[0].as_str(), params[1].as_str(), params[2].as_str()],
             )
             .await
-            .map_err(HiefError::Database)?
-        }
-        4 => {
-            conn.query(
+            .map_err(HiefError::Database)?,
+        4 => conn
+            .query(
                 &sql,
                 [
                     params[0].as_str(),
@@ -135,8 +131,7 @@ pub async fn search(db: &Database, query: &SearchQuery) -> Result<Vec<SearchResu
                 ],
             )
             .await
-            .map_err(HiefError::Database)?
-        }
+            .map_err(HiefError::Database)?,
         _ => unreachable!(),
     };
 
@@ -168,16 +163,16 @@ pub async fn search(db: &Database, query: &SearchQuery) -> Result<Vec<SearchResu
         });
     }
 
-    debug!("Search returned {} results for '{}'", results.len(), query.text);
+    debug!(
+        "Search returned {} results for '{}'",
+        results.len(),
+        query.text
+    );
     Ok(results)
 }
 
 /// Git blame for a specific file range (on-demand, shells out to git).
-pub async fn git_blame_range(
-    file: &str,
-    start_line: u32,
-    end_line: u32,
-) -> Result<String> {
+pub async fn git_blame_range(file: &str, start_line: u32, end_line: u32) -> Result<String> {
     let output = tokio::process::Command::new("git")
         .args([
             "blame",

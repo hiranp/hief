@@ -38,11 +38,15 @@ pub struct BuildReport {
 }
 
 /// Build or update the code index incrementally.
-pub async fn build(db: &Database, project_root: &Path, config: &IndexConfig) -> Result<BuildReport> {
+pub async fn build(
+    db: &Database,
+    project_root: &Path,
+    config: &IndexConfig,
+) -> Result<BuildReport> {
     let start = std::time::Instant::now();
     let mut files_new = 0usize;
     let mut files_updated = 0usize;
-    let mut files_removed = 0usize;
+    let files_removed;
     let mut total_chunks = 0usize;
 
     let walker = FileWalker::new(project_root);
@@ -145,8 +149,13 @@ pub async fn status(db: &Database, project_root: &Path) -> Result<IndexStats> {
         .query("SELECT COUNT(*) FROM chunks", ())
         .await
         .map_err(crate::errors::HiefError::Database)?;
-    let total_chunks: usize = if let Some(row) = rows.next().await.map_err(crate::errors::HiefError::Database)? {
-        row.get::<i64>(0).map_err(crate::errors::HiefError::Database)? as usize
+    let total_chunks: usize = if let Some(row) = rows
+        .next()
+        .await
+        .map_err(crate::errors::HiefError::Database)?
+    {
+        row.get::<i64>(0)
+            .map_err(crate::errors::HiefError::Database)? as usize
     } else {
         0
     };
@@ -155,8 +164,13 @@ pub async fn status(db: &Database, project_root: &Path) -> Result<IndexStats> {
         .query("SELECT COUNT(*) FROM file_meta", ())
         .await
         .map_err(crate::errors::HiefError::Database)?;
-    let total_files: usize = if let Some(row) = rows.next().await.map_err(crate::errors::HiefError::Database)? {
-        row.get::<i64>(0).map_err(crate::errors::HiefError::Database)? as usize
+    let total_files: usize = if let Some(row) = rows
+        .next()
+        .await
+        .map_err(crate::errors::HiefError::Database)?
+    {
+        row.get::<i64>(0)
+            .map_err(crate::errors::HiefError::Database)? as usize
     } else {
         0
     };
@@ -169,20 +183,25 @@ pub async fn status(db: &Database, project_root: &Path) -> Result<IndexStats> {
         )
         .await
         .map_err(crate::errors::HiefError::Database)?;
-    while let Some(row) = rows.next().await.map_err(crate::errors::HiefError::Database)? {
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(crate::errors::HiefError::Database)?
+    {
         let lang: String = row.get(0).map_err(crate::errors::HiefError::Database)?;
         let count: i64 = row.get(1).map_err(crate::errors::HiefError::Database)?;
         languages.insert(lang, count as usize);
     }
 
     let mut rows = conn
-        .query(
-            "SELECT MAX(indexed_at) FROM file_meta",
-            (),
-        )
+        .query("SELECT MAX(indexed_at) FROM file_meta", ())
         .await
         .map_err(crate::errors::HiefError::Database)?;
-    let last_indexed: Option<i64> = if let Some(row) = rows.next().await.map_err(crate::errors::HiefError::Database)? {
+    let last_indexed: Option<i64> = if let Some(row) = rows
+        .next()
+        .await
+        .map_err(crate::errors::HiefError::Database)?
+    {
         row.get(0).ok()
     } else {
         None
@@ -190,9 +209,7 @@ pub async fn status(db: &Database, project_root: &Path) -> Result<IndexStats> {
 
     // Get DB file size
     let db_path = crate::config::Config::db_path(project_root);
-    let db_size_bytes = std::fs::metadata(&db_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let db_size_bytes = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
 
     Ok(IndexStats {
         total_files,
@@ -210,11 +227,20 @@ pub async fn status(db: &Database, project_root: &Path) -> Result<IndexStats> {
 async fn get_file_hash(db: &Database, file_path: &str) -> Result<Option<String>> {
     let mut rows = db
         .conn()
-        .query("SELECT content_hash FROM file_meta WHERE file_path = ?1", [file_path])
+        .query(
+            "SELECT content_hash FROM file_meta WHERE file_path = ?1",
+            [file_path],
+        )
         .await
         .map_err(crate::errors::HiefError::Database)?;
-    if let Some(row) = rows.next().await.map_err(crate::errors::HiefError::Database)? {
-        Ok(Some(row.get(0).map_err(crate::errors::HiefError::Database)?))
+    if let Some(row) = rows
+        .next()
+        .await
+        .map_err(crate::errors::HiefError::Database)?
+    {
+        Ok(Some(
+            row.get(0).map_err(crate::errors::HiefError::Database)?,
+        ))
     } else {
         Ok(None)
     }
@@ -229,8 +255,14 @@ async fn get_chunk_count(db: &Database, file_path: &str) -> Result<usize> {
         )
         .await
         .map_err(crate::errors::HiefError::Database)?;
-    if let Some(row) = rows.next().await.map_err(crate::errors::HiefError::Database)? {
-        Ok(row.get::<i64>(0).map_err(crate::errors::HiefError::Database)? as usize)
+    if let Some(row) = rows
+        .next()
+        .await
+        .map_err(crate::errors::HiefError::Database)?
+    {
+        Ok(row
+            .get::<i64>(0)
+            .map_err(crate::errors::HiefError::Database)? as usize)
     } else {
         Ok(0)
     }
@@ -293,7 +325,11 @@ async fn prune_deleted_files(db: &Database, seen_paths: &[String]) -> Result<usi
         .map_err(crate::errors::HiefError::Database)?;
 
     let mut to_delete = Vec::new();
-    while let Some(row) = rows.next().await.map_err(crate::errors::HiefError::Database)? {
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(crate::errors::HiefError::Database)?
+    {
         let path: String = row.get(0).map_err(crate::errors::HiefError::Database)?;
         if !seen_paths.contains(&path) {
             to_delete.push(path);
@@ -303,7 +339,10 @@ async fn prune_deleted_files(db: &Database, seen_paths: &[String]) -> Result<usi
     for path in &to_delete {
         delete_file_chunks(db, path).await?;
         db.conn()
-            .execute("DELETE FROM file_meta WHERE file_path = ?1", [path.as_str()])
+            .execute(
+                "DELETE FROM file_meta WHERE file_path = ?1",
+                [path.as_str()],
+            )
             .await
             .map_err(crate::errors::HiefError::Database)?;
     }

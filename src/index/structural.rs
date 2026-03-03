@@ -168,6 +168,7 @@ pub fn search(project_root: &Path, query: &StructuralQuery) -> Result<Vec<Struct
 }
 
 /// Perform a structural search on a single source string (for testing/in-memory use).
+#[allow(dead_code)]
 pub fn search_source(
     source: &str,
     pattern: &str,

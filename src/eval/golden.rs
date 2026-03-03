@@ -15,6 +15,7 @@ pub struct GoldenSet {
 #[derive(Debug, Clone, Deserialize)]
 pub struct GoldenMetadata {
     pub name: String,
+    #[allow(dead_code)]
     pub description: String,
 }
 
@@ -25,6 +26,7 @@ pub struct EvalCase {
     pub name: String,
     #[serde(default = "default_priority")]
     pub priority: String,
+    #[allow(dead_code)]
     pub intent: Option<String>,
     pub checks: EvalChecks,
 }
@@ -65,19 +67,15 @@ pub fn load_golden_sets(golden_dir: &Path, name: Option<&str>) -> Result<Vec<Gol
 
         // If filtering by name, check the stem
         if let Some(filter_name) = name {
-            let stem = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("");
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
             if stem != filter_name {
                 continue;
             }
         }
 
         let content = std::fs::read_to_string(&path)?;
-        let set: GoldenSet = toml::from_str(&content).map_err(|e| {
-            HiefError::GoldenSetParse(format!("{}: {}", path.display(), e))
-        })?;
+        let set: GoldenSet = toml::from_str(&content)
+            .map_err(|e| HiefError::GoldenSetParse(format!("{}: {}", path.display(), e)))?;
         sets.push(set);
     }
 
@@ -116,7 +114,6 @@ pub fn list_sets(golden_dir: &Path) -> Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
 
     fn write_golden_toml(dir: &Path, name: &str, content: &str) {
         let path = dir.join(format!("{}.toml", name));
@@ -152,7 +149,10 @@ file_patterns = ["*.rs"]
         assert_eq!(sets[0].cases.len(), 1);
         assert_eq!(sets[0].cases[0].id, "c1");
         assert_eq!(sets[0].cases[0].priority, "critical");
-        assert_eq!(sets[0].cases[0].checks.must_contain, vec!["Result<", "Error"]);
+        assert_eq!(
+            sets[0].cases[0].checks.must_contain,
+            vec!["Result<", "Error"]
+        );
         assert_eq!(sets[0].cases[0].checks.must_not_contain, vec!["unwrap()"]);
     }
 
@@ -222,8 +222,16 @@ must_contain = ["bar"]
     #[test]
     fn test_list_sets() {
         let dir = tempfile::tempdir().unwrap();
-        write_golden_toml(dir.path(), "alpha", "[metadata]\nname = \"a\"\ndescription = \"a\"\ncases = []");
-        write_golden_toml(dir.path(), "beta", "[metadata]\nname = \"b\"\ndescription = \"b\"\ncases = []");
+        write_golden_toml(
+            dir.path(),
+            "alpha",
+            "[metadata]\nname = \"a\"\ndescription = \"a\"\ncases = []",
+        );
+        write_golden_toml(
+            dir.path(),
+            "beta",
+            "[metadata]\nname = \"b\"\ndescription = \"b\"\ncases = []",
+        );
 
         let names = list_sets(dir.path()).unwrap();
         assert_eq!(names.len(), 2);

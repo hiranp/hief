@@ -14,7 +14,11 @@ pub struct IntentEdge {
 }
 
 impl IntentEdge {
-    pub fn new(from_id: impl Into<String>, to_id: impl Into<String>, kind: impl Into<String>) -> Self {
+    pub fn new(
+        from_id: impl Into<String>,
+        to_id: impl Into<String>,
+        kind: impl Into<String>,
+    ) -> Self {
         Self {
             from_id: from_id.into(),
             to_id: to_id.into(),
@@ -55,6 +59,7 @@ pub async fn insert(db: &Database, edge: &IntentEdge) -> Result<()> {
 }
 
 /// Remove an edge from the database.
+#[allow(dead_code)]
 pub async fn remove(db: &Database, edge: &IntentEdge) -> Result<()> {
     db.conn()
         .execute(
@@ -72,6 +77,7 @@ pub async fn remove(db: &Database, edge: &IntentEdge) -> Result<()> {
 }
 
 /// List all edges for a given intent (outgoing).
+#[allow(dead_code)]
 pub async fn list_outgoing(db: &Database, intent_id: &str) -> Result<Vec<IntentEdge>> {
     let mut rows = db
         .conn()
@@ -95,6 +101,7 @@ pub async fn list_outgoing(db: &Database, intent_id: &str) -> Result<Vec<IntentE
 }
 
 /// List all edges pointing to a given intent (incoming).
+#[allow(dead_code)]
 pub async fn list_incoming(db: &Database, intent_id: &str) -> Result<Vec<IntentEdge>> {
     let mut rows = db
         .conn()
