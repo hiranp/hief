@@ -138,6 +138,50 @@ pub async fn index_search(
     Ok(())
 }
 
+/// Structural search using ast-grep patterns.
+pub fn index_structural(
+    project_root: &Path,
+    pattern: &str,
+    language: &str,
+    top_k: usize,
+    json: bool,
+) -> Result<()> {
+    let query = crate::index::structural::StructuralQuery {
+        pattern: pattern.to_string(),
+        language: language.to_string(),
+        top_k,
+    };
+
+    let matches = crate::index::structural::search(project_root, &query)?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&matches).unwrap());
+    } else if matches.is_empty() {
+        println!("No structural matches found for pattern '{}' in {} files", pattern, language);
+    } else {
+        println!("Found {} structural matches for '{}':\n", matches.len(), pattern);
+        for (i, m) in matches.iter().enumerate() {
+            println!(
+                "  {}. {}:{}–{} (col {}–{})",
+                i + 1,
+                m.file_path,
+                m.start_line,
+                m.end_line,
+                m.start_col,
+                m.end_col,
+            );
+            println!("     Match: {}", m.matched_text.lines().next().unwrap_or(""));
+            // Show context (first 3 lines)
+            for line in m.context.lines().take(3) {
+                println!("     {}", line);
+            }
+            println!();
+        }
+    }
+
+    Ok(())
+}
+
 /// Show index statistics.
 pub async fn index_status(db: &Database, project_root: &Path, json: bool) -> Result<()> {
     let stats = crate::index::status(db, project_root).await?;

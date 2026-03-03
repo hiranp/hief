@@ -16,6 +16,7 @@ use crate::graph::edges::IntentEdge;
 use crate::graph::intent::Intent;
 use crate::index;
 use crate::index::search::SearchQuery;
+use crate::index::structural;
 
 /// The HIEF MCP server handler.
 #[derive(Clone)]
@@ -100,6 +101,16 @@ pub struct GitBlameParams {
     pub start_line: u32,
     /// End line (0-indexed)
     pub end_line: u32,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct StructuralSearchParams {
+    /// ast-grep pattern (e.g., "$X.unwrap()", "fn $NAME($$$) { $$$BODY }")
+    pub pattern: String,
+    /// Programming language: rust, python, typescript, javascript
+    pub language: String,
+    /// Max results to return (default: 50)
+    pub top_k: Option<usize>,
 }
 
 #[tool_router]
@@ -307,6 +318,25 @@ impl HiefServer {
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         Ok(Json(result))
+    }
+
+    #[tool(
+        name = "structural_search",
+        description = "Search code by AST structure using ast-grep patterns. Finds code matching structural patterns like '$X.unwrap()', 'fn $NAME($$$) { $$$BODY }', or 'if let Err($E) = $EXPR { $$$BODY }'. Use $ for single-node meta-variables and $$$ for variadic (multi-node) meta-variables."
+    )]
+    async fn structural_search(
+        &self,
+        Parameters(params): Parameters<StructuralSearchParams>,
+    ) -> Result<Json<String>, ErrorData> {
+        let mut query = structural::StructuralQuery::new(&params.pattern, &params.language);
+        query.top_k = params.top_k.unwrap_or(50);
+
+        let results = structural::search(&self.project_root, &query)
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
+        let json = serde_json::to_string_pretty(&results)
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        Ok(Json(json))
     }
 }
 

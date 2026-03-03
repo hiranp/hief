@@ -43,6 +43,12 @@ tree-sitter-rust = "0.23"
 tree-sitter-python = "0.23"
 tree-sitter-typescript = "0.23"
 
+# Structural search (ast-grep pattern matching)
+ast-grep-core = "0.35"
+
+# CRDT for multi-agent coordination
+automerge = "0.5"
+
 # MCP server
 rmcp = { version = "0.17", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
 axum = "0.8"

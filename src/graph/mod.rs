@@ -1,5 +1,6 @@
 //! Intent graph: SQL-based task dependency tracking.
 
+pub mod crdt;
 pub mod edges;
 pub mod intent;
 pub mod query;

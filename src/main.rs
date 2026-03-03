@@ -93,6 +93,19 @@ async fn run(cli: Cli, project_root: PathBuf) -> anyhow::Result<()> {
                     )
                     .await?;
                 }
+                IndexCmd::Structural {
+                    pattern,
+                    language,
+                    top_k,
+                } => {
+                    cli::commands::index_structural(
+                        &project_root,
+                        &pattern,
+                        &language,
+                        top_k,
+                        json,
+                    )?;
+                }
                 IndexCmd::Status => {
                     cli::commands::index_status(&db, &project_root, json).await?;
                 }

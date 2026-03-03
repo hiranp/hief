@@ -82,6 +82,17 @@ pub enum IndexCmd {
         #[arg(long)]
         kind: Option<String>,
     },
+    /// Structural search using ast-grep patterns (e.g., "$FUNC.unwrap()")
+    Structural {
+        /// ast-grep pattern (use $ for meta-variables: $X.unwrap(), fn $NAME($$$))
+        pattern: String,
+        /// Programming language (rust, python, typescript)
+        #[arg(short, long)]
+        language: String,
+        /// Maximum number of results
+        #[arg(short = 'k', long, default_value = "50")]
+        top_k: usize,
+    },
     /// Show index statistics
     Status,
 }
