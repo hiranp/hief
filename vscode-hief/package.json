@@ -16,7 +16,9 @@
     "Other"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onView:hief.intentsPanel",
+    "onView:hief.dashboardPanel"
   ],
   "main": "./dist/extension.js",
   "icon": "media/hief-icon.png",
@@ -72,7 +74,7 @@
         {
           "id": "hief",
           "title": "HIEF",
-          "icon": "media/hief-icon.png"
+          "icon": "media/hief-sidebar.svg"
         }
       ]
     },
@@ -81,12 +83,14 @@
         {
           "type": "webview",
           "id": "hief.intentsPanel",
-          "name": "Intents"
+          "name": "Intents",
+          "icon": "$(list-unordered)"
         },
         {
           "type": "webview",
           "id": "hief.dashboardPanel",
-          "name": "Dashboard"
+          "name": "Dashboard",
+          "icon": "$(dashboard)"
         }
       ]
     },
