@@ -8,6 +8,7 @@
 mod cli;
 mod config;
 mod db;
+mod docs;
 mod errors;
 mod eval;
 mod graph;
@@ -20,7 +21,7 @@ use std::process;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-use cli::{Cli, Commands, EvalCmd, GoldenCmd, GraphCmd, HooksCmd, IndexCmd};
+use cli::{Cli, Commands, DocsCmd, EvalCmd, GoldenCmd, GraphCmd, HooksCmd, IndexCmd};
 use config::Config;
 use db::Database;
 
@@ -213,6 +214,48 @@ async fn run(cli: Cli, project_root: PathBuf) -> anyhow::Result<()> {
                 }
                 HooksCmd::Status => {
                     cli::commands::hooks_status(&project_root, json)?;
+                }
+            }
+        }
+
+        Commands::Docs(cmd) => {
+            let config = Config::load(&config_path)?;
+
+            match cmd {
+                DocsCmd::Init => {
+                    cli::commands::docs_init(&project_root, &config, json)?;
+                }
+                DocsCmd::Generate {
+                    template,
+                    name,
+                    id,
+                    output,
+                    vars,
+                    auto_populate,
+                    force,
+                } => {
+                    cli::commands::docs_generate(
+                        &project_root,
+                        &config,
+                        &template,
+                        name.as_deref(),
+                        id.as_deref(),
+                        output.as_deref(),
+                        &vars,
+                        auto_populate,
+                        force,
+                        json,
+                    )
+                    .await?;
+                }
+                DocsCmd::List => {
+                    cli::commands::docs_list(json)?;
+                }
+                DocsCmd::Check => {
+                    cli::commands::docs_check(&project_root, &config, json)?;
+                }
+                DocsCmd::Variables { template } => {
+                    cli::commands::docs_variables(&template, json)?;
                 }
             }
         }

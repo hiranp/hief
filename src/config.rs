@@ -17,6 +17,8 @@ pub struct Config {
     pub eval: EvalConfig,
     #[serde(default)]
     pub serve: ServeConfig,
+    #[serde(default)]
+    pub docs: DocsConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -166,6 +168,38 @@ fn default_port() -> u16 {
     3100
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocsConfig {
+    #[serde(default = "default_docs_path")]
+    pub docs_path: String,
+    #[serde(default = "default_specs_path")]
+    pub specs_path: String,
+    #[serde(default = "default_harness_path")]
+    pub harness_path: String,
+}
+
+impl Default for DocsConfig {
+    fn default() -> Self {
+        Self {
+            docs_path: default_docs_path(),
+            specs_path: default_specs_path(),
+            harness_path: default_harness_path(),
+        }
+    }
+}
+
+fn default_docs_path() -> String {
+    "docs".to_string()
+}
+
+fn default_specs_path() -> String {
+    "docs/specs".to_string()
+}
+
+fn default_harness_path() -> String {
+    "docs/harness".to_string()
+}
+
 impl Config {
     /// Load config from a file path. Falls back to defaults if file doesn't exist.
     pub fn load(path: &Path) -> Result<Self> {
@@ -212,6 +246,7 @@ impl Default for Config {
             graph: GraphConfig::default(),
             eval: EvalConfig::default(),
             serve: ServeConfig::default(),
+            docs: DocsConfig::default(),
         }
     }
 }

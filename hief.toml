@@ -28,3 +28,8 @@ fail_on_regression = true
 transport = "stdio"         # stdio | http
 host = "127.0.0.1"
 port = 3100                 # only used for http transport
+
+[docs]
+docs_path = "docs"              # Root directory for generated docs
+specs_path = "docs/specs"       # Feature specs and constitution
+harness_path = "docs/harness"   # Harness specs and playbooks

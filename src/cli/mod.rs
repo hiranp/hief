@@ -57,6 +57,10 @@ pub enum Commands {
     #[command(subcommand)]
     Hooks(HooksCmd),
 
+    /// Document scaffolding and template operations
+    #[command(subcommand)]
+    Docs(DocsCmd),
+
     /// Start the MCP server
     Serve(ServeArgs),
 
@@ -186,6 +190,44 @@ pub enum HooksCmd {
     Uninstall,
     /// Show current hook status
     Status,
+}
+
+#[derive(Subcommand)]
+pub enum DocsCmd {
+    /// Scaffold docs directory structure (docs/specs/, docs/harness/, .hief/templates/)
+    Init,
+    /// Generate a document from a template
+    Generate {
+        /// Template to generate: constitution, spec, data-model, harness, playbook, golden
+        template: String,
+        /// Name for the feature/scenario/golden set (used in filename and variables)
+        #[arg(short, long)]
+        name: Option<String>,
+        /// Intent ID to link (sets {{id}} variable)
+        #[arg(long)]
+        id: Option<String>,
+        /// Output file path (overrides default)
+        #[arg(short, long)]
+        output: Option<String>,
+        /// Additional variable overrides in KEY=VALUE format (repeatable)
+        #[arg(long = "var", value_name = "KEY=VALUE")]
+        vars: Vec<String>,
+        /// Auto-populate variables from the code index
+        #[arg(long)]
+        auto_populate: bool,
+        /// Overwrite existing file without prompting
+        #[arg(long)]
+        force: bool,
+    },
+    /// List available templates
+    List,
+    /// Check docs directory structure and completeness
+    Check,
+    /// Show variables for a specific template
+    Variables {
+        /// Template ID to inspect
+        template: String,
+    },
 }
 
 #[derive(clap::Args)]
