@@ -2,8 +2,8 @@
 
 ## Identity
 - **Name:** hief
-- **Purpose:** {{purpose}}
-- **Architecture:** {{architecture}}
+- **Purpose:** Provide a hybrid intent‑evaluation framework for AI‑assisted software development. The CLI/indexing sidecar offers zero‑latency context search, a git‑backed intent graph, and golden‑set evaluation tooling so that multiple agents can collaborate safely and audibly.
+- **Architecture:** A Rust monorepo with distinct modules for indexing, graph management, evaluation, and CLI; a lightweight MCP server exposing tools; SQLite backing storage; and an optional VS Code extension for human interaction.
 
 ## Inviolable Rules
 
@@ -14,10 +14,10 @@
 - [ ] No `unsafe` blocks without documented safety invariants
 
 ### Architecture
-- [ ] {{arch_rule_1}}
-- [ ] {{arch_rule_2}}
-- [ ] {{arch_rule_3}}
-- [ ] {{arch_rule_4}}
+- [ ] All core logic lives in reusable crates (`index`, `graph`, `eval`, `mcp`); CLI is a thin wrapper.
+- [ ] No business logic may depend on a network call or external service; offline operation is mandatory.
+- [ ] Sidecar components must be deterministic and testable with harnesses under `docs/harness`.
+- [ ] Intent graph updates are solely via the MCP tools and recorded in git history.
 
 ### Dependencies
 - [ ] Minimize dependency count; prefer stdlib + established crates
@@ -30,10 +30,10 @@
 - [ ] Golden set regressions block merge
 
 ## Anti-Patterns (Never Do This)
-- {{anti_pattern_1}}
-- {{anti_pattern_2}}
-- {{anti_pattern_3}}
-- {{anti_pattern_4}}
+- Shipping features without a corresponding intent node and harness.
+- Letting an agent approve its own changes or merge code without human review.
+- Introducing global mutable state or singletons that break determinism.
+- Relying on unpinned, unstable external crates for parsing or codegen.
 
 ---
 
