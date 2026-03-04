@@ -42,6 +42,8 @@ hief docs generate golden --name <set-name>
 
 The CLI will refuse to emit output until a name is supplied, and doctor will warn if the directory is empty, since no evaluation can run without at least one `.toml` file there.
 
+Patterns inside golden cases may include punctuation (e.g. `.unwrap()`, `::`, `->`) — the evaluation engine does a literal substring search so you don’t need to escape anything.  This avoids occasional FTS5 syntax errors that occur with raw MATCH queries.
+
 Existing golden sets may be listed via `hief eval golden list` or with `hief doctor`.
 
 
