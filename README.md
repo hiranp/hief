@@ -1,97 +1,122 @@
-# HIEF
+# HIEF — Persistent Memory Layer for AI Coding Agents
 
-Hybrid Intent‑Evaluation Framework (HIEF) is a Rust‑based sidecar tool designed
-for AI coding agents (e.g. Copilot, Claude Code, Cursor) to provide **zero‑latency local
-context**, **git‑backed intent graph tracking**, and **continuous evaluation**
-for complex, multi‑agent repositories.
+HIEF is a local-first MCP server that gives AI coding agents **persistent,
+searchable codebase context**, **lightweight task coordination**, and
+**automated quality evaluation** — all from a single Rust binary with zero
+external services.
 
-HIEF implements the design outlined in `docs/plan/` and the accompanying
-research report (`docs/Strategic Architecture …`). Its high‑level goals are:
+HIEF is a **sidecar**, not an agent. It does not contain an LLM, does not
+execute code, and does not make decisions. The host agent (Claude Code, Cursor,
+Copilot, Windsurf, Goose, etc.) provides reasoning. HIEF provides memory.
 
-1. Provide a local, tree‑sitter/SQLite index of the current working tree.
-2. Track agent tasks as git‑versioned graph intents instead of static markdown.
-3. Offer a portable MCP server exposing search, intent, and evaluation tools.
-4. Support high‑fidelity evaluation (golden sets, LLM judge) before human review.
-5. Scaffold SDD/HDD documentation (Constitution, Specs, Harnesses) from existing code.
+## Three Capabilities
 
-The architecture follows four sequential phases: **Index → Graph → Eval → Docs → CLI/MCP**
-(see `docs/plan/00-overview.md` for details).
+| Capability | What it solves | Status |
+|-----------|---------------|--------|
+| **Index** | Agents don't know what code exists | ✅ AST-aware chunking, FTS5 keyword search, ast-grep structural search |
+| **Intents** | Multiple agents don't know who's doing what | ✅ DAG-based task graph with status workflow and provenance |
+| **Eval** | No systematic way to catch quality regressions | ✅ Golden-set criteria, score history, CI integration |
 
 ## Quick Start
 
-1. Install Rust (stable channel, MSRV 1.85+) and ensure `cargo` is on your PATH.
-2. Run `cargo build` to compile the binary.
-3. Initialize the project: `hief init`
-4. Start the MCP server: `hief serve`
-
-See `AGENTS.md` for workflow and agent instructions.
-
-### Documentation
-
-- `docs/plan/` – implementation plan with phase descriptions
-- `docs/Strategic Architecture …` – research report and design rationale
-- `docs/sdd-hdd-guide.md` – guide for bootstrapping SDD/HDD on existing codebases
-
-### Golden sets
-
-Golden evaluation cases live under the project root in `.hief/golden/` by default.  Create a new template with:
-
 ```sh
-hief docs generate golden --name <set-name>
-```
-
-The CLI will refuse to emit output until a name is supplied, and doctor will warn if the directory is empty, since no evaluation can run without at least one `.toml` file there.
-
-Patterns inside golden cases may include punctuation (e.g. `.unwrap()`, `::`, `->`) — the evaluation engine does a literal substring search so you don’t need to escape anything.  This avoids occasional FTS5 syntax errors that occur with raw MATCH queries.
-
-Existing golden sets may be listed via `hief eval golden list` or with `hief doctor`.
-
-
-
-### Building & Testing
-
-```sh
-# compile release binary
+# Install Rust (stable, MSRV 1.85+)
 cargo build --release
+
+# Initialize in your project
+hief init
+
+# Build the code index
+hief index build
+
+# Start the MCP server (agents connect here)
+hief serve
 ```
 
-#### Useful commands
+## How Agents Use HIEF
+
+HIEF exposes MCP tools that any compatible agent can call:
+
+| Tool | Purpose |
+|------|---------|
+| `search_code` | Keyword search over indexed code chunks |
+| `structural_search` | AST pattern matching (e.g., `$X.unwrap()`) |
+| `semantic_search` | Vector similarity search *(building)* |
+| `get_project_context` | Index stats + active intents + health |
+| `get_conventions` | Machine-readable project rules |
+| `get_project_health` | Eval scores, regressions, warnings |
+| `create_intent` | Create a task in the dependency graph |
+| `list_intents` | List intents by status/kind |
+| `update_intent` | Update status or assignment |
+| `ready_intents` | Show intents ready for work |
+| `run_evaluation` | Run golden set quality checks |
+| `get_eval_scores` | Score history for a golden set |
+| `git_blame` | Git authorship for a file range |
+
+See [Agent Interaction Protocol](docs/agent-protocol.md) for the complete
+session lifecycle and search strategy guide.
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Architecture](docs/architecture.md) | How HIEF works — capabilities, storage, MCP interface |
+| [Agent Protocol](docs/agent-protocol.md) | When and how agents interact with HIEF |
+| [Constitution](docs/specs/constitution.md) | Inviolable project rules |
+| [Conventions](/.hief/conventions.toml) | Machine-readable code rules |
+| [Development Plan](docs/plan/00-overview.md) | Implementation phases and timeline |
+
+## Project Layout
+
+```
+.hief/
+├── hief.db              # libsql database (all relational data)
+├── vectors/             # LanceDB directory (semantic embeddings)
+└── conventions.toml     # Machine-readable project rules
+
+golden/
+└── *.toml              # Golden set evaluation criteria
+
+src/
+├── index/              # AST-aware code indexing + search
+├── graph/              # Intent dependency graph
+├── eval/               # Golden set evaluation engine
+├── mcp/                # MCP server (tools + resources)
+├── cli/                # CLI commands
+└── docs/               # Doc scaffolding engine
+
+hief.toml               # Project configuration
+```
+
+## Building & Testing
 
 ```sh
-# project health checker (auto‑fix with --fix)
-hief doctor --fix
-
-# manage git hooks for auto‑indexing and eval gating
-hief hooks install
-hief hooks status
-
-# search indexed code
-hief index search "query"
-hief index structural "$X.unwrap()" --language rust
+cargo build --release       # compile release binary
+cargo test                  # run unit tests
+cargo fmt -- --check        # format check
+cargo clippy --all-targets  # lint
 ```
+
+## Useful Commands
 
 ```sh
-# format & lint
-cargo fmt -- --check
-cargo clippy --all-targets --all-features -- -D warnings
-
-# run unit tests
-cargo test
+hief doctor --fix           # health check + auto-fix
+hief hooks install          # git hooks for auto-indexing
+hief index search "query"   # search indexed code
+hief index structural '$X.unwrap()' --language rust
+hief eval run               # run golden set evaluation
+hief eval report            # show eval score history
 ```
 
-Pull requests should follow the contributing guidelines in `CONTRIBUTING.md`.
+## VS Code Extension
 
-### VS Code Extension
-
-A companion Visual Studio Code extension lives in the `vscode-hief/` directory. It
-provides a Kanban board, intent list panel, dashboard (including doctor status),
-code search view, and hooks evaluation. Build it using:
+A companion extension lives in `vscode-hief/`. It provides a Kanban board,
+intent list, dashboard, and code search view.
 
 ```sh
-cd vscode-hief
-npm install
-npm run build
+cd vscode-hief && npm install && npm run build
 ```
 
-The extension communicates with the `hief` CLI via `--json` output; TypeScript
-types in `src/backend/types.ts` mirror the Rust data structures.
+## License
+
+MIT OR Apache-2.0

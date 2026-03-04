@@ -3,6 +3,7 @@
 pub mod chunker;
 pub mod search;
 pub mod structural;
+pub mod vectors;
 pub mod walker;
 
 use std::collections::HashMap;

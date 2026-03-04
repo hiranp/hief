@@ -17,6 +17,7 @@ use crate::graph::intent::Intent;
 use crate::index;
 use crate::index::search::SearchQuery;
 use crate::index::structural;
+use super::resources;
 
 /// The HIEF MCP server handler.
 #[derive(Clone)]
@@ -111,6 +112,16 @@ pub struct StructuralSearchParams {
     pub language: String,
     /// Max results to return (default: 50)
     pub top_k: Option<usize>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct SemanticSearchParams {
+    /// Natural language query (e.g., "authentication and authorization logic")
+    pub query: String,
+    /// Max results to return (default: 10)
+    pub top_k: Option<usize>,
+    /// Filter by programming language
+    pub language: Option<String>,
 }
 
 #[tool_router]
@@ -338,6 +349,67 @@ impl HiefServer {
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         Ok(Json(json))
     }
+
+    #[tool(
+        name = "semantic_search",
+        description = "Search code by meaning using vector similarity. Find code related to a concept even when exact keywords don't appear in the source. Requires vector index to be enabled and built. Returns matching chunks ranked by semantic similarity."
+    )]
+    async fn semantic_search(
+        &self,
+        Parameters(params): Parameters<SemanticSearchParams>,
+    ) -> Result<Json<String>, ErrorData> {
+        let config = Config::load(&self.project_root.join("hief.toml"))
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
+        if !config.vectors.enabled {
+            return Err(ErrorData::internal_error(
+                "Semantic search is not enabled. Set vectors.enabled = true in hief.toml and rebuild the index.".to_string(),
+                None,
+            ));
+        }
+
+        // TODO: Generate query embedding via host agent callback or local model
+        // For now, return a helpful message indicating the feature is being built
+        let response = serde_json::json!({
+            "status": "not_yet_available",
+            "message": "Semantic search is enabled in config but the LanceDB integration is still being built. Use search_code (keyword) or structural_search (AST pattern) in the meantime.",
+            "query": params.query,
+        });
+
+        let json = serde_json::to_string_pretty(&response)
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        Ok(Json(json))
+    }
+
+    #[tool(
+        name = "get_conventions",
+        description = "Get the project's machine-readable conventions from .hief/conventions.toml. Returns rules that the agent should follow when writing code, including check patterns, scopes, and severity levels."
+    )]
+    async fn get_conventions(&self) -> Result<Json<String>, ErrorData> {
+        let conventions = resources::get_project_conventions(&self.project_root)
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
+        let json = serde_json::to_string_pretty(&conventions)
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        Ok(Json(json))
+    }
+
+    #[tool(
+        name = "get_project_health",
+        description = "Get project health: latest eval scores, regressions, and warnings. Use this to check if the codebase is in good shape before starting work."
+    )]
+    async fn get_project_health(&self) -> Result<Json<String>, ErrorData> {
+        let config = Config::load(&self.project_root.join("hief.toml"))
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
+        let health = resources::get_project_health(&self.db, &self.project_root, &config)
+            .await
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
+        let json = serde_json::to_string_pretty(&health)
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        Ok(Json(json))
+    }
 }
 
 /// Implement ServerHandler for the HIEF MCP server.
@@ -351,8 +423,12 @@ impl ServerHandler for HiefServer {
                 .build(),
             server_info: Implementation::from_build_env(),
             instructions: Some(
-                "HIEF (Hybrid Intent-Evaluation Framework) provides code indexing, \
-                 intent tracking, and evaluation scoring for AI coding agents."
+                "HIEF is a persistent memory layer for AI coding agents. It provides: \
+                 (1) AST-aware code search (keyword, structural, semantic), \
+                 (2) lightweight intent graph for task coordination, \
+                 (3) golden-set evaluation for quality guardrails. \
+                 Start each session by calling get_project_context and get_conventions. \
+                 See docs/agent-protocol.md for the full interaction protocol."
                     .to_string(),
             ),
         }

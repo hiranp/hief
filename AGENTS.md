@@ -1,12 +1,11 @@
 # AGENTS.md
 
-**Project:** Hybrid Intent‑Evaluation Framework (HIEF)
+**Project:** HIEF — Persistent Memory Layer for AI Coding Agents
 
-This repository implements a Rust sidecar that provides local context indexing,
-a git‑backed intent graph, and evaluation tooling for AI‑assisted development. The
-ultimate goal is to serve as a low‑latency plugin for agents like Copilot, Claude
-Code, Windsurf, etc., enabling them to perform safe, auditable modifications in
-large, multi‑agent codebases.
+HIEF is a local-first MCP server that provides persistent codebase context,
+lightweight task coordination, and automated quality evaluation. It is a
+**sidecar** — it has no LLM, doesn't execute code, and doesn't make decisions.
+The host agent provides reasoning; HIEF provides memory.
 
 ## Local MCP Server
 
@@ -17,77 +16,99 @@ hief serve         # stdio transport (default)
 hief serve --transport http --port 3100   # http transport
 ```
 
-Keep the server running in the background; agents connect here for all tooling operations.
+Keep the server running; agents connect here for all tooling operations.
 
 ## Available MCP Tools
 
-Agents should utilize these tools for context and task management:
+### Search (Context Retrieval)
+* `search_code`: Keyword search over indexed code (FTS5 syntax).
+* `structural_search`: AST pattern matching via ast-grep (e.g., `"$X.unwrap()"`).
+* `semantic_search`: Vector similarity search — find code by meaning *(building)*.
+* `index_status`: Index statistics (file count, languages, health).
+* `git_blame`: Git authorship info for a file range.
 
-* `search_code`: Search indexed code using FTS5 (text/prefix search).
-* `structural_search`: Search code by AST structure using `ast-grep` patterns (e.g., `"$X.unwrap()"`).
-* `index_status`: Get statistics on indexed files and languages.
-* `create_intent`: Create a new task node in the intent graph.
+### Intents (Task Coordination)
+* `create_intent`: Create a task in the dependency graph.
 * `list_intents`: List intents filtered by status or kind.
-* `update_intent`: Update intent status (`in_progress`, `in_review`, etc.) or assignee.
+* `update_intent`: Update intent status or assignee.
 * `ready_intents`: Show intents whose dependencies are satisfied.
-* `run_evaluation`: Execute golden set evaluations.
-* `get_eval_scores`: Retrieve history for a golden set.
-* `get_project_context`: High-level overview of index stats and active intents.
-* `git_blame`: Get git authorship info for a file range.
 
-## Typical Workflow
+### Eval (Quality Guardrails)
+* `run_evaluation`: Run golden set evaluation against the codebase.
+* `get_eval_scores`: Score history for a golden set.
 
-### 1. Discovery & Bootstrapping
-If no specs exist, use the "Bootstrap Strategy":
-1. Run `index_status` to assess project scale.
-2. Use `structural_search` and `search_code` to discover architecture and conventions.
-3. Run `hief docs init` (via CLI) to scaffold `docs/specs/` and `docs/harness/`.
-4. Generate core docs: `hief docs generate constitution`, `hief docs generate data-model`.
+### Context (Proactive)
+* `get_project_context`: High-level overview (index + intents + health).
+* `get_conventions`: Machine-readable project rules from `.hief/conventions.toml`.
+* `get_project_health`: Eval scores, regressions, and warnings.
 
-### 2. Implementation Loop
-1. **Search code**: Use `search_code` and `structural_search` to find relevant logic.
-2. **Create intent**: Every change must begin with `create_intent`.
-3. **Update status**: Set to `in_progress` when starting work.
-4. **Develop & Verify**:
-   * Use `structural_search` for quality checks (e.g., finding bare `.unwrap()`).
-   * Run evaluations frequently via `run_evaluation`.
-5. **Request Review**: Set intent status to `in_review`.
+## Session Protocol
 
-## Best Practices
+Follow this protocol for every coding session:
 
-* **Zero‑latency context.** Rely on the local index tools rather than remote LLM calls for reference.
-* **Structural Search vs. Text Search.** Use `structural_search` for finding code by *shape* (e.g., "all public functions with 3 arguments").
-* **Small, atomic intents.** Break large features into bite‑sized nodes.
-* **Inviolable Rules.** Refer to `docs/specs/constitution.md` for project rules.
-* **Harness before merge.** Validate complex behaviors with temporary harnesses (see `docs/harness/`).
-* **Human sanity check.** No agent is allowed to mark its own intent `approved`; a human reviewer must intervene.
-* **Keep AGENTS.md current.** Add any new tooling commands or workflow conventions here.
+### 1. Orient (Every Session)
+```
+Call: get_project_context    → Understand project state
+Call: get_conventions        → Learn the project's rules
+Call: get_project_health     → Check for regressions
+```
+
+### 2. Search (Find Context)
+```
+Know the term?     → search_code "DatabaseConnection"
+Know the pattern?  → structural_search "$X.unwrap()" --language rust
+Know the concept?  → semantic_search "authentication logic"
+Know the file?     → git_blame "src/db.rs" 10 30
+```
+
+### 3. Intend (For Non-Trivial Changes)
+```
+Call: create_intent (kind=feature, title="Add semantic search")
+Call: update_intent (status=in_progress, assigned_to=<agent-id>)
+```
+Skip intents for typos, comment updates, and single-line fixes.
+
+### 4. Execute (Make Changes)
+Follow conventions from `.hief/conventions.toml`. Use `structural_search`
+to self-check for anti-patterns before submitting.
+
+### 5. Verify (After Changes)
+```
+Call: run_evaluation         → Check golden set scores
+Call: get_eval_scores        → Verify no regressions
+Call: update_intent          → Set status to in_review
+```
+
+## Conventions
+
+Project rules live in `.hief/conventions.toml` (machine-readable) and
+`docs/specs/constitution.md` (human-readable). Key rules:
+
+* All public functions must have doc comments
+* No `.unwrap()` in production code paths
+* All error types implement `std::error::Error` via thiserror
+* No `unsafe` without documented safety invariants
+* Async runtime: tokio only
+* Every change traces to an intent (for non-trivial changes)
+* No agent may approve its own intent
+* Golden set regressions block merge
+
+## What HIEF Is NOT
+
+* Not an AI agent — it has no LLM
+* Not a project manager — use Jira/Linear for that
+* Not a specification framework — it provides conventions, not prose specs
+* Not a CI/CD system — it integrates with CI but doesn't replace it
 
 ## Safety & Identity
 
-* Trust only signed requests to the MCP server.
-* Maintain an explicit `assigned_to` field in your intents.
+* Maintain an explicit `assigned_to` field in intents.
 * The local git repo + `.hief/hief.db` is the single source of truth.
+* Intents are optional — the code index works without them.
 
-## VS Code Extension (optional)
+## Key Documentation
 
-A companion extension (`vscode-hief/`) provides a graphical Kanban board, dashboard, and search results. It is highly recommended for human reviewers.
-
-<!-- HIEF:MANDATORY_WORKFLOW:START -->
-## HIEF Mandatory Workflow
-
-1. Run `hief docs init` to scaffold/update templates and workflow rules.
-2. Generate docs via templates only:
-    - `hief docs generate spec --name <feature>`
-    - `hief docs generate data-model`
-    - `hief docs generate harness --name <feature>`
-3. Read and obey `docs/specs/constitution.md`.
-4. Ground content in local code context (`search_code`, structural search, and source files).
-5. Replace all `{{placeholder}}` values before review.
-
-Reference URLs:
-- https://github.com/hiranp/hief/tree/main/templates
-- https://aws.amazon.com/startups/prompt-library/kiro-project-init?lang=en-US
-- https://github.com/github/spec-kit?tab=readme-ov-file#-specify-cli-reference
-- https://docs.tessl.io/introduction-to-tessl/quickstart-skills-docs-rules
-<!-- HIEF:MANDATORY_WORKFLOW:END -->
+* [Architecture](docs/architecture.md) — How HIEF works
+* [Agent Protocol](docs/agent-protocol.md) — Full interaction protocol
+* [Constitution](docs/specs/constitution.md) — Inviolable rules
+* [Conventions](.hief/conventions.toml) — Machine-readable rules

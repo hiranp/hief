@@ -1,0 +1,97 @@
+# HIEF Project Conventions
+#
+# Machine-readable rules that define how code should be written in this project.
+# These replace prose specification documents. Each convention has a structural
+# pattern (ast-grep syntax) that can be verified automatically.
+#
+# Severity levels:
+#   error   — must fix before merge
+#   warning — should fix, won't block merge
+#   info    — preference, not enforced
+
+[error_handling]
+description = "All public functions return Result<T, HiefError> or are simple getters"
+check_pattern = "$X.unwrap()"
+check_type = "must_not_exist"
+scope = "src/**/*.rs"
+exclude = ["tests/**", "src/**/tests.rs"]
+severity = "error"
+rationale = "Bare .unwrap() panics on error; use ? or .expect() with context message"
+
+[error_types]
+description = "Use thiserror-derived HiefError for all error types"
+check_pattern = "HiefError"
+check_type = "must_exist"
+scope = "src/errors.rs"
+severity = "error"
+rationale = "Consistent error types enable proper error propagation through the stack"
+
+[doc_comments]
+description = "All public items should have doc comments"
+check_pattern = "pub fn $NAME"
+check_type = "should_have_doc"
+scope = "src/**/*.rs"
+severity = "warning"
+rationale = "Doc comments appear in IDE hover and generated documentation"
+
+[no_println]
+description = "Use tracing macros instead of println! in library code"
+check_pattern = "println!"
+check_type = "must_not_exist"
+scope = "src/**/*.rs"
+exclude = ["src/main.rs"]
+severity = "warning"
+rationale = "tracing provides structured, leveled logging; println goes to stdout unconditionally"
+
+[async_runtime]
+description = "Use tokio as the only async runtime"
+check_pattern = "async-std"
+check_type = "must_not_exist"
+scope = "Cargo.toml"
+severity = "error"
+rationale = "Mixed async runtimes cause subtle bugs; tokio is the project standard"
+
+[unsafe_code]
+description = "No unsafe blocks without documented safety invariants"
+check_pattern = "unsafe"
+check_type = "must_have_safety_doc"
+scope = "src/**/*.rs"
+severity = "error"
+rationale = "Unsafe code requires proof of correctness via safety comments"
+
+[test_modules]
+description = "Every module should have a #[cfg(test)] mod tests"
+check_pattern = "#[cfg(test)]"
+check_type = "should_exist"
+scope = "src/**/*.rs"
+exclude = ["src/**/mod.rs"]
+severity = "info"
+rationale = "Tests colocated with code are easier to maintain"
+
+[module_structure]
+description = "Module files (mod.rs) re-export public items"
+check_pattern = "pub mod"
+check_type = "should_exist"
+scope = "src/**/mod.rs"
+severity = "info"
+rationale = "Clear module boundaries with explicit public surface"
+
+[mcp_tools]
+description = "MCP tools use Parameters<T> -> Result<Json<String>, ErrorData> pattern"
+check_pattern = "async fn $NAME(&self, Parameters($P): Parameters<$T>) -> Result<Json<String>, ErrorData>"
+check_type = "pattern_match"
+scope = "src/mcp/tools.rs"
+severity = "error"
+rationale = "Consistent MCP tool signatures enable reliable tool discovery"
+
+[no_external_services]
+description = "HIEF must work offline with zero external service dependencies"
+check_type = "architectural"
+severity = "error"
+rationale = "Local-first means local-only for core functionality"
+
+[single_binary]
+description = "No Docker, no sidecar processes, no external databases"
+check_type = "architectural"
+severity = "error"
+rationale = "Developer tools that require infrastructure setup get abandoned"

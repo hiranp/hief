@@ -1,5 +1,6 @@
 //! MCP server setup and tool definitions.
 
+pub mod resources;
 pub mod tools;
 
 use std::path::PathBuf;

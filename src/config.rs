@@ -19,6 +19,8 @@ pub struct Config {
     pub serve: ServeConfig,
     #[serde(default)]
     pub docs: DocsConfig,
+    #[serde(default)]
+    pub vectors: crate::index::vectors::VectorConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -247,6 +249,7 @@ impl Default for Config {
             eval: EvalConfig::default(),
             serve: ServeConfig::default(),
             docs: DocsConfig::default(),
+            vectors: crate::index::vectors::VectorConfig::default(),
         }
     }
 }
