@@ -18,6 +18,9 @@ pub fn docs_init(project_root: &Path, config: &Config, json: bool) -> Result<()>
         for file in &report.files_created {
             println!("✅ Created {}", file);
         }
+        for file in &report.files_updated {
+            println!("♻️  Updated {}", file);
+        }
         for item in &report.already_existed {
             println!("⏭️  {} already exists", item);
         }
@@ -125,8 +128,9 @@ pub async fn docs_generate(
     // Resolve template content (file override or embedded)
     let template_content = crate::docs::resolve_template(project_root, template)?;
 
-    // Render with variables
+    // Render with variables and normalize output for stable files across OSes
     let rendered = crate::docs::render_template(&template_content, &variables);
+    let normalized_rendered = crate::docs::normalize_generated_document(&rendered);
 
     // Resolve output path
     let output_path =
@@ -157,10 +161,11 @@ pub async fn docs_generate(
     }
 
     // Write the rendered document
-    std::fs::write(&output_path, &rendered)?;
+    std::fs::write(&output_path, &normalized_rendered)?;
 
-    let unresolved = crate::docs::count_unresolved(&rendered);
-    let resolved_vars: Vec<_> = variables.keys().cloned().collect();
+    let unresolved = crate::docs::count_unresolved(&normalized_rendered);
+    let mut resolved_vars: Vec<_> = variables.keys().cloned().collect();
+    resolved_vars.sort();
 
     if json {
         println!(

@@ -134,6 +134,44 @@ pub fn count_unresolved(rendered: &str) -> usize {
     extract_variables_fallback(rendered).len()
 }
 
+/// Normalizes generated document content for stable output across environments.
+///
+/// - Converts CRLF/CR line endings to LF
+/// - Ensures the document ends with a single trailing newline
+pub fn normalize_generated_document(content: &str) -> String {
+    let normalized = content.replace("\r\n", "\n").replace('\r', "\n");
+    if normalized.ends_with('\n') {
+        normalized
+    } else {
+        format!("{}\n", normalized)
+    }
+}
+
+/// Validates whether an SDD LLM prompt includes required HIEF workflow anchors.
+///
+/// Returns human-readable issue messages. Empty means compliant.
+pub fn validate_llm_prompt_contract(prompt: &str) -> Vec<String> {
+    let required_anchors = [
+        "hief docs generate",
+        "docs/specs/constitution.md",
+        "{{placeholder}}",
+        "search_code",
+        "Provide Result",
+    ];
+
+    let mut issues = Vec::new();
+    for anchor in required_anchors {
+        if !prompt.contains(anchor) {
+            issues.push(format!(
+                "missing required workflow anchor '{}' in SDD_LLM_PROMPT.md",
+                anchor
+            ));
+        }
+    }
+
+    issues
+}
+
 // ---------------------------------------------------------------------------
 // Template resolution (embedded vs file-based)
 // ---------------------------------------------------------------------------
@@ -339,6 +377,7 @@ pub fn resolve_output_path(
 pub struct DocsInitReport {
     pub directories_created: Vec<String>,
     pub files_created: Vec<String>,
+    pub files_updated: Vec<String>,
     pub already_existed: Vec<String>,
     pub templates_dir: String,
     pub prompt_created: bool,
@@ -349,6 +388,7 @@ pub fn scaffold_docs_dirs(project_root: &Path, config: &DocsConfig) -> Result<Do
     let mut report = DocsInitReport {
         directories_created: Vec::new(),
         files_created: Vec::new(),
+        files_updated: Vec::new(),
         already_existed: Vec::new(),
         templates_dir: String::new(),
         prompt_created: false,
@@ -393,21 +433,18 @@ pub fn scaffold_docs_dirs(project_root: &Path, config: &DocsConfig) -> Result<Do
 
     // Always generate/update the LLM Prompt so users get the latest version
     let prompt_file = templates_dir.join("SDD_LLM_PROMPT.md");
-    if prompt_file.exists()
-        && std::fs::read_to_string(&prompt_file).unwrap_or_default() == LLM_PROMPT_TEMPLATE
-    {
-        // Skip if exactly matches
+    let prompt_existed_before = prompt_file.exists();
+    std::fs::write(&prompt_file, LLM_PROMPT_TEMPLATE)?;
+    if !prompt_existed_before {
+        report
+            .files_created
+            .push(".hief/templates/SDD_LLM_PROMPT.md".to_string());
     } else {
-        std::fs::write(&prompt_file, LLM_PROMPT_TEMPLATE)?;
-        if prompt_file.exists() {
-            report.prompt_created = true;
-        } else {
-            report
-                .files_created
-                .push(".hief/templates/SDD_LLM_PROMPT.md".to_string());
-            report.prompt_created = true;
-        }
+        report
+            .files_updated
+            .push(".hief/templates/SDD_LLM_PROMPT.md".to_string());
     }
+    report.prompt_created = true;
 
     // Generate framework-specific templates
     let frameworks_dir = templates_dir.join("frameworks");
@@ -437,6 +474,8 @@ pub fn scaffold_docs_dirs(project_root: &Path, config: &DocsConfig) -> Result<Do
         }
     }
 
+    sync_llm_instruction_files(project_root, &mut report)?;
+
     report.templates_dir = templates_dir.display().to_string();
 
     Ok(report)
@@ -446,6 +485,84 @@ fn is_dir_empty(path: &Path) -> bool {
     path.read_dir()
         .map(|mut entries| entries.next().is_none())
         .unwrap_or(true)
+}
+
+fn sync_llm_instruction_files(project_root: &Path, report: &mut DocsInitReport) -> Result<()> {
+    let candidates = ["AGENTS.md", "GEMINI.md", "CLAUDE.md"];
+
+    let mut found_any = false;
+    for name in candidates {
+        let path = project_root.join(name);
+        if !path.exists() {
+            continue;
+        }
+
+        found_any = true;
+        let existing = std::fs::read_to_string(&path).unwrap_or_default();
+        let updated = upsert_managed_block(
+            &existing,
+            HIEF_WORKFLOW_BLOCK_START,
+            HIEF_WORKFLOW_BLOCK_END,
+            HIEF_WORKFLOW_BLOCK,
+        );
+
+        if updated != existing {
+            std::fs::write(&path, updated)?;
+            report.files_updated.push(name.to_string());
+        } else {
+            report.already_existed.push(name.to_string());
+        }
+    }
+
+    if !found_any {
+        let fallback = project_root.join("AGENTS.md");
+        let content = format!(
+            "# AGENTS.md\n\n{}\n",
+            HIEF_WORKFLOW_BLOCK.trim_end()
+        );
+        std::fs::write(&fallback, content)?;
+        report.files_created.push("AGENTS.md".to_string());
+    }
+
+    Ok(())
+}
+
+fn upsert_managed_block(
+    content: &str,
+    start_marker: &str,
+    end_marker: &str,
+    block_content: &str,
+) -> String {
+    if let Some(start) = content.find(start_marker) {
+        if let Some(end_rel) = content[start..].find(end_marker) {
+            let end = start + end_rel + end_marker.len();
+            let mut result = String::new();
+            result.push_str(&content[..start]);
+            if !result.ends_with('\n') {
+                result.push('\n');
+            }
+            result.push_str(block_content);
+            if !block_content.ends_with('\n') {
+                result.push('\n');
+            }
+            let tail = content[end..].trim_start_matches('\n');
+            if !tail.is_empty() {
+                result.push('\n');
+                result.push_str(tail);
+            }
+            return normalize_generated_document(&result);
+        }
+    }
+
+    let mut result = content.to_string();
+    if !result.is_empty() && !result.ends_with('\n') {
+        result.push('\n');
+    }
+    if !result.is_empty() {
+        result.push('\n');
+    }
+    result.push_str(block_content);
+    normalize_generated_document(&result)
 }
 
 // ---------------------------------------------------------------------------
@@ -498,7 +615,7 @@ pub fn check_docs_structure(project_root: &Path, config: &DocsConfig) -> DocsChe
             "constitution",
             config.specs_path.clone() + "/constitution.md",
         ),
-        ("data_model", config.specs_path.clone() + "/data-model.md"),
+        ("data-model", config.specs_path.clone() + "/data-model.md"),
     ];
 
     for (name, path) in &key_docs {
@@ -545,6 +662,52 @@ pub fn check_docs_structure(project_root: &Path, config: &DocsConfig) -> DocsChe
         });
     }
 
+    // Check that SDD LLM prompt exists and carries required framework contract anchors
+    let prompt_file = project_root
+        .join(".hief")
+        .join("templates")
+        .join("SDD_LLM_PROMPT.md");
+    if !prompt_file.exists() {
+        checks.push(DocsCheckItem {
+            name: "llm_prompt_contract".to_string(),
+            status: "warning".to_string(),
+            message:
+                "Missing .hief/templates/SDD_LLM_PROMPT.md — run `hief docs init` to enforce LLM workflow"
+                    .to_string(),
+        });
+    } else {
+        match std::fs::read_to_string(&prompt_file) {
+            Ok(content) => {
+                let issues = validate_llm_prompt_contract(&content);
+                if issues.is_empty() {
+                    checks.push(DocsCheckItem {
+                        name: "llm_prompt_contract".to_string(),
+                        status: "ok".to_string(),
+                        message: "SDD_LLM_PROMPT.md includes required HIEF workflow anchors"
+                            .to_string(),
+                    });
+                } else {
+                    checks.push(DocsCheckItem {
+                        name: "llm_prompt_contract".to_string(),
+                        status: "warning".to_string(),
+                        message: format!(
+                            "SDD_LLM_PROMPT.md is missing {} anchor(s): {}",
+                            issues.len(),
+                            issues.join("; ")
+                        ),
+                    });
+                }
+            }
+            Err(e) => {
+                checks.push(DocsCheckItem {
+                    name: "llm_prompt_contract".to_string(),
+                    status: "warning".to_string(),
+                    message: format!("Failed to read SDD_LLM_PROMPT.md: {}", e),
+                });
+            }
+        }
+    }
+
     // Check for any feature specs
     let specs_dir = project_root.join(&config.specs_path);
     if specs_dir.exists() {
@@ -564,6 +727,29 @@ pub fn check_docs_structure(project_root: &Path, config: &DocsConfig) -> DocsChe
                     "{} feature spec{} found",
                     spec_count,
                     if spec_count == 1 { "" } else { "s" }
+                ),
+            });
+        }
+
+        // Consistency check: report unresolved placeholders in specs docs
+        let unresolved_in_specs = count_unresolved_placeholders_in_dir(&specs_dir);
+        if unresolved_in_specs > 0 {
+            checks.push(DocsCheckItem {
+                name: "spec_placeholders".to_string(),
+                status: "warning".to_string(),
+                message: format!(
+                    "{} unresolved placeholder(s) found across {} — fill template variables before review",
+                    unresolved_in_specs,
+                    config.specs_path
+                ),
+            });
+        } else {
+            checks.push(DocsCheckItem {
+                name: "spec_placeholders".to_string(),
+                status: "ok".to_string(),
+                message: format!(
+                    "No unresolved placeholders found in {}",
+                    config.specs_path
                 ),
             });
         }
@@ -589,6 +775,29 @@ pub fn check_docs_structure(project_root: &Path, config: &DocsConfig) -> DocsChe
                     "{} harness spec{} found",
                     harness_count,
                     if harness_count == 1 { "" } else { "s" }
+                ),
+            });
+        }
+
+        // Consistency check: report unresolved placeholders in harness docs
+        let unresolved_in_harness = count_unresolved_placeholders_in_dir(&harness_dir);
+        if unresolved_in_harness > 0 {
+            checks.push(DocsCheckItem {
+                name: "harness_placeholders".to_string(),
+                status: "warning".to_string(),
+                message: format!(
+                    "{} unresolved placeholder(s) found across {} — fill template variables before review",
+                    unresolved_in_harness,
+                    config.harness_path
+                ),
+            });
+        } else {
+            checks.push(DocsCheckItem {
+                name: "harness_placeholders".to_string(),
+                status: "ok".to_string(),
+                message: format!(
+                    "No unresolved placeholders found in {}",
+                    config.harness_path
                 ),
             });
         }
@@ -674,6 +883,29 @@ fn count_matching_files(dir: &Path, prefix: &str) -> usize {
         .unwrap_or(0)
 }
 
+fn count_unresolved_placeholders_in_dir(dir: &Path) -> usize {
+    dir.read_dir()
+        .map(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().map(|ft| ft.is_file()).unwrap_or(false))
+                .filter(|e| {
+                    e.path()
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .map(|ext| ext == "md")
+                        .unwrap_or(false)
+                })
+                .map(|e| {
+                    std::fs::read_to_string(e.path())
+                        .map(|content| count_unresolved(&content))
+                        .unwrap_or(0)
+                })
+                .sum()
+        })
+        .unwrap_or(0)
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -719,28 +951,57 @@ hief docs generate constitution
 "#;
 
 const LLM_PROMPT_TEMPLATE: &str = r#"# Role
-You are an expert software architect and technical writer, specializing in Spec-Driven Development (SDD).
-Your task is to draft detailed, clear, and actionable SDD documents using the HIEF (Hybrid Intent-Evaluation Framework) tool.
+You are an expert software architect and technical writer specializing in Spec-Driven Development (SDD) for HIEF (Hybrid Intent-Evaluation Framework).
 
 # Context
 This repository uses HIEF for organizing feature specs, data models, and architectural rules.
-An example of completed SDD documents can be found here for inspiration:
-- https://github.com/hiranp/hief/tree/main/templates
-
-Additionally, reference these other popular SDD frameworks and prompt libraries for inspiration on writing effective specifications:
-- AWS Kiro: https://aws.amazon.com/startups/prompt-library/kiro-project-init?lang=en-US
+Reference templates and writing approaches:
+- HIEF templates: https://github.com/hiranp/hief/tree/main/templates
+- AWS Kiro prompt library: https://aws.amazon.com/startups/prompt-library/kiro-project-init?lang=en-US
 - GitHub Spec-Kit: https://github.com/github/spec-kit?tab=readme-ov-file#-specify-cli-reference
-- Tessl: https://docs.tessl.io/introduction-to-tessl/quickstart-skills-docs-rules
+- Tessl quickstart docs/rules: https://docs.tessl.io/introduction-to-tessl/quickstart-skills-docs-rules
 
-# Instructions
-1. Scaffold Document: If the user asks you to draft a spec, start by generating the template using `hief docs generate spec --name <feature>`. For data models, use `hief docs generate data-model`, etc.
-2. Read Constitution: Read `docs/specs/constitution.md` to understand the project's inviolable rules. Ensure your drafted content complies with them.
-3. Understand the Codebase: Use tools like `search_code` or structural searches to find relevant existing logic and understand the surrounding context.
-4. Fill Placeholders: The generated document will contain `{{placeholder}}` variables. Your job is to replace these with high-quality, technically accurate content based on the codebase context and the user's initial request.
-5. Provide Result: Output the finalized markdown document or edit the generated file directly to reflect your completed draft.
+# Mandatory Workflow (Do Not Skip)
+1. Scaffold first via HIEF CLI:
+    - Feature spec: `hief docs generate spec --name <feature>`
+    - Data model: `hief docs generate data-model`
+    - Harness: `hief docs generate harness --name <feature>`
+2. Read and obey `docs/specs/constitution.md` before writing.
+3. Ground content in the real codebase using local tools (`search_code`, structural search, and project files).
+4. Replace every `{{placeholder}}` with concrete, technically accurate content.
+5. Provide Result by editing the generated file directly (preferred) or returning final markdown.
 
-# Tone
-Be concise, specific, and technically precise. Avoid fluff. Focus on clear acceptance criteria, invariants, and actionable API contracts.
+# Enforcement Rules
+- Never draft spec files freehand when a matching HIEF template exists.
+- If required context is missing, state assumptions explicitly and continue with best-effort draft.
+- Before finalizing, ensure no unresolved placeholders remain in the document.
+
+# Quality Bar
+- Be concise, specific, and technically precise.
+- Prefer verifiable acceptance criteria and explicit invariants.
+- Keep API contracts actionable and implementation-aware.
+"#;
+
+const HIEF_WORKFLOW_BLOCK_START: &str = "<!-- HIEF:MANDATORY_WORKFLOW:START -->";
+const HIEF_WORKFLOW_BLOCK_END: &str = "<!-- HIEF:MANDATORY_WORKFLOW:END -->";
+const HIEF_WORKFLOW_BLOCK: &str = r#"<!-- HIEF:MANDATORY_WORKFLOW:START -->
+## HIEF Mandatory Workflow
+
+1. Run `hief docs init` to scaffold/update templates and workflow rules.
+2. Generate docs via templates only:
+    - `hief docs generate spec --name <feature>`
+    - `hief docs generate data-model`
+    - `hief docs generate harness --name <feature>`
+3. Read and obey `docs/specs/constitution.md`.
+4. Ground content in local code context (`search_code`, structural search, and source files).
+5. Replace all `{{placeholder}}` values before review.
+
+Reference URLs:
+- https://github.com/hiranp/hief/tree/main/templates
+- https://aws.amazon.com/startups/prompt-library/kiro-project-init?lang=en-US
+- https://github.com/github/spec-kit?tab=readme-ov-file#-specify-cli-reference
+- https://docs.tessl.io/introduction-to-tessl/quickstart-skills-docs-rules
+<!-- HIEF:MANDATORY_WORKFLOW:END -->
 "#;
 
 const RUST_FRAMEWORK_TEMPLATE: &str = include_str!("../../templates/frameworks/rust.md");
@@ -828,6 +1089,27 @@ mod tests {
     #[test]
     fn test_count_unresolved_none() {
         assert_eq!(count_unresolved("No placeholders here."), 0);
+    }
+
+    #[test]
+    fn test_normalize_generated_document_newline_and_lf() {
+        let input = "line1\r\nline2\rline3";
+        let output = normalize_generated_document(input);
+        assert_eq!(output, "line1\nline2\nline3\n");
+    }
+
+    #[test]
+    fn test_validate_llm_prompt_contract_valid() {
+        let prompt = "hief docs generate\ndocs/specs/constitution.md\n{{placeholder}}\nsearch_code\nProvide Result";
+        let issues = validate_llm_prompt_contract(prompt);
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_validate_llm_prompt_contract_missing() {
+        let prompt = "only partial prompt";
+        let issues = validate_llm_prompt_contract(prompt);
+        assert!(!issues.is_empty());
     }
 
     #[test]
