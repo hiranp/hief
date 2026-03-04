@@ -10,6 +10,7 @@ use crate::errors::Result;
 
 const POST_COMMIT_HOOK: &str = r#"#!/bin/sh
 # HIEF auto-index hook — installed by `hief hooks install`
+# HIEF_HOOK_VERSION=2
 # Incrementally updates the code index after every commit.
 if command -v hief >/dev/null 2>&1; then
     hief index build --json >/dev/null 2>&1 &
@@ -18,8 +19,17 @@ fi
 
 const PRE_PUSH_HOOK: &str = r#"#!/bin/sh
 # HIEF pre-push eval check — installed by `hief hooks install`
-# Runs evaluation checks before pushing to catch regressions.
+# HIEF_HOOK_VERSION=2
+# Repairs local HIEF state, then runs evaluation checks before pushing.
 if command -v hief >/dev/null 2>&1; then
+    echo "🩺 Running HIEF doctor auto-fix..."
+    hief doctor --fix
+    doctor_exit=$?
+    if [ $doctor_exit -ne 0 ]; then
+        echo "❌ HIEF doctor failed — push blocked"
+        exit 1
+    fi
+
     echo "🔍 Running HIEF evaluation checks..."
     hief eval run --ci
     exit_code=$?
@@ -164,7 +174,19 @@ fn install_hook(
     if path.exists() {
         let existing = std::fs::read_to_string(path)?;
         if existing.contains("hief") {
-            return Ok(()); // Already installed
+            if existing == content {
+                return Ok(()); // Already at latest known content
+            }
+            std::fs::write(path, content)?;
+            installed.push(name.to_string());
+            // Make executable
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let perms = std::fs::Permissions::from_mode(0o755);
+                std::fs::set_permissions(path, perms)?;
+            }
+            return Ok(());
         }
         // Append to existing hook
         std::fs::write(path, format!("{}\n{}", existing.trim(), content))?;

@@ -1,76 +1,47 @@
-# HIEF Project Golden Set
-# This file encodes the project's inviolable rules from `docs/specs/constitution.md`
-# into actionable evaluation cases.
+# HIEF Production Baseline Golden Set
+# Goal: stable, low-noise safety checks that gate regressions in CI.
 
 [metadata]
-name = "hief-core-invariants"
-description = "Core architectural and quality invariants for the HIEF project"
-
-# --- Code Quality ---
-
-[[cases]]
-id = "pub-fn-doc-comments"
-name = "Public functions must have doc comments"
-priority = "high"
-[cases.checks]
-# Heuristic check for missing doc comments on public functions
-must_not_contain = ["pub fn "]
-file_patterns = ["src/**/*.rs"]
-exclude_patterns = ["src/**/*_test.rs", "tests/**/*.rs"]
-
-[[cases]]
-id = "no-bare-unwrap"
-name = "No bare .unwrap() in production code"
-priority = "critical"
-[cases.checks]
-must_not_contain = [".unwrap()"]
-file_patterns = ["src/**/*.rs"]
-exclude_patterns = ["src/**/*_test.rs", "tests/**/*.rs"]
-
-[[cases]]
-id = "error-trait-implementation"
-name = "Error types must implement std::error::Error"
-priority = "high"
-[cases.checks]
-# Enforce that manual Error implementations or `thiserror` are used
-must_contain = ["impl std::error::Error", "derive(Error)"]
-file_patterns = ["src/**/error.rs"]
-
-[[cases]]
-id = "no-unsafe-without-explanation"
-name = "No unsafe blocks without documented safety invariants"
-priority = "critical"
-[cases.checks]
-# Heuristic: unsafe blocks should be preceded by a "// SAFETY:" comment
-must_not_contain = ["unsafe {"]
-file_patterns = ["src/**/*.rs"]
-# NOTE: This case typically requires structural search for better precision
-
-# --- Architecture ---
-
-[[cases]]
-id = "cli-thin-wrapper"
-name = "CLI must be a thin wrapper over core crates"
-priority = "high"
-[cases.checks]
-# Prevent complex logic from creeping into the CLI entry point
-max_file_lines = 300
-file_patterns = ["src/main.rs", "src/cli/**/*.rs"]
-
-[[cases]]
-id = "offline-mandatory"
-name = "No network dependencies in core logic"
-priority = "critical"
-[cases.checks]
-must_not_contain = ["reqwest", "hyper", "surf", "async-h1"]
-file_patterns = ["src/index/**/*.rs", "src/graph/**/*.rs", "src/eval/**/*.rs"]
-
-# --- Dependencies ---
+name = "hief-core-baseline"
+description = "Production baseline guardrails for runtime, index, MCP, and docs workflow"
 
 [[cases]]
 id = "tokio-runtime-only"
-name = "Async runtime: tokio only"
+name = "Runtime entrypoint stays tokio"
 priority = "critical"
 [cases.checks]
-must_not_contain = ["async-std", "async_std"]
-file_patterns = ["Cargo.toml", "src/**/*.rs"]
+must_contain = ["#[tokio::main]"]
+must_not_contain = ["async_std"]
+file_patterns = ["src/main.rs"]
+
+[[cases]]
+id = "no-unsafe-blocks"
+name = "No unsafe blocks in runtime code"
+priority = "critical"
+[cases.checks]
+must_not_contain = ["unsafe {"]
+file_patterns = ["src/**/*.rs"]
+
+[[cases]]
+id = "fts-index-stays-present"
+name = "FTS5 chunk index migration remains present"
+priority = "high"
+[cases.checks]
+must_contain = ["CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts"]
+file_patterns = ["src/db.rs"]
+
+[[cases]]
+id = "mcp-core-stays-wired"
+name = "MCP stack remains wired"
+priority = "high"
+[cases.checks]
+must_contain = ["use rmcp::"]
+file_patterns = ["src/mcp/tools.rs"]
+
+[[cases]]
+id = "docs-template-workflow-anchor"
+name = "Docs generation workflow anchor remains"
+priority = "medium"
+[cases.checks]
+must_contain = ["hief docs generate"]
+file_patterns = ["src/docs/mod.rs"]

@@ -1,6 +1,6 @@
 //! `hief doctor` — health-check command.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
@@ -255,6 +255,115 @@ pub async fn doctor(
         });
     }
 
+    // 7b. Validate golden files are parseable and have no unresolved placeholders
+    let golden_dir = project_root.join(&config.eval.golden_set_path);
+    let invalid_golden_files = validate_golden_files(&golden_dir);
+    if invalid_golden_files.is_empty() {
+        checks.push(DoctorCheck {
+            name: "golden_parse".to_string(),
+            status: "ok".to_string(),
+            message: "All golden files are parseable and placeholder-free".to_string(),
+            fixable: false,
+            fixed: false,
+        });
+    } else {
+        let mut check = DoctorCheck {
+            name: "golden_parse".to_string(),
+            status: "error".to_string(),
+            message: format!(
+                "{} invalid golden file{}: {}",
+                invalid_golden_files.len(),
+                if invalid_golden_files.len() == 1 { "" } else { "s" },
+                invalid_golden_files
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            fixable: true,
+            fixed: false,
+        };
+
+        if fix {
+            quarantine_invalid_golden_files(&golden_dir, &invalid_golden_files)?;
+            check.status = "ok".to_string();
+            check.message = format!(
+                "Quarantined {} invalid golden file{} under {}/_invalid",
+                invalid_golden_files.len(),
+                if invalid_golden_files.len() == 1 { "" } else { "s" },
+                config.eval.golden_set_path.trim_end_matches('/')
+            );
+            check.fixed = true;
+            fixes_applied += 1;
+        }
+
+        checks.push(check);
+    }
+
+    // 7c. Probe CI evaluation gate so doctor reflects push-blocking state
+    let mut eval_probe = DoctorCheck {
+        name: "eval_ci_gate".to_string(),
+        status: "ok".to_string(),
+        message: "CI evaluation gate passes".to_string(),
+        fixable: false,
+        fixed: false,
+    };
+
+    match crate::eval::run_ci(db, project_root, &config.eval, None).await {
+        Ok(0) => {}
+        Ok(1) => {
+            eval_probe.status = "error".to_string();
+            eval_probe.message =
+                "CI evaluation gate currently fails (threshold/critical cases)".to_string();
+        }
+        Ok(code) => {
+            eval_probe.status = "error".to_string();
+            eval_probe.message = format!(
+                "CI evaluation returned unexpected exit code {}",
+                code
+            );
+        }
+        Err(e) => {
+            eval_probe.status = "error".to_string();
+            eval_probe.message = format!("CI evaluation probe failed: {}", e);
+            eval_probe.fixable = true;
+
+            if fix {
+                crate::index::build(db, project_root, &config.index).await?;
+                match crate::eval::run_ci(db, project_root, &config.eval, None).await {
+                    Ok(0) => {
+                        eval_probe.status = "ok".to_string();
+                        eval_probe.message =
+                            "CI evaluation gate passes after index rebuild".to_string();
+                        eval_probe.fixed = true;
+                        fixes_applied += 1;
+                    }
+                    Ok(1) => {
+                        eval_probe.status = "error".to_string();
+                        eval_probe.message =
+                            "CI evaluation still fails after index rebuild (rule/code mismatch)"
+                                .to_string();
+                    }
+                    Ok(code) => {
+                        eval_probe.status = "error".to_string();
+                        eval_probe.message = format!(
+                            "CI evaluation returned unexpected exit code {} after index rebuild",
+                            code
+                        );
+                    }
+                    Err(retry_err) => {
+                        eval_probe.status = "error".to_string();
+                        eval_probe.message = format!(
+                            "CI evaluation still errors after index rebuild: {}",
+                            retry_err
+                        );
+                    }
+                }
+            }
+        }
+    }
+    checks.push(eval_probe);
+
     // 8. Check git hooks
     let hooks_dir = project_root.join(".git/hooks");
     let post_commit_hook = hooks_dir.join("post-commit");
@@ -322,6 +431,59 @@ pub async fn doctor(
         }
         if report.fixes_applied > 0 {
             println!("🔧 {} fixes applied", report.fixes_applied);
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_golden_files(golden_dir: &Path) -> Vec<PathBuf> {
+    let mut invalid = Vec::new();
+
+    if !golden_dir.exists() {
+        return invalid;
+    }
+
+    let Ok(entries) = std::fs::read_dir(golden_dir) else {
+        return invalid;
+    };
+
+    for entry in entries.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+            continue;
+        }
+
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            invalid.push(path);
+            continue;
+        };
+
+        if content.contains("{{") || content.contains("}}") {
+            invalid.push(path);
+            continue;
+        }
+
+        if toml::from_str::<crate::eval::golden::GoldenSet>(&content).is_err() {
+            invalid.push(path);
+        }
+    }
+
+    invalid
+}
+
+fn quarantine_invalid_golden_files(golden_dir: &Path, files: &[PathBuf]) -> Result<()> {
+    if files.is_empty() {
+        return Ok(());
+    }
+
+    let quarantine_dir = golden_dir.join("_invalid");
+    std::fs::create_dir_all(&quarantine_dir)?;
+
+    for src in files {
+        if let Some(name) = src.file_name() {
+            let dst = quarantine_dir.join(name);
+            std::fs::rename(src, dst)?;
         }
     }
 
