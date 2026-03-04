@@ -1,8 +1,13 @@
-//! Scoring engine: pattern matching against code index.
+//! Scoring engine: pattern matching + structural search against code index.
+//!
+//! Evaluates golden sets using three check modes:
+//! 1. **Literal substring** — `must_contain` / `must_not_contain` via SQL `instr()`
+//! 2. **Structural (ast-grep)** — `structural_must_contain` / `structural_must_not_contain`
+//! 3. **Differential** — When `diff_only = true`, only checks files changed since last eval
 
 use serde::Serialize;
 use std::path::Path;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::db::Database;
 use crate::errors::{HiefError, Result};
@@ -16,6 +21,19 @@ pub struct EvalResult {
     pub passed: bool,
     pub cases: Vec<CaseResult>,
     pub git_commit: Option<String>,
+    /// Files that were evaluated (all if diff_only was false, changed-only otherwise).
+    pub scope: EvalScope,
+}
+
+/// Describes what was evaluated.
+#[derive(Debug, Clone, Serialize)]
+pub struct EvalScope {
+    /// "full" or "diff"
+    pub mode: String,
+    /// Number of files evaluated.
+    pub files_evaluated: usize,
+    /// Base commit for diff (only set when mode == "diff").
+    pub base_commit: Option<String>,
 }
 
 /// Result of evaluating a single case.
@@ -36,19 +54,49 @@ pub struct Violation {
     pub pattern: String,
     pub file: String,
     pub line: Option<u32>,
+    /// Additional context around the violation.
+    pub context: Option<String>,
 }
 
 /// Evaluate a golden set against the code index.
 pub async fn evaluate(
     db: &Database,
     golden_set: &GoldenSet,
-    _project_root: &Path,
+    project_root: &Path,
 ) -> Result<EvalResult> {
     let mut case_results = Vec::new();
     let git_commit = get_git_commit().await.ok();
 
+    // Determine diff scope if any case uses diff_only
+    let any_diff = golden_set.cases.iter().any(|c| c.checks.diff_only);
+    let changed_files = if any_diff {
+        let last_commit = get_last_eval_commit(db, &golden_set.metadata.name).await;
+        match &last_commit {
+            Some(base) => get_changed_files(base).await.unwrap_or_default(),
+            None => Vec::new(), // No history → evaluate all files
+        }
+    } else {
+        Vec::new()
+    };
+
+    let base_commit_for_diff = if any_diff {
+        get_last_eval_commit(db, &golden_set.metadata.name).await
+    } else {
+        None
+    };
+
+    let mut total_files_evaluated = 0usize;
+    let mut eval_mode = "full".to_string();
+
     for case in &golden_set.cases {
-        let case_result = evaluate_case(db, case).await?;
+        let diff_files = if case.checks.diff_only && !changed_files.is_empty() {
+            eval_mode = "diff".to_string();
+            Some(&changed_files)
+        } else {
+            None
+        };
+        let case_result = evaluate_case(db, case, project_root, diff_files).await?;
+        total_files_evaluated += count_files_in_case(&case_result);
         case_results.push(case_result);
     }
 
@@ -81,33 +129,71 @@ pub async fn evaluate(
         passed,
         cases: case_results,
         git_commit,
+        scope: EvalScope {
+            mode: eval_mode,
+            files_evaluated: total_files_evaluated,
+            base_commit: base_commit_for_diff,
+        },
     })
 }
 
-// Helper: search for literal substring occurrences using instr().
+/// Parse a structural pattern entry like `"rust:$X.unwrap()"` into (language, pattern).
+fn parse_structural_entry(entry: &str) -> Option<(&str, &str)> {
+    let colon_pos = entry.find(':')?;
+    let lang = entry[..colon_pos].trim();
+    let pattern = entry[colon_pos + 1..].trim();
+    if lang.is_empty() || pattern.is_empty() {
+        return None;
+    }
+    Some((lang, pattern))
+}
+
+/// Search for literal substring occurrences using `instr()`.
 async fn search_literal(
     db: &Database,
     substr: &str,
     file_glob: Option<&String>,
+    diff_files: Option<&[String]>,
     limit: usize,
 ) -> Result<Vec<(String, u32)>> {
-    // returns vector of (file_path, start_line)
     let conn = db.conn();
+
+    // Build base query
     let mut sql = String::from(
         "SELECT c.file_path, c.start_line FROM chunks c WHERE instr(c.content, ?1) > 0",
     );
     let mut params: Vec<String> = vec![substr.to_string()];
+
     if let Some(glob) = file_glob {
-        sql.push_str(" AND c.file_path GLOB ?2");
+        sql.push_str(&format!(" AND c.file_path GLOB ?{}", params.len() + 1));
         params.push(glob.clone());
     }
+
+    // If diff_only, restrict to changed files
+    if let Some(files) = diff_files {
+        if !files.is_empty() {
+            let placeholders: Vec<String> = files
+                .iter()
+                .enumerate()
+                .map(|(i, _)| format!("?{}", params.len() + i + 1))
+                .collect();
+            sql.push_str(&format!(
+                " AND c.file_path IN ({})",
+                placeholders.join(", ")
+            ));
+            for f in files {
+                params.push(f.clone());
+            }
+        }
+    }
+
     sql.push_str(&format!(" LIMIT {}", limit));
-    let mut rows = if params.len() == 1 {
-        conn.query(&sql, [params[0].as_str()]).await?
-    } else {
-        conn.query(&sql, [params[0].as_str(), params[1].as_str()])
-            .await?
-    };
+
+    // Execute with dynamic params
+    let mut rows = conn
+        .query(&sql, params_to_libsql(&params))
+        .await?;
+
     let mut res = Vec::new();
     while let Some(row) = rows.next().await? {
         let file_path: String = row.get(0)?;
@@ -117,20 +203,101 @@ async fn search_literal(
     Ok(res)
 }
 
-/// Evaluate a single case against the code index.
-async fn evaluate_case(db: &Database, case: &EvalCase) -> Result<CaseResult> {
-    let mut violations = Vec::new();
-    let total_checks = case.checks.must_contain.len() + case.checks.must_not_contain.len();
+/// Convert a `Vec<String>` to libsql params.
+fn params_to_libsql(params: &[String]) -> Vec<libsql::Value> {
+    params
+        .iter()
+        .map(|s| libsql::Value::from(s.as_str()))
+        .collect()
+}
 
-    // Check must_contain patterns
+/// Run structural search for a given pattern/language, optionally restricted to diff files.
+fn run_structural_check(
+    project_root: &Path,
+    language: &str,
+    pattern: &str,
+    file_glob: Option<&String>,
+    diff_files: Option<&[String]>,
+    top_k: usize,
+) -> Result<Vec<crate::index::structural::StructuralMatch>> {
+    use crate::index::structural;
+
+    let mut query = structural::StructuralQuery::new(pattern, language);
+    query.top_k = top_k;
+
+    let all_matches = structural::search(project_root, &query)?;
+
+    // Apply file_glob filter if specified
+    let filtered: Vec<_> = all_matches
+        .into_iter()
+        .filter(|m| {
+            // Check glob filter
+            if let Some(glob_pat) = file_glob {
+                if !glob_matches(&m.file_path, glob_pat) {
+                    return false;
+                }
+            }
+            // Check diff filter
+            if let Some(files) = diff_files {
+                if !files.iter().any(|f| m.file_path == *f) {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
+
+    Ok(filtered)
+}
+
+/// Simple glob matching (supports `*` and `**`).
+fn glob_matches(path: &str, pattern: &str) -> bool {
+    // Use a simple approach: convert glob to a check
+    if pattern.contains("**") {
+        // "src/**/*.rs" → check if path starts with prefix and ends with suffix
+        let parts: Vec<&str> = pattern.splitn(2, "**").collect();
+        let prefix = parts[0].trim_end_matches('/');
+        let suffix = if parts.len() > 1 {
+            parts[1].trim_start_matches('/')
+        } else {
+            ""
+        };
+        let prefix_ok = prefix.is_empty() || path.starts_with(prefix);
+        let suffix_ok = if suffix.contains('*') {
+            // "*.rs" → check extension
+            let ext = suffix.trim_start_matches('*');
+            path.ends_with(ext)
+        } else {
+            suffix.is_empty() || path.ends_with(suffix)
+        };
+        prefix_ok && suffix_ok
+    } else if pattern.contains('*') {
+        // "*.rs" → just check extension
+        let ext = pattern.trim_start_matches('*');
+        path.ends_with(ext)
+    } else {
+        path == pattern
+    }
+}
+
+/// Evaluate a single case against the code index, with optional diff restriction.
+async fn evaluate_case(
+    db: &Database,
+    case: &EvalCase,
+    project_root: &Path,
+    diff_files: Option<&Vec<String>>,
+) -> Result<CaseResult> {
+    let mut violations = Vec::new();
+    let file_glob = case.checks.file_patterns.as_ref().and_then(|v| v.first());
+    let diff_slice = diff_files.map(|v| v.as_slice());
+
+    // --- Literal checks ---
+
+    let total_literal = case.checks.must_contain.len() + case.checks.must_not_contain.len();
+
+    // Check must_contain patterns (literal)
     for pattern in &case.checks.must_contain {
-        let results = search_literal(
-            db,
-            pattern,
-            case.checks.file_patterns.as_ref().and_then(|v| v.first()),
-            1,
-        )
-        .await?;
+        let results = search_literal(db, pattern, file_glob, diff_slice, 1).await?;
 
         if results.is_empty() {
             violations.push(Violation {
@@ -138,19 +305,14 @@ async fn evaluate_case(db: &Database, case: &EvalCase) -> Result<CaseResult> {
                 pattern: pattern.clone(),
                 file: "N/A".to_string(),
                 line: None,
+                context: None,
             });
         }
     }
 
-    // Check must_not_contain patterns
+    // Check must_not_contain patterns (literal)
     for pattern in &case.checks.must_not_contain {
-        let results = search_literal(
-            db,
-            pattern,
-            case.checks.file_patterns.as_ref().and_then(|v| v.first()),
-            5,
-        )
-        .await?;
+        let results = search_literal(db, pattern, file_glob, diff_slice, 5).await?;
 
         for (file, line) in &results {
             violations.push(Violation {
@@ -158,24 +320,137 @@ async fn evaluate_case(db: &Database, case: &EvalCase) -> Result<CaseResult> {
                 pattern: pattern.clone(),
                 file: file.clone(),
                 line: Some(*line),
+                context: None,
             });
         }
     }
 
+    // --- Structural (ast-grep) checks ---
+
+    let total_structural = case.checks.structural_must_contain.len()
+        + case.checks.structural_must_not_contain.len();
+
+    // Check structural_must_contain
+    for entry in &case.checks.structural_must_contain {
+        match parse_structural_entry(entry) {
+            Some((lang, pattern)) => {
+                match run_structural_check(
+                    project_root,
+                    lang,
+                    pattern,
+                    file_glob,
+                    diff_slice,
+                    1,
+                ) {
+                    Ok(matches) if matches.is_empty() => {
+                        violations.push(Violation {
+                            kind: "structural_must_contain_missing".to_string(),
+                            pattern: entry.clone(),
+                            file: "N/A".to_string(),
+                            line: None,
+                            context: Some(format!("No AST match for pattern '{}'", pattern)),
+                        });
+                    }
+                    Ok(_) => {} // Found at least one match — passes
+                    Err(e) => {
+                        warn!(
+                            "Structural search failed for pattern '{}': {}",
+                            pattern, e
+                        );
+                        violations.push(Violation {
+                            kind: "structural_check_error".to_string(),
+                            pattern: entry.clone(),
+                            file: "N/A".to_string(),
+                            line: None,
+                            context: Some(format!("Error: {}", e)),
+                        });
+                    }
+                }
+            }
+            None => {
+                violations.push(Violation {
+                    kind: "invalid_structural_pattern".to_string(),
+                    pattern: entry.clone(),
+                    file: "N/A".to_string(),
+                    line: None,
+                    context: Some(
+                        "Expected format 'language:pattern' (e.g. 'rust:$X.unwrap()')".to_string(),
+                    ),
+                });
+            }
+        }
+    }
+
+    // Check structural_must_not_contain
+    for entry in &case.checks.structural_must_not_contain {
+        match parse_structural_entry(entry) {
+            Some((lang, pattern)) => {
+                match run_structural_check(
+                    project_root,
+                    lang,
+                    pattern,
+                    file_glob,
+                    diff_slice,
+                    10,
+                ) {
+                    Ok(matches) => {
+                        for m in &matches {
+                            violations.push(Violation {
+                                kind: "structural_must_not_contain_found".to_string(),
+                                pattern: entry.clone(),
+                                file: m.file_path.clone(),
+                                line: Some(m.start_line),
+                                context: Some(m.context.clone()),
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Structural search failed for pattern '{}': {}",
+                            pattern, e
+                        );
+                        violations.push(Violation {
+                            kind: "structural_check_error".to_string(),
+                            pattern: entry.clone(),
+                            file: "N/A".to_string(),
+                            line: None,
+                            context: Some(format!("Error: {}", e)),
+                        });
+                    }
+                }
+            }
+            None => {
+                violations.push(Violation {
+                    kind: "invalid_structural_pattern".to_string(),
+                    pattern: entry.clone(),
+                    file: "N/A".to_string(),
+                    line: None,
+                    context: Some(
+                        "Expected format 'language:pattern' (e.g. 'rust:$X.unwrap()')".to_string(),
+                    ),
+                });
+            }
+        }
+    }
+
+    // --- Scoring ---
+
+    let total_checks = total_literal + total_structural;
     let score = if total_checks > 0 {
-        1.0 - (violations.len() as f64 / total_checks as f64)
+        (1.0 - (violations.len() as f64 / total_checks as f64)).max(0.0)
     } else {
         1.0
     };
 
-    let score = score.max(0.0);
     let passed = violations.is_empty();
 
     debug!(
-        "Case '{}': score={:.2}, violations={}, passed={}",
+        "Case '{}': score={:.2}, violations={} (literal={}, structural={}), passed={}",
         case.name,
         score,
         violations.len(),
+        total_literal,
+        total_structural,
         passed
     );
 
@@ -187,6 +462,19 @@ async fn evaluate_case(db: &Database, case: &EvalCase) -> Result<CaseResult> {
         score,
         violations,
     })
+}
+
+/// Count unique files referenced in case violations.
+fn count_files_in_case(result: &CaseResult) -> usize {
+    let mut files: Vec<&str> = result
+        .violations
+        .iter()
+        .map(|v| v.file.as_str())
+        .filter(|f| *f != "N/A")
+        .collect();
+    files.sort();
+    files.dedup();
+    files.len()
 }
 
 /// Get priority weight for scoring.
@@ -213,6 +501,41 @@ async fn get_git_commit() -> Result<String> {
 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
+
+/// Get the git commit from the last eval run for a golden set.
+async fn get_last_eval_commit(db: &Database, golden_set: &str) -> Option<String> {
+    let history = crate::eval::history::get_history(db, golden_set, 1)
+        .await
+        .ok()?;
+    history
+        .first()
+        .and_then(|entry| entry.git_commit.clone())
+}
+
+/// Get list of files changed since a given git commit.
+async fn get_changed_files(base_commit: &str) -> Result<Vec<String>> {
+    let output = tokio::process::Command::new("git")
+        .args(["diff", "--name-only", base_commit, "HEAD"])
+        .output()
+        .await?;
+
+    if !output.status.success() {
+        return Err(HiefError::Other(format!(
+            "git diff failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )));
+    }
+
+    let files: Vec<String> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(|l| l.to_string())
+        .collect();
+
+    debug!("Diff-based eval: {} files changed since {}", files.len(), base_commit);
+    Ok(files)
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -222,10 +545,33 @@ mod tests {
     use super::*;
     use crate::db::Database;
 
+    #[test]
+    fn test_parse_structural_entry() {
+        assert_eq!(
+            parse_structural_entry("rust:$X.unwrap()"),
+            Some(("rust", "$X.unwrap()"))
+        );
+        assert_eq!(
+            parse_structural_entry("python:import $MOD"),
+            Some(("python", "import $MOD"))
+        );
+        assert_eq!(parse_structural_entry("nocolon"), None);
+        assert_eq!(parse_structural_entry(":nopattern"), None);
+        assert_eq!(parse_structural_entry("nolang:"), None);
+    }
+
+    #[test]
+    fn test_glob_matches() {
+        assert!(glob_matches("src/main.rs", "*.rs"));
+        assert!(glob_matches("src/eval/scorer.rs", "src/**/*.rs"));
+        assert!(!glob_matches("tests/test.py", "src/**/*.rs"));
+        assert!(glob_matches("README.md", "*.md"));
+        assert!(glob_matches("src/main.rs", "src/main.rs"));
+    }
+
     #[tokio::test]
     async fn test_search_literal_punctuation() {
         let db = Database::open_memory().await.unwrap();
-        // create chunks table entry
         db.conn()
             .execute(
                 "INSERT INTO chunks (file_path, language, content, start_line, end_line, content_hash)
@@ -235,21 +581,15 @@ mod tests {
             .await
             .unwrap();
 
-        let results = search_literal(
-            &db,
-            ".unwrap()",
-            None,
-            10,
-        )
-        .await
-        .unwrap();
+        let results = search_literal(&db, ".unwrap()", None, None, 10)
+            .await
+            .unwrap();
         assert!(!results.is_empty(), "literal search should find dot pattern");
     }
 
     #[tokio::test]
     async fn test_evaluate_case_handles_dot_pattern() {
         let db = Database::open_memory().await.unwrap();
-        // insert a chunk containing the forbidden pattern
         db.conn()
             .execute(
                 "INSERT INTO chunks (file_path, language, content, start_line, end_line, content_hash)
@@ -268,10 +608,46 @@ mod tests {
                 must_contain: Vec::new(),
                 must_not_contain: vec![".unwrap()".to_string()],
                 file_patterns: None,
+                structural_must_contain: Vec::new(),
+                structural_must_not_contain: Vec::new(),
+                diff_only: false,
             },
         };
 
-        let result = evaluate_case(&db, &case).await.unwrap();
+        let result = evaluate_case(&db, &case, Path::new("."), None).await.unwrap();
         assert!(!result.violations.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_case_structural_fields_default() {
+        let db = Database::open_memory().await.unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO chunks (file_path, language, content, start_line, end_line, content_hash)
+                 VALUES ('foo.rs', 'rust', 'fn main() {}', 0, 0, 'h2');",
+                (),
+            )
+            .await
+            .unwrap();
+
+        // No structural checks → no structural violations
+        let case = EvalCase {
+            id: "t2".to_string(),
+            name: "no structural checks".to_string(),
+            priority: "medium".to_string(),
+            intent: None,
+            checks: crate::eval::golden::EvalChecks {
+                must_contain: vec!["fn main".to_string()],
+                must_not_contain: Vec::new(),
+                file_patterns: None,
+                structural_must_contain: Vec::new(),
+                structural_must_not_contain: Vec::new(),
+                diff_only: false,
+            },
+        };
+
+        let result = evaluate_case(&db, &case, Path::new("."), None).await.unwrap();
+        assert!(result.passed);
+        assert_eq!(result.score, 1.0);
     }
 }

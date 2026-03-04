@@ -1,97 +1,142 @@
 # HIEF Project Conventions
 #
-# Machine-readable rules that define how code should be written in this project.
-# These replace prose specification documents. Each convention has a structural
-# pattern (ast-grep syntax) that can be verified automatically.
+# Machine-readable project rules that agents MUST follow when writing code.
+# These replace prose specification documents with verifiable patterns.
 #
-# Severity levels:
-#   error   — must fix before merge
-#   warning — should fix, won't block merge
-#   info    — preference, not enforced
+# Format per rule:
+#   [rule_name]
+#   description = "Human-readable explanation"
+#   check_pattern = "ast-grep pattern or literal check"
+#   language = "rust"           # Language for structural patterns
+#   scope = "src/**/*.rs"       # File glob this applies to
+#   exclude = ["tests/**"]      # Optional exclusions
+#   severity = "error"          # error | warning | info
+#   rationale = "Why this rule exists"
 
-[error_handling]
-description = "All public functions return Result<T, HiefError> or are simple getters"
+# ---------------------------------------------------------------------------
+# Error Handling
+# ---------------------------------------------------------------------------
+
+[error_handling.no_unwrap]
+description = "No bare .unwrap() in production code"
 check_pattern = "$X.unwrap()"
-check_type = "must_not_exist"
+language = "rust"
 scope = "src/**/*.rs"
-exclude = ["tests/**", "src/**/tests.rs"]
+exclude = ["src/**/tests.rs", "tests/**"]
 severity = "error"
-rationale = "Bare .unwrap() panics on error; use ? or .expect() with context message"
+rationale = "Bare unwrap() panics on failure. Use ? or .expect() with context."
 
-[error_types]
-description = "Use thiserror-derived HiefError for all error types"
-check_pattern = "HiefError"
-check_type = "must_exist"
-scope = "src/errors.rs"
-severity = "error"
-rationale = "Consistent error types enable proper error propagation through the stack"
+[error_handling.no_bare_expect]
+description = "Prefer descriptive expect messages or ? over bare expect"
+check_pattern = "$X.expect($MSG)"
+language = "rust"
+scope = "src/**/*.rs"
+exclude = ["src/**/tests.rs", "tests/**"]
+severity = "warning"
+rationale = "expect() is acceptable but messages should be descriptive, not generic."
 
-[doc_comments]
-description = "All public items should have doc comments"
-check_pattern = "pub fn $NAME"
-check_type = "should_have_doc"
+[error_handling.result_types]
+description = "All public functions return Result<T, HiefError> or are simple getters"
+check_pattern = "pub fn $NAME($$$) -> Result<$RET, HiefError>"
+language = "rust"
+scope = "src/**/*.rs"
+severity = "info"
+rationale = "Consistent error types enable ? propagation and clear error reporting."
+
+# ---------------------------------------------------------------------------
+# Documentation
+# ---------------------------------------------------------------------------
+
+[documentation.public_doc_comments]
+description = "All public functions and types must have /// doc comments"
+check_pattern = "/// $DOC"
+language = "rust"
 scope = "src/**/*.rs"
 severity = "warning"
-rationale = "Doc comments appear in IDE hover and generated documentation"
+rationale = "Doc comments power IDE tooltips, docs.rs, and agent context retrieval."
 
-[no_println]
-description = "Use tracing macros instead of println! in library code"
-check_pattern = "println!"
-check_type = "must_not_exist"
+[documentation.module_docs]
+description = "Every module file must start with //! module-level documentation"
+check_pattern = "//! $DOC"
+language = "rust"
 scope = "src/**/*.rs"
-exclude = ["src/main.rs"]
 severity = "warning"
-rationale = "tracing provides structured, leveled logging; println goes to stdout unconditionally"
+rationale = "Module docs explain purpose and are indexed by HIEF for search."
 
-[async_runtime]
-description = "Use tokio as the only async runtime"
-check_pattern = "async-std"
-check_type = "must_not_exist"
+# ---------------------------------------------------------------------------
+# Architecture
+# ---------------------------------------------------------------------------
+
+[architecture.no_unsafe]
+description = "No unsafe blocks without documented safety invariants"
+check_pattern = "unsafe { $$$BODY }"
+language = "rust"
+scope = "src/**/*.rs"
+severity = "error"
+rationale = "unsafe requires explicit safety justification in a comment above the block."
+
+[architecture.no_network_in_core]
+description = "Core logic must not make network calls — offline operation is mandatory"
+scope = "src/index/**/*.rs, src/eval/**/*.rs, src/graph/**/*.rs"
+severity = "error"
+rationale = "HIEF is local-first. Network calls belong only in src/mcp/ transport layer."
+
+[architecture.async_runtime]
+description = "Use tokio as the only async runtime (not async-std)"
 scope = "Cargo.toml"
 severity = "error"
-rationale = "Mixed async runtimes cause subtle bugs; tokio is the project standard"
+rationale = "Single runtime avoids executor conflicts and simplifies dependency tree."
 
-[unsafe_code]
-description = "No unsafe blocks without documented safety invariants"
-check_pattern = "unsafe"
-check_type = "must_have_safety_doc"
-scope = "src/**/*.rs"
-severity = "error"
-rationale = "Unsafe code requires proof of correctness via safety comments"
+# ---------------------------------------------------------------------------
+# Code Structure
+# ---------------------------------------------------------------------------
 
-[test_modules]
-description = "Every module should have a #[cfg(test)] mod tests"
-check_pattern = "#[cfg(test)]"
-check_type = "should_exist"
-scope = "src/**/*.rs"
-exclude = ["src/**/mod.rs"]
-severity = "info"
-rationale = "Tests colocated with code are easier to maintain"
-
-[module_structure]
-description = "Module files (mod.rs) re-export public items"
-check_pattern = "pub mod"
-check_type = "should_exist"
+[structure.module_reexports]
+description = "mod.rs files re-export public items for clean API surface"
 scope = "src/**/mod.rs"
 severity = "info"
-rationale = "Clear module boundaries with explicit public surface"
+rationale = "Clean re-exports make the crate API discoverable."
 
-[mcp_tools]
-description = "MCP tools use Parameters<T> -> Result<Json<String>, ErrorData> pattern"
-check_pattern = "async fn $NAME(&self, Parameters($P): Parameters<$T>) -> Result<Json<String>, ErrorData>"
-check_type = "pattern_match"
-scope = "src/mcp/tools.rs"
-severity = "error"
-rationale = "Consistent MCP tool signatures enable reliable tool discovery"
+[structure.test_modules]
+description = "Every source file should have a #[cfg(test)] mod tests block"
+check_pattern = "#[cfg(test)]"
+language = "rust"
+scope = "src/**/*.rs"
+exclude = ["src/**/mod.rs"]
+severity = "warning"
+rationale = "Co-located tests ensure each module is independently testable."
 
-[no_external_services]
-description = "HIEF must work offline with zero external service dependencies"
-check_type = "architectural"
-severity = "error"
-rationale = "Local-first means local-only for core functionality"
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
 
-[single_binary]
-description = "No Docker, no sidecar processes, no external databases"
-check_type = "architectural"
+[dependencies.minimize_deps]
+description = "Minimize dependency count; prefer stdlib + established crates"
+scope = "Cargo.toml"
+severity = "info"
+rationale = "Fewer deps = faster builds, smaller binary, fewer supply chain risks."
+
+[dependencies.pin_parser_crates]
+description = "Pin versions for grammar/parser crates to avoid cc conflicts"
+scope = "Cargo.toml"
 severity = "error"
-rationale = "Developer tools that require infrastructure setup get abandoned"
+rationale = "tree-sitter grammar crates use cc for native compilation; version mismatches break builds."
+
+# ---------------------------------------------------------------------------
+# Process
+# ---------------------------------------------------------------------------
+
+[process.intent_traceability]
+description = "Non-trivial changes must trace to an approved intent"
+severity = "warning"
+rationale = "Intent traceability enables audit trails and multi-agent coordination."
+
+[process.no_self_approval]
+description = "No agent may approve its own intent"
+severity = "error"
+rationale = "Self-approval defeats the purpose of review gates."
+
+[process.golden_set_regressions]
+description = "Golden set score regressions block merge"
+severity = "error"
+rationale = "Quality guardrails are only useful if they're enforced."

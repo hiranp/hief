@@ -44,6 +44,18 @@ pub struct EvalChecks {
     pub must_not_contain: Vec<String>,
     #[serde(default)]
     pub file_patterns: Option<Vec<String>>,
+    /// Structural (ast-grep) patterns that MUST match somewhere in the codebase.
+    /// Each entry has the format `"language:pattern"` (e.g. `"rust:pub fn $NAME($$$) -> Result<$RET, $ERR>"`).
+    #[serde(default)]
+    pub structural_must_contain: Vec<String>,
+    /// Structural (ast-grep) patterns that MUST NOT match anywhere.
+    /// Each entry has the format `"language:pattern"` (e.g. `"rust:$X.unwrap()"`).
+    #[serde(default)]
+    pub structural_must_not_contain: Vec<String>,
+    /// If true, only evaluate files changed since the last eval run's git commit.
+    /// Enables differential evaluation for faster, less noisy checks.
+    #[serde(default)]
+    pub diff_only: bool,
 }
 
 /// Load golden sets from the golden directory.

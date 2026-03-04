@@ -108,7 +108,9 @@ Project rules live in `.hief/conventions.toml` (machine-readable) and
 
 ## Key Documentation
 
-* [Architecture](docs/architecture.md) — How HIEF works
+* [Architecture Summary](docs/architecture-summary.md) — Quick overview (start here)
+* [Architecture](docs/architecture.md) — Full technical architecture
 * [Agent Protocol](docs/agent-protocol.md) — Full interaction protocol
 * [Constitution](docs/specs/constitution.md) — Inviolable rules
 * [Conventions](.hief/conventions.toml) — Machine-readable rules
+* [Golden Sets](golden/) — Quality evaluation criteria
