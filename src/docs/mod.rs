@@ -755,6 +755,40 @@ pub fn check_docs_structure(project_root: &Path, config: &DocsConfig) -> DocsChe
         }
     }
 
+    // Warn about stray golden files in specs dir (the strategic example golden
+    // may live under docs/specs; this check nudges authors to relocate it to the
+    // standard `.hief/golden/` directory).
+    if specs_dir.exists() {
+        let stray = specs_dir
+            .read_dir()
+            .into_iter()
+            .flatten()
+            .filter(|e| {
+                if let Ok(entry) = e {
+                    return entry
+                        .path()
+                        .extension()
+                        .and_then(|s| s.to_str())
+                        .map(|ext| ext == "toml")
+                        .unwrap_or(false);
+                }
+                false
+            })
+            .count();
+        if stray > 0 {
+            checks.push(DocsCheckItem {
+                name: "stray_golden".to_string(),
+                status: "warning".to_string(),
+                message: format!(
+                    "Found {} TOML file{} under {} — golden sets belong in .hief/golden/",
+                    stray,
+                    if stray == 1 { "" } else { "s" },
+                    config.specs_path
+                ),
+            });
+        }
+    }
+
     // Check for harness specs
     let harness_dir = project_root.join(&config.harness_path);
     if harness_dir.exists() {

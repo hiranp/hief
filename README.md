@@ -32,6 +32,20 @@ See `AGENTS.md` for workflow and agent instructions.
 - `docs/Strategic Architecture …` – research report and design rationale
 - `docs/sdd-hdd-guide.md` – guide for bootstrapping SDD/HDD on existing codebases
 
+### Golden sets
+
+Golden evaluation cases live under the project root in `.hief/golden/` by default.  Create a new template with:
+
+```sh
+hief docs generate golden --name <set-name>
+```
+
+The CLI will refuse to emit output until a name is supplied, and doctor will warn if the directory is empty, since no evaluation can run without at least one `.toml` file there.
+
+Existing golden sets may be listed via `hief eval golden list` or with `hief doctor`.
+
+
+
 ### Building & Testing
 
 ```sh
