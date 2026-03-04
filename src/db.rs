@@ -91,6 +91,7 @@ impl Database {
             ("001_chunks", MIGRATION_001_CHUNKS),
             ("002_intents", MIGRATION_002_INTENTS),
             ("003_eval_runs", MIGRATION_003_EVAL_RUNS),
+            ("004_cognitive_memory", MIGRATION_004_COGNITIVE_MEMORY),
         ];
 
         for (name, sql) in migrations {
@@ -230,6 +231,34 @@ CREATE TABLE IF NOT EXISTS eval_runs (
 CREATE INDEX IF NOT EXISTS idx_eval_set ON eval_runs(golden_set, created_at);
 "#;
 
+const MIGRATION_004_COGNITIVE_MEMORY: &str = r#"
+-- Access tracking: every time an agent retrieves a code chunk
+CREATE TABLE IF NOT EXISTS chunk_access (
+    id          TEXT PRIMARY KEY,
+    chunk_id    TEXT,
+    file_path   TEXT NOT NULL,
+    query       TEXT,
+    tool        TEXT NOT NULL,
+    session_id  TEXT,
+    accessed_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_chunk_access_file ON chunk_access(file_path);
+CREATE INDEX IF NOT EXISTS idx_chunk_access_time ON chunk_access(accessed_at);
+CREATE INDEX IF NOT EXISTS idx_chunk_access_session ON chunk_access(session_id);
+
+-- Co-access graph: Hebbian co-activation tracking
+CREATE TABLE IF NOT EXISTS co_access (
+    file_a          TEXT NOT NULL,
+    file_b          TEXT NOT NULL,
+    strength        REAL NOT NULL DEFAULT 1.0,
+    last_co_access  INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (file_a, file_b)
+);
+
+CREATE INDEX IF NOT EXISTS idx_co_access_strength ON co_access(strength DESC);
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -257,7 +286,15 @@ mod tests {
             names.push(name);
         }
 
-        assert_eq!(names, vec!["001_chunks", "002_intents", "003_eval_runs"]);
+        assert_eq!(
+            names,
+            vec![
+                "001_chunks",
+                "002_intents",
+                "003_eval_runs",
+                "004_cognitive_memory"
+            ]
+        );
     }
 
     #[tokio::test]
@@ -413,7 +450,7 @@ mod tests {
                 .unwrap();
             let row = rows.next().await.unwrap().unwrap();
             let count: i64 = row.get(0).unwrap();
-            assert_eq!(count, 3);
+            assert_eq!(count, 4);
         }
     }
 

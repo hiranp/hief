@@ -64,6 +64,10 @@ pub enum Commands {
     #[command(subcommand)]
     Docs(DocsCmd),
 
+    /// MCP server registration for AI coding frameworks
+    #[command(subcommand)]
+    Mcp(McpCmd),
+
     /// Start the MCP server
     Serve(ServeArgs),
 
@@ -231,6 +235,30 @@ pub enum DocsCmd {
         /// Template ID to inspect
         template: String,
     },
+}
+
+#[derive(Subcommand)]
+pub enum McpCmd {
+    /// Register HIEF as an MCP server in AI coding frameworks (Claude CLI, VS Code, Cursor, etc.)
+    Install {
+        /// Target framework: claude-cli, claude-desktop, vscode, cursor, windsurf, gemini-cli, or all
+        #[arg(default_value = "all")]
+        target: String,
+        /// Install globally instead of project-level
+        #[arg(short, long)]
+        global: bool,
+    },
+    /// Remove HIEF MCP server registration from frameworks
+    Uninstall {
+        /// Target framework (same options as install)
+        #[arg(default_value = "all")]
+        target: String,
+        /// Uninstall from global config
+        #[arg(short, long)]
+        global: bool,
+    },
+    /// Show HIEF MCP registration status in all frameworks
+    Status,
 }
 
 #[derive(clap::Args)]

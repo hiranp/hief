@@ -1,6 +1,7 @@
 //! Code indexing: AST-aware chunking, file walking, and FTS5 search.
 
 pub mod chunker;
+pub mod memory;
 pub mod search;
 pub mod structural;
 pub mod vectors;

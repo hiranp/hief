@@ -46,6 +46,10 @@ pub struct SearchCodeParams {
     pub language: Option<String>,
     /// Filter by symbol kind
     pub symbol_kind: Option<String>,
+    /// Boost results by access history (cognitive memory). Default: false.
+    pub boost_by_history: Option<bool>,
+    /// MCP session identifier for access tracking
+    pub session_id: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -112,6 +116,24 @@ pub struct StructuralSearchParams {
     pub language: String,
     /// Max results to return (default: 50)
     pub top_k: Option<usize>,
+    /// MCP session identifier for access tracking
+    pub session_id: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct RelatedFilesParams {
+    /// File path to find related files for
+    pub file: String,
+    /// Max results to return (default: 10)
+    pub top_k: Option<usize>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct GetSessionContextParams {
+    /// MCP session identifier
+    pub session_id: String,
+    /// Max related file suggestions (default: 10)
+    pub suggestion_limit: Option<usize>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -128,7 +150,7 @@ pub struct SemanticSearchParams {
 impl HiefServer {
     #[tool(
         name = "search_code",
-        description = "Search indexed code. Returns matching chunks with file paths, symbol names, and snippets. Supports FTS5 syntax: prefix*, phrases, AND/OR, column:filter."
+        description = "Search indexed code with optional cognitive memory boost. Returns matching chunks with file paths, symbol names, and snippets. Supports FTS5 syntax: prefix*, phrases, AND/OR, column:filter. Set boost_by_history=true to rank recently/frequently accessed code higher."
     )]
     async fn search_code(
         &self,
@@ -139,9 +161,45 @@ impl HiefServer {
         search_query.language = params.language;
         search_query.symbol_kind = params.symbol_kind;
 
-        let results = index::search(&self.db, &search_query)
+        let mut results = index::search(&self.db, &search_query)
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
+        // Step 4: Apply activation-weighted boost if requested
+        if params.boost_by_history.unwrap_or(false) && !results.is_empty() {
+            let file_paths: Vec<String> = results.iter().map(|r| r.file_path.clone()).collect();
+            let boosts = index::memory::batch_access_boost(&self.db, &file_paths)
+                .await
+                .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
+            for result in &mut results {
+                if let Some(&boost) = boosts.get(&result.file_path) {
+                    // relevance_score = fts5_rank * (1.0 + access_boost)
+                    result.rank *= 1.0 + boost;
+                }
+            }
+
+            // Re-sort by boosted rank (FTS5 rank is negative, more negative = better)
+            results.sort_by(|a, b| a.rank.partial_cmp(&b.rank).unwrap_or(std::cmp::Ordering::Equal));
+        }
+
+        // Step 2: Record access for cognitive memory (fire-and-forget, don't block response)
+        let file_paths: Vec<String> = results.iter().map(|r| r.file_path.clone()).collect();
+        if !file_paths.is_empty() {
+            let db = self.db.clone();
+            let query_str = params.query.clone();
+            let session = params.session_id.clone();
+            tokio::spawn(async move {
+                let _ = index::memory::record_search_accesses(
+                    &db,
+                    &file_paths,
+                    Some(&query_str),
+                    "search_code",
+                    session.as_deref(),
+                )
+                .await;
+            });
+        }
 
         let json = serde_json::to_string_pretty(&results)
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
@@ -345,7 +403,63 @@ impl HiefServer {
         let results = structural::search(&self.project_root, &query)
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
+        // Record access for cognitive memory (fire-and-forget)
+        let file_paths: Vec<String> = results.iter().map(|r| r.file_path.clone()).collect();
+        if !file_paths.is_empty() {
+            let db = self.db.clone();
+            let pattern = params.pattern.clone();
+            let session = params.session_id.clone();
+            tokio::spawn(async move {
+                let _ = index::memory::record_search_accesses(
+                    &db,
+                    &file_paths,
+                    Some(&pattern),
+                    "structural_search",
+                    session.as_deref(),
+                )
+                .await;
+            });
+        }
+
         let json = serde_json::to_string_pretty(&results)
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        Ok(Json(json))
+    }
+
+    #[tool(
+        name = "related_files",
+        description = "Find files related to a given file using the cognitive co-access graph. Returns files that are frequently accessed together with the input file, ranked by co-access strength. Useful for discovering related code without searching."
+    )]
+    async fn related_files(
+        &self,
+        Parameters(params): Parameters<RelatedFilesParams>,
+    ) -> Result<Json<String>, ErrorData> {
+        let top_k = params.top_k.unwrap_or(10);
+
+        let related = index::memory::related_files(&self.db, &params.file, top_k)
+            .await
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
+        let json = serde_json::to_string_pretty(&related)
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        Ok(Json(json))
+    }
+
+    #[tool(
+        name = "get_session_context",
+        description = "Get session-aware context: files accessed this session (with counts), related files not yet accessed (from co-access graph). Provides proactive context so the agent knows what it has looked at and what else might be relevant."
+    )]
+    async fn get_session_context(
+        &self,
+        Parameters(params): Parameters<GetSessionContextParams>,
+    ) -> Result<Json<String>, ErrorData> {
+        let limit = params.suggestion_limit.unwrap_or(10);
+
+        let ctx = index::memory::get_session_context(&self.db, &params.session_id, limit)
+            .await
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
+        let json = serde_json::to_string_pretty(&ctx)
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         Ok(Json(json))
     }

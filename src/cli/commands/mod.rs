@@ -12,6 +12,7 @@ mod graph;
 mod hooks;
 mod index;
 mod init;
+pub mod mcp;
 mod upgrade;
 
 // Re-export everything so existing `cli::commands::*` paths keep working.
@@ -22,4 +23,5 @@ pub use graph::*;
 pub use hooks::*;
 pub use index::*;
 pub use init::*;
+pub use mcp::{mcp_install, mcp_uninstall, mcp_status};
 pub use upgrade::*;

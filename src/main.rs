@@ -21,7 +21,7 @@ use std::process;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-use cli::{Cli, Commands, DocsCmd, EvalCmd, GoldenCmd, GraphCmd, HooksCmd, IndexCmd};
+use cli::{Cli, Commands, DocsCmd, EvalCmd, GoldenCmd, GraphCmd, HooksCmd, IndexCmd, McpCmd};
 use config::Config;
 use db::Database;
 
@@ -260,6 +260,30 @@ async fn run(cli: Cli, project_root: PathBuf) -> anyhow::Result<()> {
                 }
                 DocsCmd::Variables { template } => {
                     cli::commands::docs_variables(&template, json)?;
+                }
+            }
+        }
+
+        Commands::Mcp(cmd) => {
+            match cmd {
+                McpCmd::Install { target, global } => {
+                    cli::commands::mcp_install(
+                        &project_root,
+                        Some(target.as_str()),
+                        global,
+                        json,
+                    )?;
+                }
+                McpCmd::Uninstall { target, global } => {
+                    cli::commands::mcp_uninstall(
+                        &project_root,
+                        Some(target.as_str()),
+                        global,
+                        json,
+                    )?;
+                }
+                McpCmd::Status => {
+                    cli::commands::mcp_status(&project_root, json)?;
                 }
             }
         }
