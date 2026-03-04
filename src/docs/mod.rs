@@ -357,7 +357,7 @@ pub fn resolve_output_path(
         // Replace category-level path prefixes with config values
         path_str = path_str.replace("docs/specs/", &format!("{}/", config.specs_path));
         path_str = path_str.replace("docs/harness/", &format!("{}/", config.harness_path));
-        // golden/ stays as-is (managed by eval config)
+        // Golden output path is resolved in CLI using eval.golden_set_path.
 
         return project_root.join(path_str);
     }

@@ -133,8 +133,33 @@ pub async fn docs_generate(
     let normalized_rendered = crate::docs::normalize_generated_document(&rendered);
 
     // Resolve output path
-    let output_path =
-        crate::docs::resolve_output_path(project_root, &config.docs, template, &variables, output);
+    let output_path = if template == "golden" {
+        if let Some(explicit) = output {
+            project_root.join(explicit)
+        } else {
+            let name = variables.get("name").map(|v| v.trim()).unwrap_or("");
+            if name.is_empty() {
+                return Err(crate::errors::HiefError::Other(
+                    "template 'golden' requires --name <set-name> (or --var name=<set-name>)"
+                        .to_string(),
+                ));
+            }
+
+            project_root
+                .join(&config.eval.golden_set_path)
+                .join(format!("{}.toml", name))
+        }
+    } else {
+        crate::docs::resolve_output_path(project_root, &config.docs, template, &variables, output)
+    };
+
+    let output_display = output_path.display().to_string();
+    if output_display.contains("{{") || output_display.contains("}}") {
+        return Err(crate::errors::HiefError::Other(format!(
+            "resolved output path contains unresolved placeholders: {}. Provide required variables (e.g. --name)",
+            output_display
+        )));
+    }
 
     // Check if file exists and not forced
     if output_path.exists() && !force {

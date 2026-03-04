@@ -66,7 +66,7 @@ pub const TEMPLATES: &[TemplateMeta] = &[
         id: "golden",
         name: "Golden Set Evaluation",
         description: "TOML-based evaluation cases with must_contain/must_not_contain checks",
-        default_output: "golden/{{name}}.toml",
+        default_output: ".hief/golden/{{name}}.toml",
         category: "golden",
         variables: &["name", "description"],
     },

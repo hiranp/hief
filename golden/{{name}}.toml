@@ -1,0 +1,27 @@
+[metadata]
+name = "{{name}}"
+description = "{{description}}"
+
+[[cases]]
+id = "{{case_1_id}}"
+name = "{{case_1_name}}"
+priority = "high"
+[cases.checks]
+must_not_contain = [{{case_1_must_not_contain}}]
+file_patterns = ["src/**/*.rs"]
+
+[[cases]]
+id = "{{case_2_id}}"
+name = "{{case_2_name}}"
+priority = "critical"
+[cases.checks]
+must_contain = [{{case_2_must_contain}}]
+file_patterns = ["src/**/*.rs"]
+
+[[cases]]
+id = "{{case_3_id}}"
+name = "{{case_3_name}}"
+priority = "medium"
+[cases.checks]
+must_not_contain = [{{case_3_must_not_contain}}]
+file_patterns = ["src/**/*.rs"]
