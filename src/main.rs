@@ -201,7 +201,11 @@ async fn run(cli: Cli, project_root: PathBuf) -> anyhow::Result<()> {
             let db_path = Config::db_path(&project_root);
             let db = Database::open(&db_path).await?;
 
-            cli::commands::doctor(&db, &project_root, &config, fix, json).await?;
+            cli::commands::doctor(&db, &project_root, &config_path, &config, fix, json).await?;
+        }
+
+        Commands::Upgrade => {
+            cli::commands::upgrade(&project_root, &config_path, json).await?;
         }
 
         Commands::Hooks(cmd) => {

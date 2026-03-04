@@ -35,6 +35,14 @@ install:
 	ln -sf {{invocation_directory()}}/target/release/hief {{HOME}}/bin/hief
 	@echo "Hief installed to ~/bin/hief"
 
+# Upgrade local hief binary and apply safe auto-fixes
+upgrade:
+	cargo build --release
+	mkdir -p {{HOME}}/bin
+	ln -sf {{invocation_directory()}}/target/release/hief {{HOME}}/bin/hief
+	cargo run -- doctor --fix
+	@echo "Hief upgraded and doctor fixes applied"
+
 uninstall:
 	rm -f {{HOME}}/bin/hief
 	@echo "Hief removed from ~/bin/hief"

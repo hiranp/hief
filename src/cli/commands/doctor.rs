@@ -33,12 +33,47 @@ pub struct DoctorCheck {
 pub async fn doctor(
     db: &Database,
     project_root: &Path,
+    config_path: &Path,
     config: &Config,
     fix: bool,
     json: bool,
 ) -> Result<()> {
     let mut checks = Vec::new();
     let mut fixes_applied = 0;
+
+    // 0. Check config/binary version drift (upgrade hygiene)
+    let binary_version = env!("CARGO_PKG_VERSION");
+    if config.hief.version != binary_version {
+        let mut check = DoctorCheck {
+            name: "config_version".to_string(),
+            status: "warning".to_string(),
+            message: format!(
+                "hief.toml version '{}' differs from binary '{}'",
+                config.hief.version, binary_version
+            ),
+            fixable: true,
+            fixed: false,
+        };
+
+        if fix {
+            if upsert_hief_version_file(config_path, binary_version).is_ok() {
+                check.status = "ok".to_string();
+                check.message = format!("Updated hief.toml version to '{}'", binary_version);
+                check.fixed = true;
+                fixes_applied += 1;
+            }
+        }
+
+        checks.push(check);
+    } else {
+        checks.push(DoctorCheck {
+            name: "config_version".to_string(),
+            status: "ok".to_string(),
+            message: format!("Config version matches binary ({})", binary_version),
+            fixable: false,
+            fixed: false,
+        });
+    }
 
     // 1. Check if .hief directory exists
     let hief_dir = Config::hief_dir(project_root);
@@ -291,4 +326,86 @@ pub async fn doctor(
     }
 
     Ok(())
+}
+
+fn upsert_hief_version_file(path: &Path, version: &str) -> Result<()> {
+    let existing = if path.exists() {
+        std::fs::read_to_string(path)?
+    } else {
+        String::new()
+    };
+
+    let updated = upsert_hief_version_content(&existing, version);
+    std::fs::write(path, updated)?;
+    Ok(())
+}
+
+fn upsert_hief_version_content(content: &str, version: &str) -> String {
+    let mut lines: Vec<String> = content.lines().map(|l| l.to_string()).collect();
+
+    let mut hief_start: Option<usize> = None;
+    let mut hief_end = lines.len();
+
+    for (i, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        if trimmed == "[hief]" {
+            hief_start = Some(i);
+            continue;
+        }
+
+        if hief_start.is_some() && trimmed.starts_with('[') && trimmed.ends_with(']') {
+            hief_end = i;
+            break;
+        }
+    }
+
+    match hief_start {
+        Some(start) => {
+            let mut replaced = false;
+            for line in lines.iter_mut().take(hief_end).skip(start + 1) {
+                let trimmed = line.trim_start();
+                if trimmed.starts_with("version") {
+                    *line = format!("version = \"{}\"", version);
+                    replaced = true;
+                    break;
+                }
+            }
+
+            if !replaced {
+                lines.insert(start + 1, format!("version = \"{}\"", version));
+            }
+        }
+        None => {
+            if !lines.is_empty() && !lines.last().map(|l| l.is_empty()).unwrap_or(false) {
+                lines.push(String::new());
+            }
+            lines.push("[hief]".to_string());
+            lines.push(format!("version = \"{}\"", version));
+        }
+    }
+
+    let mut output = lines.join("\n");
+    if !output.ends_with('\n') {
+        output.push('\n');
+    }
+    output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_upsert_hief_version_replaces_existing() {
+        let input = "[hief]\nversion = \"0.1.0\"\n\n[index]\nchunk_strategy = \"ast\"\n";
+        let output = upsert_hief_version_content(input, "0.2.0");
+        assert!(output.contains("[hief]\nversion = \"0.2.0\""));
+    }
+
+    #[test]
+    fn test_upsert_hief_version_inserts_when_missing() {
+        let input = "[index]\nchunk_strategy = \"ast\"\n";
+        let output = upsert_hief_version_content(input, "0.2.0");
+        assert!(output.contains("[hief]\nversion = \"0.2.0\""));
+    }
 }

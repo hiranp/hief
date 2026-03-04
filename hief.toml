@@ -2,7 +2,7 @@
 # See: docs/plan/00-overview.md
 
 [hief]
-version = "0.1.0"
+version = "0.2.1"
 
 [index]
 chunk_strategy = "ast"      # ast | fixed

@@ -53,6 +53,9 @@ pub enum Commands {
         fix: bool,
     },
 
+    /// Upgrade local hief binary and apply safe post-upgrade fixes
+    Upgrade,
+
     /// Git hook management
     #[command(subcommand)]
     Hooks(HooksCmd),

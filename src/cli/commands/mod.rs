@@ -12,6 +12,7 @@ mod graph;
 mod hooks;
 mod index;
 mod init;
+mod upgrade;
 
 // Re-export everything so existing `cli::commands::*` paths keep working.
 pub use doctor::*;
@@ -21,3 +22,4 @@ pub use graph::*;
 pub use hooks::*;
 pub use index::*;
 pub use init::*;
+pub use upgrade::*;
