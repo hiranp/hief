@@ -1,6 +1,6 @@
 [package]
 name = "hief"
-version = "0.2.3"
+version = "0.2.5"
 edition = "2024"
 rust-version = "1.85"
 description = "Hybrid Intent-Evaluation Framework — a sidecar for AI coding agents"

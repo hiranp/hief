@@ -12,6 +12,8 @@
 //! | `project://conventions` | Machine-readable project rules |
 //! | `project://health` | Latest eval scores, regressions, warnings |
 
+#![allow(dead_code)]
+
 use std::path::Path;
 
 use serde::Serialize;

@@ -25,6 +25,7 @@ use crate::errors::{HiefError, Result};
 
 /// A record of a code chunk being accessed by an agent.
 #[derive(Debug, Clone, Serialize)]
+#[allow(dead_code)]
 pub struct AccessRecord {
     pub id: String,
     pub chunk_id: Option<String>,
@@ -37,6 +38,7 @@ pub struct AccessRecord {
 
 /// A co-access edge between two files.
 #[derive(Debug, Clone, Serialize)]
+#[allow(dead_code)]
 pub struct CoAccessEdge {
     pub file_a: String,
     pub file_b: String,
@@ -54,6 +56,7 @@ pub struct RelatedFile {
 
 /// Access statistics for a file (used for search boosting).
 #[derive(Debug, Clone, Serialize)]
+#[allow(dead_code)]
 pub struct FileAccessStats {
     pub file_path: String,
     pub access_count: i64,
@@ -324,6 +327,7 @@ pub async fn related_files(
 /// - Recently accessed code gets a higher boost
 /// - Frequently accessed code gets a boost with diminishing returns (log)
 /// - The boost decays over ~30 days
+#[allow(dead_code)]
 pub async fn compute_access_boost(db: &Database, file_path: &str) -> Result<f64> {
     let conn = db.conn();
 
@@ -476,6 +480,7 @@ pub async fn get_session_context(
 }
 
 /// Get access statistics for all files (used by the health/overview resources).
+#[allow(dead_code)]
 pub async fn get_access_stats(db: &Database, limit: usize) -> Result<Vec<FileAccessStats>> {
     let conn = db.conn();
 

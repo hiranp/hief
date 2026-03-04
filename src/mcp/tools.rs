@@ -488,6 +488,8 @@ impl HiefServer {
             "status": "not_yet_available",
             "message": "Semantic search is enabled in config but the LanceDB integration is still being built. Use search_code (keyword) or structural_search (AST pattern) in the meantime.",
             "query": params.query,
+            "top_k": params.top_k.unwrap_or(10),
+            "language": params.language,
         });
 
         let json = serde_json::to_string_pretty(&response)
