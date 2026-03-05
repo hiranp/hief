@@ -256,11 +256,7 @@ async fn upsert_co_access(db: &Database, file_a: &str, file_b: &str) -> Result<(
 ///
 /// Always stores (file_a, file_b) where file_a < file_b alphabetically.
 fn ordered_pair<'a>(a: &'a str, b: &'a str) -> (&'a str, &'a str) {
-    if a <= b {
-        (a, b)
-    } else {
-        (b, a)
-    }
+    if a <= b { (a, b) } else { (b, a) }
 }
 
 // ---------------------------------------------------------------------------
@@ -306,11 +302,7 @@ pub async fn related_files(
         });
     }
 
-    debug!(
-        "Found {} related files for '{}'",
-        results.len(),
-        file_path
-    );
+    debug!("Found {} related files for '{}'", results.len(), file_path);
     Ok(results)
 }
 
@@ -461,7 +453,9 @@ pub async fn get_session_context(
         for rf in related {
             // Only suggest files not already accessed in this session
             if !accessed_paths.contains(&rf.file_path)
-                && !suggested_files.iter().any(|s: &RelatedFile| s.file_path == rf.file_path)
+                && !suggested_files
+                    .iter()
+                    .any(|s: &RelatedFile| s.file_path == rf.file_path)
             {
                 suggested_files.push(rf);
             }
@@ -469,7 +463,11 @@ pub async fn get_session_context(
     }
 
     // Sort suggestions by strength and limit
-    suggested_files.sort_by(|a, b| b.strength.partial_cmp(&a.strength).unwrap_or(std::cmp::Ordering::Equal));
+    suggested_files.sort_by(|a, b| {
+        b.strength
+            .partial_cmp(&a.strength)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     suggested_files.truncate(suggestion_limit);
 
     Ok(SessionContext {
@@ -540,7 +538,10 @@ mod tests {
         // Verify the record exists
         let mut rows = db
             .conn()
-            .query("SELECT file_path, tool FROM chunk_access WHERE id = ?1", [id.as_str()])
+            .query(
+                "SELECT file_path, tool FROM chunk_access WHERE id = ?1",
+                [id.as_str()],
+            )
             .await
             .unwrap();
         let row = rows.next().await.unwrap().unwrap();
@@ -593,7 +594,10 @@ mod tests {
             .unwrap();
         let row = rows.next().await.unwrap().unwrap();
         let s1: f64 = row.get(0).unwrap();
-        assert!((s1 - 1.0).abs() < f64::EPSILON, "Initial strength should be 1.0");
+        assert!(
+            (s1 - 1.0).abs() < f64::EPSILON,
+            "Initial strength should be 1.0"
+        );
 
         // Second access: strength = 1.0 * 0.95 + 1.0 = 1.95
         upsert_co_access(&db, "src/a.rs", "src/b.rs").await.unwrap();
@@ -646,9 +650,15 @@ mod tests {
         let db = Database::open_memory().await.unwrap();
 
         // Build a co-access graph
-        upsert_co_access(&db, "src/db.rs", "src/errors.rs").await.unwrap();
-        upsert_co_access(&db, "src/db.rs", "src/errors.rs").await.unwrap(); // strengthen
-        upsert_co_access(&db, "src/db.rs", "src/config.rs").await.unwrap();
+        upsert_co_access(&db, "src/db.rs", "src/errors.rs")
+            .await
+            .unwrap();
+        upsert_co_access(&db, "src/db.rs", "src/errors.rs")
+            .await
+            .unwrap(); // strengthen
+        upsert_co_access(&db, "src/db.rs", "src/config.rs")
+            .await
+            .unwrap();
 
         let related = related_files(&db, "src/db.rs", 10).await.unwrap();
 
@@ -664,7 +674,9 @@ mod tests {
         let db = Database::open_memory().await.unwrap();
 
         // Store with ordered pair (a < b alphabetically)
-        upsert_co_access(&db, "src/alpha.rs", "src/beta.rs").await.unwrap();
+        upsert_co_access(&db, "src/alpha.rs", "src/beta.rs")
+            .await
+            .unwrap();
 
         // Query from both sides should work
         let from_alpha = related_files(&db, "src/alpha.rs", 10).await.unwrap();
@@ -681,7 +693,10 @@ mod tests {
         let db = Database::open_memory().await.unwrap();
 
         let boost = compute_access_boost(&db, "nonexistent.rs").await.unwrap();
-        assert!((boost - 0.0).abs() < f64::EPSILON, "No access history should give 0 boost");
+        assert!(
+            (boost - 0.0).abs() < f64::EPSILON,
+            "No access history should give 0 boost"
+        );
     }
 
     #[tokio::test]
@@ -698,7 +713,11 @@ mod tests {
         let boost = compute_access_boost(&db, "src/hot.rs").await.unwrap();
         // access_count=5, just now so recency_weight ≈ 1.0
         // boost = ln(1+5) * exp(0) = ln(6) * 1 ≈ 1.79
-        assert!(boost > 1.0, "Boost for recently accessed file should be > 1.0, got {}", boost);
+        assert!(
+            boost > 1.0,
+            "Boost for recently accessed file should be > 1.0, got {}",
+            boost
+        );
         assert!(boost < 3.0, "Boost should be reasonable, got {}", boost);
     }
 
@@ -709,18 +728,41 @@ mod tests {
         let session = "test-session-42";
 
         // Record accesses in this session
-        record_access(&db, "src/db.rs", None, Some("database"), "search_code", Some(session))
-            .await
-            .unwrap();
-        record_access(&db, "src/db.rs", None, Some("query"), "search_code", Some(session))
-            .await
-            .unwrap();
-        record_access(&db, "src/errors.rs", None, Some("error"), "search_code", Some(session))
-            .await
-            .unwrap();
+        record_access(
+            &db,
+            "src/db.rs",
+            None,
+            Some("database"),
+            "search_code",
+            Some(session),
+        )
+        .await
+        .unwrap();
+        record_access(
+            &db,
+            "src/db.rs",
+            None,
+            Some("query"),
+            "search_code",
+            Some(session),
+        )
+        .await
+        .unwrap();
+        record_access(
+            &db,
+            "src/errors.rs",
+            None,
+            Some("error"),
+            "search_code",
+            Some(session),
+        )
+        .await
+        .unwrap();
 
         // Add some co-access data
-        upsert_co_access(&db, "src/config.rs", "src/db.rs").await.unwrap();
+        upsert_co_access(&db, "src/config.rs", "src/db.rs")
+            .await
+            .unwrap();
 
         let ctx = get_session_context(&db, session, 10).await.unwrap();
 
@@ -728,11 +770,19 @@ mod tests {
         assert_eq!(ctx.total_accesses, 3);
 
         // db.rs should have count=2
-        let db_access = ctx.accessed_files.iter().find(|f| f.file_path == "src/db.rs").unwrap();
+        let db_access = ctx
+            .accessed_files
+            .iter()
+            .find(|f| f.file_path == "src/db.rs")
+            .unwrap();
         assert_eq!(db_access.access_count, 2);
 
         // config.rs should be suggested (co-accessed with db.rs but not accessed this session)
-        let suggested_paths: Vec<&str> = ctx.suggested_files.iter().map(|f| f.file_path.as_str()).collect();
+        let suggested_paths: Vec<&str> = ctx
+            .suggested_files
+            .iter()
+            .map(|f| f.file_path.as_str())
+            .collect();
         assert!(
             suggested_paths.contains(&"src/config.rs"),
             "config.rs should be suggested via co-access with db.rs, got {:?}",
@@ -784,11 +834,15 @@ mod tests {
             .await
             .unwrap();
 
-        let paths = vec!["src/a.rs".to_string(), "src/b.rs".to_string(), "src/c.rs".to_string()];
+        let paths = vec![
+            "src/a.rs".to_string(),
+            "src/b.rs".to_string(),
+            "src/c.rs".to_string(),
+        ];
         let boosts = batch_access_boost(&db, &paths).await.unwrap();
 
         assert!(boosts.get("src/a.rs").unwrap() > boosts.get("src/b.rs").unwrap());
-        assert!(boosts.get("src/c.rs").is_none()); // No access history
+        assert!(!boosts.contains_key("src/c.rs")); // No access history
     }
 
     #[tokio::test]

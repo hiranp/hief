@@ -165,12 +165,7 @@ pub fn hooks_status(project_root: &Path, json: bool) -> Result<()> {
 }
 
 /// Helper: install a single hook, appending to existing if needed.
-fn install_hook(
-    path: &Path,
-    content: &str,
-    name: &str,
-    installed: &mut Vec<String>,
-) -> Result<()> {
+fn install_hook(path: &Path, content: &str, name: &str, installed: &mut Vec<String>) -> Result<()> {
     if path.exists() {
         let existing = std::fs::read_to_string(path)?;
         if existing.contains("hief") {

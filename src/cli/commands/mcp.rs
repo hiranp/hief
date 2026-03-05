@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::errors::Result;
 
@@ -77,13 +77,9 @@ impl McpClient {
 
         match (self, scope) {
             // Claude CLI: project-level .mcp.json
-            (McpClient::ClaudeCli, ConfigScope::Project) => {
-                Some(project_root.join(".mcp.json"))
-            }
+            (McpClient::ClaudeCli, ConfigScope::Project) => Some(project_root.join(".mcp.json")),
             // Claude CLI: global ~/.claude.json
-            (McpClient::ClaudeCli, ConfigScope::Global) => {
-                Some(home.join(".claude.json"))
-            }
+            (McpClient::ClaudeCli, ConfigScope::Global) => Some(home.join(".claude.json")),
 
             // Claude Desktop: global only
             (McpClient::ClaudeDesktop, ConfigScope::Global) => {
@@ -108,14 +104,14 @@ impl McpClient {
             (McpClient::Cursor, ConfigScope::Project) => {
                 Some(project_root.join(".cursor").join("mcp.json"))
             }
-            (McpClient::Cursor, ConfigScope::Global) => {
-                Some(home.join(".cursor").join("mcp.json"))
-            }
+            (McpClient::Cursor, ConfigScope::Global) => Some(home.join(".cursor").join("mcp.json")),
 
             // Windsurf: global ~/.codeium/windsurf/mcp_config.json
-            (McpClient::Windsurf, ConfigScope::Global) => {
-                Some(home.join(".codeium").join("windsurf").join("mcp_config.json"))
-            }
+            (McpClient::Windsurf, ConfigScope::Global) => Some(
+                home.join(".codeium")
+                    .join("windsurf")
+                    .join("mcp_config.json"),
+            ),
             (McpClient::Windsurf, ConfigScope::Project) => None,
 
             // Gemini CLI: global ~/.gemini/settings.json
@@ -420,18 +416,16 @@ pub fn mcp_install(
             // For "all" or default, install in appropriate scope for each
             McpClient::all().to_vec()
         }
-        Some(name) => {
-            match McpClient::from_str(name) {
-                Some(client) => vec![client],
-                None => {
-                    eprintln!("Unknown client '{}'. Available clients:", name);
-                    for c in McpClient::all() {
-                        eprintln!("  {} ({})", c.id(), c.name());
-                    }
-                    return Ok(());
+        Some(name) => match McpClient::from_str(name) {
+            Some(client) => vec![client],
+            None => {
+                eprintln!("Unknown client '{}'. Available clients:", name);
+                for c in McpClient::all() {
+                    eprintln!("  {} ({})", c.id(), c.name());
                 }
+                return Ok(());
             }
-        }
+        },
     };
 
     let mut results = Vec::new();
@@ -471,15 +465,13 @@ pub fn mcp_uninstall(
 
     let clients: Vec<McpClient> = match target {
         Some("all") | None => McpClient::all().to_vec(),
-        Some(name) => {
-            match McpClient::from_str(name) {
-                Some(client) => vec![client],
-                None => {
-                    eprintln!("Unknown client '{}'", name);
-                    return Ok(());
-                }
+        Some(name) => match McpClient::from_str(name) {
+            Some(client) => vec![client],
+            None => {
+                eprintln!("Unknown client '{}'", name);
+                return Ok(());
             }
-        }
+        },
     };
 
     let mut results = Vec::new();
@@ -512,13 +504,20 @@ pub fn mcp_status(project_root: &Path, json_output: bool) -> Result<()> {
         let project_scope = client.config_path(project_root, ConfigScope::Project);
         let global_scope = client.config_path(project_root, ConfigScope::Global);
 
-        if let Some(_) = project_scope {
-            results.push(status_for_client(*client, project_root, ConfigScope::Project));
+        if project_scope.is_some() {
+            results.push(status_for_client(
+                *client,
+                project_root,
+                ConfigScope::Project,
+            ));
         }
-        if let Some(_) = global_scope {
+        if global_scope.is_some() {
             // Only add global if it's different from project
             let reg = status_for_client(*client, project_root, ConfigScope::Global);
-            if !results.iter().any(|r: &McpRegistration| r.config_path == reg.config_path) {
+            if !results
+                .iter()
+                .any(|r: &McpRegistration| r.config_path == reg.config_path)
+            {
                 results.push(reg);
             }
         }
@@ -559,9 +558,12 @@ fn print_results(results: &[McpRegistration], action: &str, json_output: bool) {
         println!();
 
         if action == "install" {
-            let installed = results
-                .iter()
-                .any(|r| matches!(r.status, RegistrationStatus::Installed | RegistrationStatus::Created));
+            let installed = results.iter().any(|r| {
+                matches!(
+                    r.status,
+                    RegistrationStatus::Installed | RegistrationStatus::Created
+                )
+            });
             if installed {
                 println!("  Next: Restart your IDE/CLI to pick up the new MCP server.");
                 println!("  HIEF will start automatically when your agent connects.\n");
@@ -576,13 +578,22 @@ mod tests {
 
     #[test]
     fn test_client_from_str() {
-        assert_eq!(McpClient::from_str("claude-cli"), Some(McpClient::ClaudeCli));
+        assert_eq!(
+            McpClient::from_str("claude-cli"),
+            Some(McpClient::ClaudeCli)
+        );
         assert_eq!(McpClient::from_str("claude"), Some(McpClient::ClaudeCli));
-        assert_eq!(McpClient::from_str("claude-code"), Some(McpClient::ClaudeCli));
+        assert_eq!(
+            McpClient::from_str("claude-code"),
+            Some(McpClient::ClaudeCli)
+        );
         assert_eq!(McpClient::from_str("vscode"), Some(McpClient::VsCode));
         assert_eq!(McpClient::from_str("cursor"), Some(McpClient::Cursor));
         assert_eq!(McpClient::from_str("windsurf"), Some(McpClient::Windsurf));
-        assert_eq!(McpClient::from_str("gemini-cli"), Some(McpClient::GeminiCli));
+        assert_eq!(
+            McpClient::from_str("gemini-cli"),
+            Some(McpClient::GeminiCli)
+        );
         assert_eq!(McpClient::from_str("gemini"), Some(McpClient::GeminiCli));
         assert_eq!(McpClient::from_str("unknown"), None);
     }
@@ -624,7 +635,10 @@ mod tests {
         // Install for VS Code (project scope)
         let result = install_for_client(McpClient::VsCode, project_root, ConfigScope::Project);
         assert!(
-            matches!(result.status, RegistrationStatus::Installed | RegistrationStatus::Created),
+            matches!(
+                result.status,
+                RegistrationStatus::Installed | RegistrationStatus::Created
+            ),
             "Expected installed, got: {:?}",
             result.status
         );
@@ -647,7 +661,10 @@ mod tests {
         // Install twice
         install_for_client(McpClient::VsCode, project_root, ConfigScope::Project);
         let result = install_for_client(McpClient::VsCode, project_root, ConfigScope::Project);
-        assert!(matches!(result.status, RegistrationStatus::AlreadyInstalled));
+        assert!(matches!(
+            result.status,
+            RegistrationStatus::AlreadyInstalled
+        ));
     }
 
     #[test]
@@ -679,7 +696,10 @@ mod tests {
         // After install
         install_for_client(McpClient::VsCode, project_root, ConfigScope::Project);
         let result = status_for_client(McpClient::VsCode, project_root, ConfigScope::Project);
-        assert!(matches!(result.status, RegistrationStatus::AlreadyInstalled));
+        assert!(matches!(
+            result.status,
+            RegistrationStatus::AlreadyInstalled
+        ));
     }
 
     #[test]
@@ -689,7 +709,10 @@ mod tests {
 
         let result = install_for_client(McpClient::ClaudeCli, project_root, ConfigScope::Project);
         assert!(
-            matches!(result.status, RegistrationStatus::Installed | RegistrationStatus::Created),
+            matches!(
+                result.status,
+                RegistrationStatus::Installed | RegistrationStatus::Created
+            ),
             "Expected installed, got: {:?}",
             result.status
         );

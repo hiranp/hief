@@ -102,12 +102,10 @@ pub async fn evaluate(
 
     // Calculate overall score with priority weighting
     let (total_weight, weighted_score) =
-        case_results
-            .iter()
-            .fold((0.0f64, 0.0f64), |(tw, ws), c| {
-                let w = priority_weight(&c.priority);
-                (tw + w, ws + c.score * w)
-            });
+        case_results.iter().fold((0.0f64, 0.0f64), |(tw, ws), c| {
+            let w = priority_weight(&c.priority);
+            (tw + w, ws + c.score * w)
+        });
 
     let overall_score = if total_weight > 0.0 {
         weighted_score / total_weight
@@ -190,9 +188,7 @@ async fn search_literal(
     sql.push_str(&format!(" LIMIT {}", limit));
 
     // Execute with dynamic params
-    let mut rows = conn
-        .query(&sql, params_to_libsql(&params))
-        .await?;
+    let mut rows = conn.query(&sql, params_to_libsql(&params)).await?;
 
     let mut res = Vec::new();
     while let Some(row) = rows.next().await? {
@@ -239,7 +235,7 @@ fn run_structural_check(
             }
             // Check diff filter
             if let Some(files) = diff_files {
-                if !files.iter().any(|f| m.file_path == *f) {
+                if !files.contains(&m.file_path) {
                     return false;
                 }
             }
@@ -327,21 +323,14 @@ async fn evaluate_case(
 
     // --- Structural (ast-grep) checks ---
 
-    let total_structural = case.checks.structural_must_contain.len()
-        + case.checks.structural_must_not_contain.len();
+    let total_structural =
+        case.checks.structural_must_contain.len() + case.checks.structural_must_not_contain.len();
 
     // Check structural_must_contain
     for entry in &case.checks.structural_must_contain {
         match parse_structural_entry(entry) {
             Some((lang, pattern)) => {
-                match run_structural_check(
-                    project_root,
-                    lang,
-                    pattern,
-                    file_glob,
-                    diff_slice,
-                    1,
-                ) {
+                match run_structural_check(project_root, lang, pattern, file_glob, diff_slice, 1) {
                     Ok(matches) if matches.is_empty() => {
                         violations.push(Violation {
                             kind: "structural_must_contain_missing".to_string(),
@@ -353,10 +342,7 @@ async fn evaluate_case(
                     }
                     Ok(_) => {} // Found at least one match — passes
                     Err(e) => {
-                        warn!(
-                            "Structural search failed for pattern '{}': {}",
-                            pattern, e
-                        );
+                        warn!("Structural search failed for pattern '{}': {}", pattern, e);
                         violations.push(Violation {
                             kind: "structural_check_error".to_string(),
                             pattern: entry.clone(),
@@ -385,14 +371,7 @@ async fn evaluate_case(
     for entry in &case.checks.structural_must_not_contain {
         match parse_structural_entry(entry) {
             Some((lang, pattern)) => {
-                match run_structural_check(
-                    project_root,
-                    lang,
-                    pattern,
-                    file_glob,
-                    diff_slice,
-                    10,
-                ) {
+                match run_structural_check(project_root, lang, pattern, file_glob, diff_slice, 10) {
                     Ok(matches) => {
                         for m in &matches {
                             violations.push(Violation {
@@ -405,10 +384,7 @@ async fn evaluate_case(
                         }
                     }
                     Err(e) => {
-                        warn!(
-                            "Structural search failed for pattern '{}': {}",
-                            pattern, e
-                        );
+                        warn!("Structural search failed for pattern '{}': {}", pattern, e);
                         violations.push(Violation {
                             kind: "structural_check_error".to_string(),
                             pattern: entry.clone(),
@@ -507,9 +483,7 @@ async fn get_last_eval_commit(db: &Database, golden_set: &str) -> Option<String>
     let history = crate::eval::history::get_history(db, golden_set, 1)
         .await
         .ok()?;
-    history
-        .first()
-        .and_then(|entry| entry.git_commit.clone())
+    history.first().and_then(|entry| entry.git_commit.clone())
 }
 
 /// Get list of files changed since a given git commit.
@@ -532,7 +506,11 @@ async fn get_changed_files(base_commit: &str) -> Result<Vec<String>> {
         .map(|l| l.to_string())
         .collect();
 
-    debug!("Diff-based eval: {} files changed since {}", files.len(), base_commit);
+    debug!(
+        "Diff-based eval: {} files changed since {}",
+        files.len(),
+        base_commit
+    );
     Ok(files)
 }
 
@@ -584,7 +562,10 @@ mod tests {
         let results = search_literal(&db, ".unwrap()", None, None, 10)
             .await
             .unwrap();
-        assert!(!results.is_empty(), "literal search should find dot pattern");
+        assert!(
+            !results.is_empty(),
+            "literal search should find dot pattern"
+        );
     }
 
     #[tokio::test]
@@ -614,7 +595,9 @@ mod tests {
             },
         };
 
-        let result = evaluate_case(&db, &case, Path::new("."), None).await.unwrap();
+        let result = evaluate_case(&db, &case, Path::new("."), None)
+            .await
+            .unwrap();
         assert!(!result.violations.is_empty());
     }
 
@@ -646,7 +629,9 @@ mod tests {
             },
         };
 
-        let result = evaluate_case(&db, &case, Path::new("."), None).await.unwrap();
+        let result = evaluate_case(&db, &case, Path::new("."), None)
+            .await
+            .unwrap();
         assert!(result.passed);
         assert_eq!(result.score, 1.0);
     }

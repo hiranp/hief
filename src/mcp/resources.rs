@@ -293,11 +293,17 @@ pub async fn get_project_health(
     // Check for conventions file
     let conventions_path = project_root.join(".hief").join("conventions.toml");
     if !conventions_path.exists() {
-        warnings.push("No conventions.toml found — consider creating .hief/conventions.toml".to_string());
+        warnings.push(
+            "No conventions.toml found — consider creating .hief/conventions.toml".to_string(),
+        );
     }
 
     // Check for golden sets
-    if !golden_dir.exists() || golden_dir.read_dir().map_or(true, |mut d| d.next().is_none()) {
+    if !golden_dir.exists()
+        || golden_dir
+            .read_dir()
+            .map_or(true, |mut d| d.next().is_none())
+    {
         warnings.push("No golden sets found — evaluation cannot run".to_string());
     }
 

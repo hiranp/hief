@@ -55,13 +55,11 @@ pub async fn doctor(
             fixed: false,
         };
 
-        if fix {
-            if upsert_hief_version_file(config_path, binary_version).is_ok() {
-                check.status = "ok".to_string();
-                check.message = format!("Updated hief.toml version to '{}'", binary_version);
-                check.fixed = true;
-                fixes_applied += 1;
-            }
+        if fix && upsert_hief_version_file(config_path, binary_version).is_ok() {
+            check.status = "ok".to_string();
+            check.message = format!("Updated hief.toml version to '{}'", binary_version);
+            check.fixed = true;
+            fixes_applied += 1;
         }
 
         checks.push(check);
@@ -207,10 +205,7 @@ pub async fn doctor(
     }
 
     // 6. Check for orphaned intents (no edges and still in draft)
-    let draft_intents: Vec<_> = all_intents
-        .iter()
-        .filter(|i| i.status == "draft")
-        .collect();
+    let draft_intents: Vec<_> = all_intents.iter().filter(|i| i.status == "draft").collect();
     if draft_intents.len() > 10 {
         checks.push(DoctorCheck {
             name: "orphan_drafts".to_string(),
@@ -273,7 +268,11 @@ pub async fn doctor(
             message: format!(
                 "{} invalid golden file{}: {}",
                 invalid_golden_files.len(),
-                if invalid_golden_files.len() == 1 { "" } else { "s" },
+                if invalid_golden_files.len() == 1 {
+                    ""
+                } else {
+                    "s"
+                },
                 invalid_golden_files
                     .iter()
                     .map(|p| p.display().to_string())
@@ -290,7 +289,11 @@ pub async fn doctor(
             check.message = format!(
                 "Quarantined {} invalid golden file{} under {}/_invalid",
                 invalid_golden_files.len(),
-                if invalid_golden_files.len() == 1 { "" } else { "s" },
+                if invalid_golden_files.len() == 1 {
+                    ""
+                } else {
+                    "s"
+                },
                 config.eval.golden_set_path.trim_end_matches('/')
             );
             check.fixed = true;
@@ -318,10 +321,7 @@ pub async fn doctor(
         }
         Ok(code) => {
             eval_probe.status = "error".to_string();
-            eval_probe.message = format!(
-                "CI evaluation returned unexpected exit code {}",
-                code
-            );
+            eval_probe.message = format!("CI evaluation returned unexpected exit code {}", code);
         }
         Err(e) => {
             eval_probe.status = "error".to_string();
@@ -418,10 +418,7 @@ pub async fn doctor(
                 _ => "❓",
             };
             let fixed_tag = if check.fixed { " (FIXED)" } else { "" };
-            println!(
-                "  {} {} — {}{}",
-                icon, check.name, check.message, fixed_tag
-            );
+            println!("  {} {} — {}{}", icon, check.name, check.message, fixed_tag);
         }
         println!();
         if report.healthy {

@@ -332,7 +332,10 @@ port = 8080
     #[test]
     fn test_db_path() {
         let root = Path::new("/tmp/project");
-        assert_eq!(Config::db_path(root), PathBuf::from("/tmp/project/.hief/hief.db"));
+        assert_eq!(
+            Config::db_path(root),
+            PathBuf::from("/tmp/project/.hief/hief.db")
+        );
     }
 
     #[test]
@@ -346,7 +349,10 @@ port = 8080
         let original = Config::default();
         let toml_str = toml::to_string_pretty(&original).unwrap();
         let deserialized: Config = toml::from_str(&toml_str).unwrap();
-        assert_eq!(deserialized.index.max_chunk_tokens, original.index.max_chunk_tokens);
+        assert_eq!(
+            deserialized.index.max_chunk_tokens,
+            original.index.max_chunk_tokens
+        );
         assert_eq!(deserialized.serve.port, original.serve.port);
     }
 }

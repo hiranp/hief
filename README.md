@@ -5,6 +5,8 @@
 **Persistent Memory Layer for AI Coding Agents**
 
 [![CI](https://github.com/hiranp/hief/actions/workflows/ci.yml/badge.svg)](https://github.com/hiranp/hief/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/hief.svg)](https://crates.io/crates/hief)
+[![Docs.rs](https://docs.rs/hief/badge.svg)](https://docs.rs/hief)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
 [![MCP](https://img.shields.io/badge/protocol-MCP-green.svg)](https://modelcontextprotocol.io/)

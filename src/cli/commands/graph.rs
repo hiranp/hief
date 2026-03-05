@@ -16,8 +16,12 @@ pub async fn graph_create(
     depends_on: Option<&str>,
     json: bool,
 ) -> Result<()> {
-    let intent =
-        Intent::new(kind, title, description.map(String::from), Some(priority.to_string()));
+    let intent = Intent::new(
+        kind,
+        title,
+        description.map(String::from),
+        Some(priority.to_string()),
+    );
 
     graph::create_intent(db, &intent).await?;
 

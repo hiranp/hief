@@ -279,7 +279,7 @@ struct Color(u8, u8, u8);
         // Use pattern matching the struct item node
         let matches = search_source(source, "struct $NAME $BODY", "rust", "test.rs").unwrap();
         assert!(
-            matches.len() >= 1,
+            !matches.is_empty(),
             "Should find at least 1 struct definition, got {}",
             matches.len()
         );
@@ -322,7 +322,7 @@ const sub = (a: number, b: number) => a - b;
         )
         .unwrap();
         assert!(
-            matches.len() >= 1,
+            !matches.is_empty(),
             "Should find arrow functions, got {}",
             matches.len()
         );

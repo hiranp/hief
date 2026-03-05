@@ -6,10 +6,23 @@ rust-version = "1.85"
 description = "Hybrid Intent-Evaluation Framework — a sidecar for AI coding agents"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
+repository = "https://github.com/hiranp/hief"
+homepage = "https://github.com/hiranp/hief"
+documentation = "https://docs.rs/hief"
+keywords = ["mcp", "ai", "agent", "context", "memory"]
+categories = ["development-tools", "command-line-utilities"]
 
 [[bin]]
 name = "hief"
 path = "src/main.rs"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = "allow"
+nursery = "allow"
+unwrap_used = "allow"
+too_many_arguments = "allow" # Fix later
+type_complexity = "allow" # Fix later
 
 [dependencies]
 # Async runtime

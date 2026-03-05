@@ -144,11 +144,7 @@ async fn run(cli: Cli, project_root: PathBuf) -> anyhow::Result<()> {
                 GraphCmd::Show { id } => {
                     cli::commands::graph_show(&db, &id, json).await?;
                 }
-                GraphCmd::Update {
-                    id,
-                    status,
-                    assign,
-                } => {
+                GraphCmd::Update { id, status, assign } => {
                     cli::commands::graph_update(
                         &db,
                         &id,
@@ -208,19 +204,17 @@ async fn run(cli: Cli, project_root: PathBuf) -> anyhow::Result<()> {
             cli::commands::upgrade(&project_root, &config_path, json).await?;
         }
 
-        Commands::Hooks(cmd) => {
-            match cmd {
-                HooksCmd::Install => {
-                    cli::commands::hooks_install(&project_root, json)?;
-                }
-                HooksCmd::Uninstall => {
-                    cli::commands::hooks_uninstall(&project_root, json)?;
-                }
-                HooksCmd::Status => {
-                    cli::commands::hooks_status(&project_root, json)?;
-                }
+        Commands::Hooks(cmd) => match cmd {
+            HooksCmd::Install => {
+                cli::commands::hooks_install(&project_root, json)?;
             }
-        }
+            HooksCmd::Uninstall => {
+                cli::commands::hooks_uninstall(&project_root, json)?;
+            }
+            HooksCmd::Status => {
+                cli::commands::hooks_status(&project_root, json)?;
+            }
+        },
 
         Commands::Docs(cmd) => {
             let config = Config::load(&config_path)?;
@@ -264,29 +258,17 @@ async fn run(cli: Cli, project_root: PathBuf) -> anyhow::Result<()> {
             }
         }
 
-        Commands::Mcp(cmd) => {
-            match cmd {
-                McpCmd::Install { target, global } => {
-                    cli::commands::mcp_install(
-                        &project_root,
-                        Some(target.as_str()),
-                        global,
-                        json,
-                    )?;
-                }
-                McpCmd::Uninstall { target, global } => {
-                    cli::commands::mcp_uninstall(
-                        &project_root,
-                        Some(target.as_str()),
-                        global,
-                        json,
-                    )?;
-                }
-                McpCmd::Status => {
-                    cli::commands::mcp_status(&project_root, json)?;
-                }
+        Commands::Mcp(cmd) => match cmd {
+            McpCmd::Install { target, global } => {
+                cli::commands::mcp_install(&project_root, Some(target.as_str()), global, json)?;
             }
-        }
+            McpCmd::Uninstall { target, global } => {
+                cli::commands::mcp_uninstall(&project_root, Some(target.as_str()), global, json)?;
+            }
+            McpCmd::Status => {
+                cli::commands::mcp_status(&project_root, json)?;
+            }
+        },
 
         Commands::Serve(args) => {
             let config = Config::load(&config_path)?;

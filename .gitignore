@@ -11,7 +11,8 @@
 # Cargo.lock
 
 # HIEF metadata and local database
-.hief/hief.db
+/.hief/
+!/.hief/conventions.toml
 
 # IDE/editor directories
 .idea/

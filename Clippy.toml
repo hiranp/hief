@@ -1,2 +1,2 @@
-# Treat all clippy lints as warnings by default; enable additional checks here.
-warn = ["clippy::all"]
+# Clippy configuration
+# For lint levels, see [lints] in Cargo.toml

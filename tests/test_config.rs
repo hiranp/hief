@@ -44,10 +44,7 @@ port = 8080
         config["index"]["max_chunk_tokens"].as_integer().unwrap(),
         1024
     );
-    assert_eq!(
-        config["graph"]["require_approval"].as_bool().unwrap(),
-        false
-    );
+    assert!(!config["graph"]["require_approval"].as_bool().unwrap());
     assert_eq!(config["eval"]["min_score"].as_float().unwrap(), 0.90);
     assert_eq!(config["serve"]["port"].as_integer().unwrap(), 8080);
 }

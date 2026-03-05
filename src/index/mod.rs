@@ -48,7 +48,6 @@ pub async fn build(
     let start = std::time::Instant::now();
     let mut files_new = 0usize;
     let mut files_updated = 0usize;
-    let files_removed;
     let mut total_chunks = 0usize;
 
     let walker = FileWalker::new(project_root);
@@ -113,7 +112,7 @@ pub async fn build(
     }
 
     // Prune files no longer on disk
-    files_removed = prune_deleted_files(db, &seen_paths).await?;
+    let files_removed = prune_deleted_files(db, &seen_paths).await?;
 
     let duration_ms = start.elapsed().as_millis() as u64;
 

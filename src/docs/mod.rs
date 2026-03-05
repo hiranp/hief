@@ -113,10 +113,11 @@ fn extract_variables_fallback(template: &str) -> Vec<String> {
     while let Some(start) = rest.find("{{") {
         if let Some(end) = rest[start + 2..].find("}}") {
             let var_name = rest[start + 2..start + 2 + end].trim();
-            if !var_name.is_empty() && var_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-                if !vars.contains(&var_name.to_string()) {
-                    vars.push(var_name.to_string());
-                }
+            if !var_name.is_empty()
+                && var_name.chars().all(|c| c.is_alphanumeric() || c == '_')
+                && !vars.contains(&var_name.to_string())
+            {
+                vars.push(var_name.to_string());
             }
             rest = &rest[start + 2 + end + 2..];
         } else {
@@ -516,10 +517,7 @@ fn sync_llm_instruction_files(project_root: &Path, report: &mut DocsInitReport) 
 
     if !found_any {
         let fallback = project_root.join("AGENTS.md");
-        let content = format!(
-            "# AGENTS.md\n\n{}\n",
-            HIEF_WORKFLOW_BLOCK.trim_end()
-        );
+        let content = format!("# AGENTS.md\n\n{}\n", HIEF_WORKFLOW_BLOCK.trim_end());
         std::fs::write(&fallback, content)?;
         report.files_created.push("AGENTS.md".to_string());
     }
@@ -747,10 +745,7 @@ pub fn check_docs_structure(project_root: &Path, config: &DocsConfig) -> DocsChe
             checks.push(DocsCheckItem {
                 name: "spec_placeholders".to_string(),
                 status: "ok".to_string(),
-                message: format!(
-                    "No unresolved placeholders found in {}",
-                    config.specs_path
-                ),
+                message: format!("No unresolved placeholders found in {}", config.specs_path),
             });
         }
     }

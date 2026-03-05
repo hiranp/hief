@@ -2,13 +2,14 @@
 
 use std::path::PathBuf;
 
-use rmcp::{ServerHandler, tool, tool_router, tool_handler, ErrorData};
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::{Json, Parameters};
-use rmcp::model::{ServerCapabilities, ServerInfo, Implementation};
+use rmcp::model::{Implementation, ServerCapabilities, ServerInfo};
 use rmcp::schemars;
+use rmcp::{ErrorData, ServerHandler, tool, tool_handler, tool_router};
 use serde::Deserialize;
 
+use super::resources;
 use crate::config::Config;
 use crate::db::Database;
 use crate::graph;
@@ -17,7 +18,6 @@ use crate::graph::intent::Intent;
 use crate::index;
 use crate::index::search::SearchQuery;
 use crate::index::structural;
-use super::resources;
 
 /// The HIEF MCP server handler.
 #[derive(Clone)]
@@ -30,7 +30,11 @@ pub struct HiefServer {
 impl HiefServer {
     pub fn new(db: Database, project_root: PathBuf) -> Self {
         let tool_router = Self::tool_router();
-        Self { db, project_root, tool_router }
+        Self {
+            db,
+            project_root,
+            tool_router,
+        }
     }
 }
 
@@ -180,7 +184,11 @@ impl HiefServer {
             }
 
             // Re-sort by boosted rank (FTS5 rank is negative, more negative = better)
-            results.sort_by(|a, b| a.rank.partial_cmp(&b.rank).unwrap_or(std::cmp::Ordering::Equal));
+            results.sort_by(|a, b| {
+                a.rank
+                    .partial_cmp(&b.rank)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
         }
 
         // Step 2: Record access for cognitive memory (fire-and-forget, don't block response)
@@ -228,7 +236,12 @@ impl HiefServer {
         &self,
         Parameters(params): Parameters<CreateIntentParams>,
     ) -> Result<Json<String>, ErrorData> {
-        let intent = Intent::new(params.kind, params.title, params.description, params.priority);
+        let intent = Intent::new(
+            params.kind,
+            params.title,
+            params.description,
+            params.priority,
+        );
 
         graph::create_intent(&self.db, &intent)
             .await
@@ -258,9 +271,10 @@ impl HiefServer {
         &self,
         Parameters(params): Parameters<ListIntentsParams>,
     ) -> Result<Json<String>, ErrorData> {
-        let intents = graph::list_intents(&self.db, params.status.as_deref(), params.kind.as_deref())
-            .await
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        let intents =
+            graph::list_intents(&self.db, params.status.as_deref(), params.kind.as_deref())
+                .await
+                .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
         let json = serde_json::to_string_pretty(&intents)
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
@@ -321,9 +335,14 @@ impl HiefServer {
         let config = Config::load(&self.project_root.join("hief.toml"))
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
-        let results = crate::eval::run(&self.db, &self.project_root, &config.eval, params.golden_set.as_deref())
-            .await
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        let results = crate::eval::run(
+            &self.db,
+            &self.project_root,
+            &config.eval,
+            params.golden_set.as_deref(),
+        )
+        .await
+        .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
         let json = serde_json::to_string_pretty(&results)
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
@@ -338,9 +357,13 @@ impl HiefServer {
         &self,
         Parameters(params): Parameters<GetEvalScoresParams>,
     ) -> Result<Json<String>, ErrorData> {
-        let history = crate::eval::history::get_history(&self.db, &params.golden_set, params.limit.unwrap_or(10))
-            .await
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        let history = crate::eval::history::get_history(
+            &self.db,
+            &params.golden_set,
+            params.limit.unwrap_or(10),
+        )
+        .await
+        .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
         let json = serde_json::to_string_pretty(&history)
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
@@ -383,9 +406,10 @@ impl HiefServer {
         &self,
         Parameters(params): Parameters<GitBlameParams>,
     ) -> Result<Json<String>, ErrorData> {
-        let result = crate::index::search::git_blame_range(&params.file, params.start_line, params.end_line)
-            .await
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        let result =
+            crate::index::search::git_blame_range(&params.file, params.start_line, params.end_line)
+                .await
+                .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         Ok(Json(result))
     }
 
@@ -534,9 +558,7 @@ impl ServerHandler for HiefServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             protocol_version: Default::default(),
-            capabilities: ServerCapabilities::builder()
-                .enable_tools()
-                .build(),
+            capabilities: ServerCapabilities::builder().enable_tools().build(),
             server_info: Implementation::from_build_env(),
             instructions: Some(
                 "HIEF is a persistent memory layer for AI coding agents. It provides: \

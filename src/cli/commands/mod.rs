@@ -5,8 +5,8 @@
 //! (`main.rs`, tests, etc.) can continue to use `cli::commands::*`
 //! without any path changes.
 
-mod doctor;
 mod docs;
+mod doctor;
 mod eval;
 mod graph;
 mod hooks;
@@ -16,12 +16,12 @@ pub mod mcp;
 mod upgrade;
 
 // Re-export everything so existing `cli::commands::*` paths keep working.
-pub use doctor::*;
 pub use docs::*;
+pub use doctor::*;
 pub use eval::*;
 pub use graph::*;
 pub use hooks::*;
 pub use index::*;
 pub use init::*;
-pub use mcp::{mcp_install, mcp_uninstall, mcp_status};
+pub use mcp::{mcp_install, mcp_status, mcp_uninstall};
 pub use upgrade::*;

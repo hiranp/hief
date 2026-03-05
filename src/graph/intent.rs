@@ -51,10 +51,10 @@ impl Intent {
 
 /// Insert a new intent into the database.
 pub async fn insert(db: &Database, intent: &Intent) -> Result<()> {
-    let criteria_json = serde_json::to_string(&intent.criteria)
-        .map_err(|e| HiefError::Other(e.to_string()))?;
-    let labels_json = serde_json::to_string(&intent.labels)
-        .map_err(|e| HiefError::Other(e.to_string()))?;
+    let criteria_json =
+        serde_json::to_string(&intent.criteria).map_err(|e| HiefError::Other(e.to_string()))?;
+    let labels_json =
+        serde_json::to_string(&intent.labels).map_err(|e| HiefError::Other(e.to_string()))?;
 
     db.conn()
         .execute(
@@ -100,11 +100,7 @@ pub async fn get(db: &Database, id: &str) -> Result<Intent> {
 }
 
 /// List intents with optional status and kind filters.
-pub async fn list(
-    db: &Database,
-    status: Option<&str>,
-    kind: Option<&str>,
-) -> Result<Vec<Intent>> {
+pub async fn list(db: &Database, status: Option<&str>, kind: Option<&str>) -> Result<Vec<Intent>> {
     let mut sql = String::from(
         "SELECT id, kind, title, description, status, priority, criteria, labels, assigned_to, created_at, updated_at
          FROM intents WHERE 1=1",
@@ -129,19 +125,21 @@ pub async fn list(
     sql.push_str(" ORDER BY created_at DESC");
 
     let mut rows = match params.len() {
-        0 => db.conn().query(&sql, ()).await.map_err(HiefError::Database)?,
-        1 => {
-            db.conn()
-                .query(&sql, [params[0].as_str()])
-                .await
-                .map_err(HiefError::Database)?
-        }
-        2 => {
-            db.conn()
-                .query(&sql, [params[0].as_str(), params[1].as_str()])
-                .await
-                .map_err(HiefError::Database)?
-        }
+        0 => db
+            .conn()
+            .query(&sql, ())
+            .await
+            .map_err(HiefError::Database)?,
+        1 => db
+            .conn()
+            .query(&sql, [params[0].as_str()])
+            .await
+            .map_err(HiefError::Database)?,
+        2 => db
+            .conn()
+            .query(&sql, [params[0].as_str(), params[1].as_str()])
+            .await
+            .map_err(HiefError::Database)?,
         _ => unreachable!(),
     };
 
@@ -237,7 +235,10 @@ pub async fn resolve_id(db: &Database, id_or_prefix: &str) -> Result<String> {
 
     let mut rows = db
         .conn()
-        .query("SELECT id FROM intents WHERE id LIKE ?1", [format!("{}%", prefix)])
+        .query(
+            "SELECT id FROM intents WHERE id LIKE ?1",
+            [format!("{}%", prefix)],
+        )
         .await
         .map_err(HiefError::Database)?;
 

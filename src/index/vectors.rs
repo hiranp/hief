@@ -233,11 +233,7 @@ pub struct VectorStats {
 
 pub async fn stats(project_root: &Path, config: &VectorConfig) -> Result<VectorStats> {
     let dir = vectors_dir(project_root);
-    let store_size = if dir.exists() {
-        dir_size(&dir)
-    } else {
-        0
-    };
+    let store_size = if dir.exists() { dir_size(&dir) } else { 0 };
 
     Ok(VectorStats {
         total_embeddings: 0, // TODO: query LanceDB for count

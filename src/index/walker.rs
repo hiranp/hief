@@ -104,34 +104,70 @@ mod tests {
 
     #[test]
     fn test_detect_language_rust() {
-        assert_eq!(detect_language(Path::new("main.rs")), Some("rust".to_string()));
+        assert_eq!(
+            detect_language(Path::new("main.rs")),
+            Some("rust".to_string())
+        );
     }
 
     #[test]
     fn test_detect_language_python() {
-        assert_eq!(detect_language(Path::new("app.py")), Some("python".to_string()));
-        assert_eq!(detect_language(Path::new("types.pyi")), Some("python".to_string()));
+        assert_eq!(
+            detect_language(Path::new("app.py")),
+            Some("python".to_string())
+        );
+        assert_eq!(
+            detect_language(Path::new("types.pyi")),
+            Some("python".to_string())
+        );
     }
 
     #[test]
     fn test_detect_language_typescript() {
-        assert_eq!(detect_language(Path::new("index.ts")), Some("typescript".to_string()));
-        assert_eq!(detect_language(Path::new("App.tsx")), Some("typescript".to_string()));
+        assert_eq!(
+            detect_language(Path::new("index.ts")),
+            Some("typescript".to_string())
+        );
+        assert_eq!(
+            detect_language(Path::new("App.tsx")),
+            Some("typescript".to_string())
+        );
     }
 
     #[test]
     fn test_detect_language_javascript() {
-        assert_eq!(detect_language(Path::new("script.js")), Some("javascript".to_string()));
-        assert_eq!(detect_language(Path::new("Component.jsx")), Some("javascript".to_string()));
+        assert_eq!(
+            detect_language(Path::new("script.js")),
+            Some("javascript".to_string())
+        );
+        assert_eq!(
+            detect_language(Path::new("Component.jsx")),
+            Some("javascript".to_string())
+        );
     }
 
     #[test]
     fn test_detect_language_config_files() {
-        assert_eq!(detect_language(Path::new("Cargo.toml")), Some("toml".to_string()));
-        assert_eq!(detect_language(Path::new("data.json")), Some("json".to_string()));
-        assert_eq!(detect_language(Path::new("config.yaml")), Some("yaml".to_string()));
-        assert_eq!(detect_language(Path::new("config.yml")), Some("yaml".to_string()));
-        assert_eq!(detect_language(Path::new("README.md")), Some("markdown".to_string()));
+        assert_eq!(
+            detect_language(Path::new("Cargo.toml")),
+            Some("toml".to_string())
+        );
+        assert_eq!(
+            detect_language(Path::new("data.json")),
+            Some("json".to_string())
+        );
+        assert_eq!(
+            detect_language(Path::new("config.yaml")),
+            Some("yaml".to_string())
+        );
+        assert_eq!(
+            detect_language(Path::new("config.yml")),
+            Some("yaml".to_string())
+        );
+        assert_eq!(
+            detect_language(Path::new("README.md")),
+            Some("markdown".to_string())
+        );
     }
 
     #[test]
@@ -151,7 +187,10 @@ mod tests {
         let walker = FileWalker::new(dir.path());
         let entries = walker.walk().unwrap();
 
-        let languages: Vec<_> = entries.iter().map(|e| e.language.as_deref().unwrap()).collect();
+        let languages: Vec<_> = entries
+            .iter()
+            .map(|e| e.language.as_deref().unwrap())
+            .collect();
         assert!(languages.contains(&"rust"), "Should find .rs files");
         assert!(languages.contains(&"python"), "Should find .py files");
         // .txt has no language mapping, so it should be excluded

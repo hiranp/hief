@@ -4,14 +4,14 @@ use uuid::Uuid;
 
 use crate::db::Database;
 use crate::errors::{HiefError, Result};
-use crate::eval::scorer::EvalResult;
 use crate::eval::RegressionStatus;
+use crate::eval::scorer::EvalResult;
 
 /// Store an evaluation result in the history.
 pub async fn store_result(db: &Database, result: &EvalResult) -> Result<()> {
     let id = Uuid::new_v4().to_string();
-    let details = serde_json::to_string(&result.cases)
-        .map_err(|e| HiefError::Other(e.to_string()))?;
+    let details =
+        serde_json::to_string(&result.cases).map_err(|e| HiefError::Other(e.to_string()))?;
 
     db.conn()
         .execute(
@@ -33,11 +33,7 @@ pub async fn store_result(db: &Database, result: &EvalResult) -> Result<()> {
 }
 
 /// Get score history for a golden set.
-pub async fn get_history(
-    db: &Database,
-    golden_set: &str,
-    limit: usize,
-) -> Result<Vec<ScoreEntry>> {
+pub async fn get_history(db: &Database, golden_set: &str, limit: usize) -> Result<Vec<ScoreEntry>> {
     let mut rows = db
         .conn()
         .query(

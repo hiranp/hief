@@ -55,14 +55,10 @@ async fn start_stdio(server: tools::HiefServer) -> Result<()> {
     Ok(())
 }
 
-async fn start_http(
-    server: tools::HiefServer,
-    host: &str,
-    port: u16,
-) -> Result<()> {
+async fn start_http(server: tools::HiefServer, host: &str, port: u16) -> Result<()> {
     let config = rmcp::transport::StreamableHttpServerConfig::default();
     let session_manager = std::sync::Arc::new(
-        rmcp::transport::streamable_http_server::session::local::LocalSessionManager::default()
+        rmcp::transport::streamable_http_server::session::local::LocalSessionManager::default(),
     );
     let service = rmcp::transport::StreamableHttpService::new(
         move || Ok(server.clone()),
