@@ -1,6 +1,6 @@
 <div align="center">
 
-# HIEF
+# HIEF (Hybrid Intent-Evaluation Framework)
 
 **Persistent Memory Layer for AI Coding Agents**
 
