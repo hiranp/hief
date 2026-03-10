@@ -109,6 +109,12 @@ This helps coordinate work when multiple contributors are active.
 
 ### 3. Make Your Changes
 
+- **Docs-Driven Development**: For new features, start by generating a spec and harness:
+  ```sh
+  hief docs generate spec --name "your-feature"
+  hief docs generate harness --name "your-feature"
+  ```
+  See [HIEF Scaffolding Guide](docs/SCAFFOLDING.md) for details.
 - Follow the [coding standards](#coding-standards) below
 - Write tests for new functionality
 - Update documentation if behavior changes
@@ -197,13 +203,12 @@ src/
 ├── eval/     # Golden set evaluation engine (scoring + regression)
 ├── mcp/      # MCP server (tools + resources via rmcp)
 ├── cli/      # CLI commands (clap)
-└── docs/     # Document scaffolding (MiniJinja templates)
+├── docs/     # Document scaffolding (MiniJinja templates)
+└── errors.rs # Centralized error handling
 ```
 
 For full details, see:
-- [Architecture Summary](docs/architecture-summary.md) — quick overview
-- [Architecture](docs/architecture.md) — full technical details
-- [Agent Protocol](docs/agent-protocol.md) — how agents interact with HIEF
+- [Scaffolding Guide](docs/SCAFFOLDING.md) — how the `docs` engine works
 
 ## Reporting Bugs
 

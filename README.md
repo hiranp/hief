@@ -43,7 +43,8 @@ Agent (Claude Code / Cursor / Copilot / Windsurf / Goose)
 HIEF Server
   ├── INDEX:   AST-aware search (keyword + structural + semantic)
   ├── INTENTS: Lightweight task coordination + provenance
-  └── EVAL:    Golden-set quality guardrails
+  ├── EVAL:    Golden-set quality guardrails
+  └── DOCS:    Documentation scaffolding + template engine
 ```
 
 ## Features
@@ -70,6 +71,13 @@ HIEF Server
 - **Structural checks** — `structural_must_not_contain` via ast-grep patterns
 - **Differential eval** — `diff_only = true` checks only changed files
 - **Score history** with regression detection that can block merge
+
+### 📝 Documentation Scaffolding — *"How do we start?"*
+
+- **Spec-Driven Development (SDD)**: Scaffold new feature specs from embedded or custom templates.
+- **Harness-Driven Development (HDD)**: Generate test harnesses and simulation playbooks.
+- **Auto-population**: Templates can automatically inject project name, index statistics, and more.
+- **Template Overrides**: Customize any default template by placing an override in `.hief/templates/`.
 
 ## Getting Started
 
@@ -152,6 +160,15 @@ HIEF exposes the following tools via the [Model Context Protocol](https://modelc
 | `get_conventions` | Machine-readable project rules |
 | `get_project_health` | Eval scores, regressions, and warnings |
 
+### 🛠️ Scaffolding Commands
+
+| Command | Purpose |
+|---------|---------|
+| `hief docs init` | Initialize the standard documentation structure |
+| `hief docs list` | List all available scaffolding templates |
+| `hief docs generate` | Generate a new document from a template |
+| `hief docs check` | Verify completion of required documentation |
+
 ## CLI Reference
 
 ```sh
@@ -221,6 +238,7 @@ vscode-hief/             # VS Code extension (Kanban, search, dashboard)
 |----------|-------------|
 | [Manifesto](MANIFESTO.md) | Core beliefs and design philosophy |
 | [Constitution](docs/specs/constitution.md) | Inviolable project rules |
+| [Scaffolding Guide](docs/SCAFFOLDING.md) | How the `docs` engine works |
 | [CHANGELOG](CHANGELOG.md) | Release history |
 
 ## VS Code Extension
@@ -256,6 +274,15 @@ just install                # Build + symlink to ~/bin/hief
 Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for
 guidelines on how to get started, the development workflow, and how to submit
 pull requests.
+
+## Security & Privacy
+
+HIEF is built for developers who care about security and privacy.
+
+- **Local-First**: All data stays on your machine. HIEF uses an embedded SQLite database (`.hief/hief.db`) and a local vector store.
+- **No Cloud Required**: HIEF does not make any external network calls to process your code. Your source code never leaves your local environment.
+- **Sandboxed Execution**: HIEF does not execute your code; it only parses it via tree-sitter or performs structural searches via `ast-grep`.
+- **Path Sanitization**: All CLI and MCP tool inputs are strictly validated to prevent path traversal or flag injection attacks.
 
 ## Security
 

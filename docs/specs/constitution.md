@@ -12,6 +12,7 @@
 - [ ] No `.unwrap()` in production code paths (use `?` or `expect()` with context)
 - [ ] All error types must implement `std::error::Error`
 - [ ] No `unsafe` blocks without documented safety invariants
+- [ ] All file system access from CLI/MCP must use strict path validation to prevent traversal attacks
 
 ### Architecture
 - [ ] All core logic lives in reusable crates (`index`, `graph`, `eval`, `mcp`); CLI is a thin wrapper.
