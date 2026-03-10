@@ -13,8 +13,10 @@
 
 [Getting Started](#getting-started) •
 [Features](#features) •
+[MCP Tools](#mcp-tools) •
+[CLI Reference](#cli-reference) •
 [Documentation](#documentation) •
-[Contributing](#contributing) •
+[Security](#security---privacy) •
 [Manifesto](MANIFESTO.md)
 
 </div>
@@ -182,6 +184,9 @@ hief eval run                                # Run golden set evaluation
 hief eval report                             # Show eval score history
 hief doctor --fix                            # Health check + auto-fix
 hief hooks install                           # Install git hooks for auto-indexing
+hief docs init                               # Initialize standard docs structure
+hief docs generate spec --name "feature"     # Scaffold a new feature spec
+hief docs generate harness --name "feature"  # Scaffold a new test harness
 ```
 
 ## Project Structure
@@ -228,6 +233,7 @@ vscode-hief/             # VS Code extension (Kanban, search, dashboard)
 | Quality evaluation | ✅ | ❌ | ❌ | ❌ |
 | Task coordination | ✅ | ❌ | ❌ | ❌ |
 | AST-aware structural search | ✅ | ✅ | ✅ | ✅ |
+| Documentation scaffolding | ✅ | ❌ | ❌ | ❌ |
 | Open source | ✅ | ❌ | Partial | ❌ |
 
 **HIEF's unique combination:** local-first + MCP protocol + quality evaluation + open source.
