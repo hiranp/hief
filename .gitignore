@@ -43,3 +43,4 @@ yarn-error.log*
 # dotenv
 .env
 .cargo_target/.rustc_info.json
+\n# Custom\ndev-docs/
