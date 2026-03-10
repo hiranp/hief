@@ -488,8 +488,16 @@ async fn get_last_eval_commit(db: &Database, golden_set: &str) -> Option<String>
 
 /// Get list of files changed since a given git commit.
 async fn get_changed_files(base_commit: &str) -> Result<Vec<String>> {
+    // Basic validation to prevent flag injection in the commit hash
+    if base_commit.starts_with('-') || base_commit.contains(' ') {
+        return Err(HiefError::SecurityViolation(format!(
+            "Invalid base commit for diff: {}",
+            base_commit
+        )));
+    }
+
     let output = tokio::process::Command::new("git")
-        .args(["diff", "--name-only", base_commit, "HEAD"])
+        .args(["diff", "--name-only", base_commit, "HEAD", "--"])
         .output()
         .await?;
 

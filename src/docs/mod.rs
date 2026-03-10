@@ -75,12 +75,37 @@ fn render_with_minijinja(
 
 /// Fallback renderer: simple `{{key}}` string replacement (no Jinja2
 /// features). Used when MiniJinja cannot parse the template source.
+/// Fallback renderer: safe, single-pass `{{key}}` string replacement.
+///
+/// Unlike recursive replacement, this ensures that if a variable's value
+/// contains `{{another_key}}`, it is NOT further expanded, preventing
+/// nested expansion attacks or unintended substitution.
 fn render_fallback(template: &str, variables: &HashMap<String, String>) -> String {
-    let mut result = template.to_string();
-    for (key, value) in variables {
-        let placeholder = format!("{{{{{}}}}}", key);
-        result = result.replace(&placeholder, value);
+    let mut result = String::with_capacity(template.len());
+    let mut rest = template;
+
+    while let Some(start) = rest.find("{{") {
+        result.push_str(&rest[..start]);
+        let search_area = &rest[start + 2..];
+
+        if let Some(end) = search_area.find("}}") {
+            let key = search_area[..end].trim();
+            if let Some(value) = variables.get(key) {
+                result.push_str(value);
+            } else {
+                // Keep the placeholder if not found
+                result.push_str("{{");
+                result.push_str(search_area[..end + 2].as_ref());
+            }
+            rest = &search_area[end + 2..];
+        } else {
+            // Unclosed {{, push the rest and stop
+            result.push_str("{{");
+            rest = search_area;
+            break;
+        }
     }
+    result.push_str(rest);
     result
 }
 
@@ -276,7 +301,7 @@ fn detect_project_name(project_root: &Path) -> Option<String> {
 
     // 3. Try git remote
     if let Ok(output) = std::process::Command::new("git")
-        .args(["remote", "get-url", "origin"])
+        .args(["remote", "get-url", "origin", "--"])
         .current_dir(project_root)
         .output()
     {

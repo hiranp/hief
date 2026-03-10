@@ -36,6 +36,33 @@ impl HiefServer {
             tool_router,
         }
     }
+
+    /// Validates that a path is relative to the project root and doesn't escape it.
+    fn validate_path(&self, path: &str) -> std::result::Result<PathBuf, ErrorData> {
+        let p = std::path::Path::new(path);
+        if p.is_absolute() || path.contains("..") {
+            let err = crate::errors::HiefError::PathTraversal(path.to_string());
+            return Err(ErrorData::invalid_params(err.to_string(), None));
+        }
+
+        // Ensure path doesn't start with a hyphen (command flag injection protection)
+        if path.starts_with('-') {
+            let err = crate::errors::HiefError::SecurityViolation(format!(
+                "Invalid path '{}': cannot start with a hyphen",
+                path
+            ));
+            return Err(ErrorData::invalid_params(err.to_string(), None));
+        }
+
+        let full_path = self.project_root.join(p);
+        Ok(full_path)
+    }
+
+    /// Validates and limits top_k to prevent DoS.
+    fn validate_top_k(&self, top_k: Option<usize>, default: usize) -> usize {
+        let val = top_k.unwrap_or(default);
+        if val > 1000 { 1000 } else { val }
+    }
 }
 
 // -- Parameter structs --
@@ -161,7 +188,7 @@ impl HiefServer {
         Parameters(params): Parameters<SearchCodeParams>,
     ) -> Result<Json<String>, ErrorData> {
         let mut search_query = SearchQuery::new(&params.query);
-        search_query.top_k = params.top_k.unwrap_or(10);
+        search_query.top_k = self.validate_top_k(params.top_k, 10);
         search_query.language = params.language;
         search_query.symbol_kind = params.symbol_kind;
 
@@ -406,6 +433,7 @@ impl HiefServer {
         &self,
         Parameters(params): Parameters<GitBlameParams>,
     ) -> Result<Json<String>, ErrorData> {
+        let _ = self.validate_path(&params.file)?;
         let result =
             crate::index::search::git_blame_range(&params.file, params.start_line, params.end_line)
                 .await
@@ -422,7 +450,7 @@ impl HiefServer {
         Parameters(params): Parameters<StructuralSearchParams>,
     ) -> Result<Json<String>, ErrorData> {
         let mut query = structural::StructuralQuery::new(&params.pattern, &params.language);
-        query.top_k = params.top_k.unwrap_or(50);
+        query.top_k = self.validate_top_k(params.top_k, 50);
 
         let results = structural::search(&self.project_root, &query)
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
@@ -458,7 +486,8 @@ impl HiefServer {
         &self,
         Parameters(params): Parameters<RelatedFilesParams>,
     ) -> Result<Json<String>, ErrorData> {
-        let top_k = params.top_k.unwrap_or(10);
+        let _ = self.validate_path(&params.file)?;
+        let top_k = self.validate_top_k(params.top_k, 10);
 
         let related = index::memory::related_files(&self.db, &params.file, top_k)
             .await
@@ -477,7 +506,7 @@ impl HiefServer {
         &self,
         Parameters(params): Parameters<GetSessionContextParams>,
     ) -> Result<Json<String>, ErrorData> {
-        let limit = params.suggestion_limit.unwrap_or(10);
+        let limit = self.validate_top_k(params.suggestion_limit, 10);
 
         let ctx = index::memory::get_session_context(&self.db, &params.session_id, limit)
             .await
@@ -512,7 +541,7 @@ impl HiefServer {
             "status": "not_yet_available",
             "message": "Semantic search is enabled in config but the LanceDB integration is still being built. Use search_code (keyword) or structural_search (AST pattern) in the meantime.",
             "query": params.query,
-            "top_k": params.top_k.unwrap_or(10),
+            "top_k": self.validate_top_k(params.top_k, 10),
             "language": params.language,
         });
 

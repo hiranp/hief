@@ -65,6 +65,13 @@ pub enum HiefError {
     #[error("evaluation failed: {0}")]
     EvalFailed(String),
 
+    // Security errors
+    #[error("security violation: {0}")]
+    SecurityViolation(String),
+
+    #[error("path traversal detected: {0}")]
+    PathTraversal(String),
+
     // IO errors
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),

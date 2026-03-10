@@ -173,12 +173,21 @@ pub async fn search(db: &Database, query: &SearchQuery) -> Result<Vec<SearchResu
 
 /// Git blame for a specific file range (on-demand, shells out to git).
 pub async fn git_blame_range(file: &str, start_line: u32, end_line: u32) -> Result<String> {
+    // Basic validation against flag injection and path traversal
+    if file.starts_with('-') || file.contains("..") {
+        return Err(HiefError::SecurityViolation(format!(
+            "Invalid file path for git blame: {}",
+            file
+        )));
+    }
+
     let output = tokio::process::Command::new("git")
         .args([
             "blame",
             "-L",
             &format!("{},{}", start_line + 1, end_line + 1), // git blame is 1-indexed
             "--porcelain",
+            "--", // Explicitly terminate flags
             file,
         ])
         .output()
@@ -190,4 +199,22 @@ pub async fn git_blame_range(file: &str, start_line: u32, end_line: u32) -> Resu
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_git_blame_range_security() {
+        // Test flag injection
+        let res = git_blame_range("--version", 0, 0).await;
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("security violation"));
+
+        // Test path traversal
+        let res = git_blame_range("../../../etc/passwd", 0, 0).await;
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("security violation"));
+    }
 }
