@@ -15,7 +15,7 @@
 [Features](#features) •
 [Documentation](#documentation) •
 [Contributing](#contributing) •
-[Manifesto](docs/MANIFESTO.md)
+[Manifesto](MANIFESTO.md)
 
 </div>
 
@@ -219,12 +219,8 @@ vscode-hief/             # VS Code extension (Kanban, search, dashboard)
 
 | Document | Description |
 |----------|-------------|
-| [Architecture Summary](docs/architecture-summary.md) | Quick overview — start here |
-| [Architecture](docs/architecture.md) | Full technical architecture |
-| [Agent Protocol](docs/agent-protocol.md) | When and how agents interact with HIEF |
-| [Manifesto](docs/MANIFESTO.md) | Core beliefs and design philosophy |
+| [Manifesto](MANIFESTO.md) | Core beliefs and design philosophy |
 | [Constitution](docs/specs/constitution.md) | Inviolable project rules |
-| [Development Plan](docs/plan/00-overview.md) | Implementation phases |
 | [CHANGELOG](CHANGELOG.md) | Release history |
 
 ## VS Code Extension
