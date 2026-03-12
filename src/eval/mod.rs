@@ -26,7 +26,7 @@ pub async fn run(
     let mut results = Vec::new();
 
     for set in &sets {
-        let result = scorer::evaluate(db, set, project_root).await?;
+        let result = scorer::evaluate(db, set, project_root, config.min_score).await?;
         history::store_result(db, &result).await?;
         results.push(result);
     }

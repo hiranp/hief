@@ -64,6 +64,7 @@ pub async fn evaluate(
     db: &Database,
     golden_set: &GoldenSet,
     project_root: &Path,
+    min_score: f64,
 ) -> Result<EvalResult> {
     let mut case_results = Vec::new();
     let git_commit = get_git_commit().await.ok();
@@ -120,7 +121,7 @@ pub async fn evaluate(
         .filter(|c| c.priority == "critical")
         .all(|c| c.passed);
 
-    let passed = all_critical_pass && overall_score >= 0.85;
+    let passed = all_critical_pass && overall_score >= min_score;
 
     Ok(EvalResult {
         golden_set: golden_set.metadata.name.clone(),
@@ -151,7 +152,7 @@ fn parse_structural_entry(entry: &str) -> Option<(&str, &str)> {
 async fn search_literal(
     db: &Database,
     substr: &str,
-    file_glob: Option<&String>,
+    file_globs: &[String],
     diff_files: Option<&[String]>,
     limit: usize,
 ) -> Result<Vec<(String, u32)>> {
@@ -163,9 +164,17 @@ async fn search_literal(
     );
     let mut params: Vec<String> = vec![substr.to_string()];
 
-    if let Some(glob) = file_glob {
-        sql.push_str(&format!(" AND c.file_path GLOB ?{}", params.len() + 1));
-        params.push(glob.clone());
+    // Multiple file_globs are OR-combined: file must match ANY of them
+    if !file_globs.is_empty() {
+        let or_clauses: Vec<String> = file_globs
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("c.file_path GLOB ?{}", params.len() + i + 1))
+            .collect();
+        sql.push_str(&format!(" AND ({})", or_clauses.join(" OR ")));
+        for g in file_globs {
+            params.push(g.clone());
+        }
     }
 
     // If diff_only, restrict to changed files
@@ -213,7 +222,7 @@ fn run_structural_check(
     project_root: &Path,
     language: &str,
     pattern: &str,
-    file_glob: Option<&String>,
+    file_globs: &[String],
     diff_files: Option<&[String]>,
     top_k: usize,
 ) -> Result<Vec<crate::index::structural::StructuralMatch>> {
@@ -224,15 +233,13 @@ fn run_structural_check(
 
     let all_matches = structural::search(project_root, &query)?;
 
-    // Apply file_glob filter if specified
+    // Apply file_globs OR filter + diff filter
     let filtered: Vec<_> = all_matches
         .into_iter()
         .filter(|m| {
-            // Check glob filter
-            if let Some(glob_pat) = file_glob {
-                if !glob_matches(&m.file_path, glob_pat) {
-                    return false;
-                }
+            // Must match at least one glob (OR semantics); empty list = all files pass
+            if !file_globs.is_empty() && !file_globs.iter().any(|g| glob_matches(&m.file_path, g)) {
+                return false;
             }
             // Check diff filter
             if let Some(files) = diff_files {
@@ -285,7 +292,7 @@ async fn evaluate_case(
     diff_files: Option<&Vec<String>>,
 ) -> Result<CaseResult> {
     let mut violations = Vec::new();
-    let file_glob = case.checks.file_patterns.as_ref().and_then(|v| v.first());
+    let file_globs: &[String] = &case.checks.file_patterns;
     let diff_slice = diff_files.map(|v| v.as_slice());
 
     // --- Literal checks ---
@@ -294,7 +301,7 @@ async fn evaluate_case(
 
     // Check must_contain patterns (literal)
     for pattern in &case.checks.must_contain {
-        let results = search_literal(db, pattern, file_glob, diff_slice, 1).await?;
+        let results = search_literal(db, pattern, file_globs, diff_slice, 1).await?;
 
         if results.is_empty() {
             violations.push(Violation {
@@ -309,7 +316,7 @@ async fn evaluate_case(
 
     // Check must_not_contain patterns (literal)
     for pattern in &case.checks.must_not_contain {
-        let results = search_literal(db, pattern, file_glob, diff_slice, 5).await?;
+        let results = search_literal(db, pattern, file_globs, diff_slice, 5).await?;
 
         for (file, line) in &results {
             violations.push(Violation {
@@ -331,7 +338,7 @@ async fn evaluate_case(
     for entry in &case.checks.structural_must_contain {
         match parse_structural_entry(entry) {
             Some((lang, pattern)) => {
-                match run_structural_check(project_root, lang, pattern, file_glob, diff_slice, 1) {
+                match run_structural_check(project_root, lang, pattern, file_globs, diff_slice, 1) {
                     Ok(matches) if matches.is_empty() => {
                         violations.push(Violation {
                             kind: "structural_must_contain_missing".to_string(),
@@ -372,7 +379,7 @@ async fn evaluate_case(
     for entry in &case.checks.structural_must_not_contain {
         match parse_structural_entry(entry) {
             Some((lang, pattern)) => {
-                match run_structural_check(project_root, lang, pattern, file_glob, diff_slice, 10) {
+                match run_structural_check(project_root, lang, pattern, file_globs, diff_slice, 10) {
                     Ok(matches) => {
                         for m in &matches {
                             violations.push(Violation {
@@ -410,9 +417,40 @@ async fn evaluate_case(
         }
     }
 
+    // --- Test command check ---
+    // Run the user-defined test command (e.g. "cargo test", "pytest").
+    // Counts as one additional check in the score denominator.
+    let has_test_cmd = case.checks.test_command.is_some();
+    if let Some(cmd) = &case.checks.test_command {
+        match run_test_command(cmd, project_root).await {
+            Ok(None) => {
+                // Command exited 0 — passes, no violation
+                debug!("test_command '{}' passed", cmd);
+            }
+            Ok(Some(output)) => {
+                violations.push(Violation {
+                    kind: "test_command_failed".to_string(),
+                    pattern: cmd.clone(),
+                    file: "N/A".to_string(),
+                    line: None,
+                    context: Some(output),
+                });
+            }
+            Err(e) => {
+                violations.push(Violation {
+                    kind: "test_command_error".to_string(),
+                    pattern: cmd.clone(),
+                    file: "N/A".to_string(),
+                    line: None,
+                    context: Some(format!("Failed to run command: {}", e)),
+                });
+            }
+        }
+    }
+
     // --- Scoring ---
 
-    let total_checks = total_literal + total_structural;
+    let total_checks = total_literal + total_structural + if has_test_cmd { 1 } else { 0 };
     let score = if total_checks > 0 {
         (1.0 - (violations.len() as f64 / total_checks as f64)).max(0.0)
     } else {
@@ -422,12 +460,13 @@ async fn evaluate_case(
     let passed = violations.is_empty();
 
     debug!(
-        "Case '{}': score={:.2}, violations={} (literal={}, structural={}), passed={}",
+        "Case '{}': score={:.2}, violations={} (literal={}, structural={}, test_cmd={}), passed={}",
         case.name,
         score,
         violations.len(),
         total_literal,
         total_structural,
+        if has_test_cmd { 1 } else { 0 },
         passed
     );
 
@@ -463,6 +502,38 @@ fn priority_weight(priority: &str) -> f64 {
         "low" => 0.5,
         _ => 1.0,
     }
+}
+
+/// Run a shell test command and capture its result.
+///
+/// Returns `Ok(None)` on success (exit code 0), `Ok(Some(output))` on failure,
+/// or `Err(_)` if the command could not be launched.
+///
+/// The command runs under `sh -c` in the project root so the dev can use
+/// the same shell aliases they use interactively (e.g. `cargo test`, `pytest -q`).
+/// Security note: `test_command` is read from the project's own golden TOML,
+/// so it is developer-controlled and therefore trusted.
+async fn run_test_command(cmd: &str, project_root: &Path) -> Result<Option<String>> {
+    let output = tokio::process::Command::new("sh")
+        .arg("-c")
+        .arg(cmd)
+        .current_dir(project_root)
+        .output()
+        .await?;
+
+    if output.status.success() {
+        return Ok(None);
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let summary = format!(
+        "exit code: {}\nstdout (first 500 chars): {}\nstderr (first 500 chars): {}",
+        output.status.code().unwrap_or(-1),
+        stdout.chars().take(500).collect::<String>(),
+        stderr.chars().take(500).collect::<String>(),
+    );
+    Ok(Some(summary))
 }
 
 /// Get current git commit hash.
@@ -568,7 +639,7 @@ mod tests {
             .await
             .unwrap();
 
-        let results = search_literal(&db, ".unwrap()", None, None, 10)
+        let results = search_literal(&db, ".unwrap()", &[], None, 10)
             .await
             .unwrap();
         assert!(
@@ -597,10 +668,11 @@ mod tests {
             checks: crate::eval::golden::EvalChecks {
                 must_contain: Vec::new(),
                 must_not_contain: vec![".unwrap()".to_string()],
-                file_patterns: None,
+                file_patterns: Vec::new(),
                 structural_must_contain: Vec::new(),
                 structural_must_not_contain: Vec::new(),
                 diff_only: false,
+                test_command: None,
             },
         };
 
@@ -631,10 +703,11 @@ mod tests {
             checks: crate::eval::golden::EvalChecks {
                 must_contain: vec!["fn main".to_string()],
                 must_not_contain: Vec::new(),
-                file_patterns: None,
+                file_patterns: Vec::new(),
                 structural_must_contain: Vec::new(),
                 structural_must_not_contain: Vec::new(),
                 diff_only: false,
+                test_command: None,
             },
         };
 

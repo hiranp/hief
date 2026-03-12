@@ -94,18 +94,28 @@ fn default_dimensions() -> usize {
 pub struct GraphConfig {
     #[serde(default = "default_require_approval")]
     pub require_approval: bool,
+    /// Hours before an `in_progress` intent is considered stale and eligible
+    /// for automatic recovery (reset to `approved` so another agent can pick
+    /// it up). Set to 0 to disable stale detection. Default: 48.
+    #[serde(default = "default_stale_timeout_hours")]
+    pub stale_timeout_hours: u64,
 }
 
 impl Default for GraphConfig {
     fn default() -> Self {
         Self {
             require_approval: default_require_approval(),
+            stale_timeout_hours: default_stale_timeout_hours(),
         }
     }
 }
 
 fn default_require_approval() -> bool {
     true
+}
+
+fn default_stale_timeout_hours() -> u64 {
+    48
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,5 +1,9 @@
 name: Release
 
+# allow the GITHUB_TOKEN to create releases when triggered by a tag push
+permissions:
+  contents: write
+
 on:
   push:
     tags:

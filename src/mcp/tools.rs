@@ -28,6 +28,9 @@ use crate::index::structural;
 pub struct HiefServer {
     db: Database,
     project_root: PathBuf,
+    /// Cached project config. Loaded once at startup to avoid per-request disk I/O.
+    /// Use `hief serve` restart to pick up `hief.toml` changes.
+    config: Config,
     tool_router: ToolRouter<Self>,
     skills: SkillRegistry,
 }
@@ -36,6 +39,9 @@ impl HiefServer {
     /// Construct a new server instance and register dynamic skill tools.
     pub fn new(db: Database, project_root: PathBuf) -> Self {
         let mut tool_router = Self::tool_router();
+
+        // Load config once at startup; fall back to safe defaults if hief.toml is absent.
+        let config = Config::load(&project_root.join("hief.toml")).unwrap_or_default();
 
         // load dynamic skills and register their tool definitions
         let skills = SkillRegistry::new();
@@ -55,6 +61,7 @@ impl HiefServer {
         Self {
             db,
             project_root,
+            config,
             tool_router,
             skills,
         }
@@ -85,29 +92,6 @@ impl HiefServer {
     fn validate_top_k(&self, top_k: Option<usize>, default: usize) -> usize {
         let val = top_k.unwrap_or(default);
         if val > 1000 { 1000 } else { val }
-    }
-
-    /// Validates a skill name: allows only alphanumeric characters, underscores, and hyphens.
-    /// Rejects path separators, dots, and leading hyphens to prevent path traversal.
-    fn validate_skill_name(name: &str) -> std::result::Result<(), ErrorData> {
-        if name.is_empty() {
-            return Err(ErrorData::invalid_params("skill name must not be empty", None));
-        }
-        if !name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
-            let err = crate::errors::HiefError::SecurityViolation(format!(
-                "Invalid skill name '{}': only alphanumeric characters, underscores, and hyphens are allowed",
-                name
-            ));
-            return Err(ErrorData::invalid_params(err.to_string(), None));
-        }
-        if name.starts_with('-') {
-            let err = crate::errors::HiefError::SecurityViolation(format!(
-                "Invalid skill name '{}': cannot start with a hyphen",
-                name
-            ));
-            return Err(ErrorData::invalid_params(err.to_string(), None));
-        }
-        Ok(())
     }
 }
 
@@ -268,6 +252,30 @@ pub struct SemanticSearchParams {
     pub language: Option<String>,
 }
 
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct GetTransitiveDepsParams {
+    /// Intent ID (full or short prefix)
+    pub id: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct FindCallersParams {
+    /// Name of the function to find call sites for
+    pub function_name: String,
+    /// Programming language: rust, python, typescript, javascript
+    pub language: String,
+    /// Max results to return (default: 50)
+    pub top_k: Option<usize>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct FindCallersResponse {
+    pub function_name: String,
+    pub language: String,
+    pub callers: Vec<crate::index::structural::StructuralMatch>,
+    pub count: usize,
+}
+
 #[tool_router]
 impl HiefServer {
     #[tool(
@@ -380,10 +388,7 @@ impl HiefServer {
         // build response object with optional skill content
         let mut skill_content = None;
         if let Some(skill_name) = &params.skill {
-            Self::validate_skill_name(skill_name)?;
-            let config = Config::load(&self.project_root.join("hief.toml"))
-                .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-            let skills_dir = self.project_root.join(&config.skills.skills_path);
+            let skills_dir = self.project_root.join(&self.config.skills.skills_path);
             let candidates = ["md", "yaml", "yml", "txt"];
             for ext in &candidates {
                 let path = skills_dir.join(format!("{}.{}", skill_name, ext));
@@ -462,13 +467,10 @@ impl HiefServer {
         &self,
         Parameters(params): Parameters<RunEvaluationParams>,
     ) -> Result<Json<ObjectResponse<Vec<crate::eval::EvalResult>>>, ErrorData> {
-        let config = Config::load(&self.project_root.join("hief.toml"))
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-
         let results = crate::eval::run(
             &self.db,
             &self.project_root,
-            &config.eval,
+            &self.config.eval,
             params.golden_set.as_deref(),
         )
         .await
@@ -591,9 +593,7 @@ impl HiefServer {
         description = "List all skill filenames available under the project's skills directory (usually .hief/skills)."
     )]
     async fn list_skills(&self) -> Result<Json<ObjectResponse<Vec<String>>>, ErrorData> {
-        let config = Config::load(&self.project_root.join("hief.toml"))
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        let skills_dir = self.project_root.join(&config.skills.skills_path);
+        let skills_dir = self.project_root.join(&self.config.skills.skills_path);
         let mut names = Vec::new();
         if let Ok(entries) = std::fs::read_dir(&skills_dir) {
             for entry in entries.flatten() {
@@ -615,10 +615,7 @@ impl HiefServer {
         &self,
         Parameters(params): Parameters<GetSkillParams>,
     ) -> Result<Json<ObjectResponse<String>>, ErrorData> {
-        Self::validate_skill_name(&params.name)?;
-        let config = Config::load(&self.project_root.join("hief.toml"))
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        let skills_dir = self.project_root.join(&config.skills.skills_path);
+        let skills_dir = self.project_root.join(&self.config.skills.skills_path);
         let candidates = ["md", "yaml", "yml", "txt"];
         for ext in &candidates {
             let path = skills_dir.join(format!("{}.{}", params.name, ext));
@@ -659,10 +656,7 @@ impl HiefServer {
         &self,
         Parameters(params): Parameters<SemanticSearchParams>,
     ) -> Result<Json<SemanticSearchResponse>, ErrorData> {
-        let config = Config::load(&self.project_root.join("hief.toml"))
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-
-        if !config.vectors.enabled {
+        if !self.config.vectors.enabled {
             return Err(ErrorData::internal_error(
                 "Semantic search is not enabled. Set vectors.enabled = true in hief.toml and rebuild the index.".to_string(),
                 None,
@@ -698,14 +692,98 @@ impl HiefServer {
         description = "Get project health: latest eval scores, regressions, and warnings. Use this to check if the codebase is in good shape before starting work."
     )]
     async fn get_project_health(&self) -> Result<Json<ObjectResponse<resources::ProjectHealth>>, ErrorData> {
-        let config = Config::load(&self.project_root.join("hief.toml"))
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-
-        let health = resources::get_project_health(&self.db, &self.project_root, &config)
+        let health = resources::get_project_health(&self.db, &self.project_root, &self.config)
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
         Ok(Json(ObjectResponse { result: health }))
+    }
+
+    // ------------------------------------------------------------------
+    // Skills management
+    // ------------------------------------------------------------------
+
+    #[tool(
+        name = "recover_stale_intents",
+        description = "Recover intents stuck in in_progress beyond the stale timeout configured \
+                       in hief.toml (graph.stale_timeout_hours, default 48 h). Resets them to \
+                       approved so another agent can pick them up. This is the deadlock escape \
+                       hatch: if an agent crashes or times out while holding an intent, call \
+                       this tool to unblock the graph. Returns the count of recovered intents."
+    )]
+    async fn recover_stale_intents(&self) -> Result<Json<ObjectResponse<usize>>, ErrorData> {
+        let timeout_hours = self.config.graph.stale_timeout_hours;
+        let count = graph::recover_stale_intents(&self.db, timeout_hours)
+            .await
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        Ok(Json(ObjectResponse { result: count }))
+    }
+
+    #[tool(
+        name = "get_transitive_deps",
+        description = "Get all transitive (recursive) dependencies of an intent. Returns every \
+                       intent that must reach verified or merged status before this one can \
+                       proceed. Useful for understanding the full dependency chain before \
+                       starting work on a deeply nested task."
+    )]
+    async fn get_transitive_deps(
+        &self,
+        Parameters(params): Parameters<GetTransitiveDepsParams>,
+    ) -> Result<Json<ObjectResponse<Vec<Intent>>>, ErrorData> {
+        let id = graph::resolve_id(&self.db, &params.id)
+            .await
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        let deps = graph::transitive_deps(&self.db, &id)
+            .await
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        Ok(Json(ObjectResponse { result: deps }))
+    }
+
+    #[tool(
+        name = "find_callers",
+        description = "Find all call sites of a named function using deterministic AST pattern \
+                       matching. Searches for both free-function calls (foo($$$)) and method \
+                       calls (recv.foo($$$)). This is a Code Property Graph traversal — far \
+                       more reliable than vector similarity for finding references. Useful for \
+                       impact analysis: 'what breaks if I change verify_password()?'"
+    )]
+    async fn find_callers(
+        &self,
+        Parameters(params): Parameters<FindCallersParams>,
+    ) -> Result<Json<FindCallersResponse>, ErrorData> {
+        let top_k = self.validate_top_k(params.top_k, 50);
+
+        // Pattern for free-function call: fn_name($$$)
+        let free_pattern = format!("{}($$$)", params.function_name);
+        let mut query = structural::StructuralQuery::new(&free_pattern, &params.language);
+        query.top_k = top_k;
+        let mut callers = structural::search(&self.project_root, &query)
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
+        // Pattern for method call: recv.fn_name($$$)
+        let method_pattern = format!("$RECV.{}($$$)", params.function_name);
+        let mut mq = structural::StructuralQuery::new(&method_pattern, &params.language);
+        mq.top_k = top_k;
+        let method_callers = structural::search(&self.project_root, &mq)
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        callers.extend(method_callers);
+
+        // Deduplicate by (file, line) and enforce top_k cap
+        callers.sort_by(|a, b| {
+            a.file_path
+                .cmp(&b.file_path)
+                .then(a.start_line.cmp(&b.start_line))
+        });
+        callers.dedup_by(|a, b| a.file_path == b.file_path && a.start_line == b.start_line);
+        callers.truncate(top_k);
+
+        let count = callers.len();
+        Ok(Json(FindCallersResponse {
+            function_name: params.function_name,
+            language: params.language,
+            callers,
+            count,
+        }))
     }
 
     // ------------------------------------------------------------------
@@ -867,10 +945,9 @@ impl ServerHandler for HiefServer {
                  (2) lightweight intent graph for task coordination, \
                  (3) golden-set evaluation for quality guardrails. \
                  Start each session by calling get_project_context and get_conventions. \
-                 See docs/agent-protocol.md for the full interaction protocol."
+                 See dev-docs/agent-protocol.md for the full interaction protocol."
                     .to_string(),
             ),
-            ..Default::default()
         }
     }
 }

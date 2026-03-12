@@ -142,6 +142,39 @@ pub async fn validate_graph(db: &Database) -> Result<GraphValidation> {
     })
 }
 
+/// Recover intents stuck in `in_progress` beyond a configurable stale timeout.
+///
+/// An agent may crash, time out, or be killed while holding an intent in
+/// `in_progress`. Without recovery, downstream intents wait forever. This
+/// function resets stale intents to `approved` so the next agent can pick
+/// them up. It intentionally bypasses the normal state-machine (which does
+/// not permit `in_progress → approved`) because stale recovery is an
+/// administrative operation, not a workflow transition.
+///
+/// Returns the number of intents recovered. Set `timeout_hours = 0` to disable.
+pub async fn recover_stale_intents(db: &Database, timeout_hours: u64) -> Result<usize> {
+    if timeout_hours == 0 {
+        return Ok(0);
+    }
+    let timeout_secs = timeout_hours as i64 * 3600;
+    let affected = db
+        .conn()
+        .execute(
+            "UPDATE intents SET status = 'approved', updated_at = unixepoch()
+             WHERE status = 'in_progress'
+               AND (unixepoch() - updated_at) > ?1",
+            [timeout_secs],
+        )
+        .await
+        .map_err(HiefError::Database)?;
+    Ok(affected as usize)
+}
+
+/// Get all transitive dependencies of an intent (recursive).
+pub async fn transitive_deps(db: &Database, id: &str) -> Result<Vec<Intent>> {
+    query::transitive_deps(db, id).await
+}
+
 /// Result of graph validation.
 #[derive(Debug, Clone, Serialize)]
 pub struct GraphValidation {

@@ -42,8 +42,11 @@ pub struct EvalChecks {
     pub must_contain: Vec<String>,
     #[serde(default)]
     pub must_not_contain: Vec<String>,
+    /// Glob patterns to restrict which files are checked. Multiple patterns are
+    /// combined as OR (a file matching any pattern is included). An empty list
+    /// means all files are in scope.
     #[serde(default)]
-    pub file_patterns: Option<Vec<String>>,
+    pub file_patterns: Vec<String>,
     /// Structural (ast-grep) patterns that MUST match somewhere in the codebase.
     /// Each entry has the format `"language:pattern"` (e.g. `"rust:pub fn $NAME($$$) -> Result<$RET, $ERR>"`).
     #[serde(default)]
@@ -56,6 +59,11 @@ pub struct EvalChecks {
     /// Enables differential evaluation for faster, less noisy checks.
     #[serde(default)]
     pub diff_only: bool,
+    /// Optional shell command to run as part of evaluation (e.g. "cargo test", "pytest").
+    /// A non-zero exit code is recorded as a violation. The command runs in the
+    /// project root. Omit to skip test-suite-based evaluation.
+    #[serde(default)]
+    pub test_command: Option<String>,
 }
 
 /// Load golden sets from the golden directory.

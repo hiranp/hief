@@ -105,7 +105,6 @@ pub async fn get_dependents(db: &Database, intent_id: &str) -> Result<Vec<Intent
 }
 
 /// Get all transitive dependencies (recursive CTE).
-#[allow(dead_code)]
 pub async fn transitive_deps(db: &Database, intent_id: &str) -> Result<Vec<Intent>> {
     let mut rows = db
         .conn()
