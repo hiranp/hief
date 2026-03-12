@@ -147,8 +147,8 @@ pub async fn detect_cycles(db: &Database) -> Result<Vec<String>> {
     let mut nodes: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     while let Some(row) = rows.next().await.map_err(HiefError::Database)? {
-        let from: String = row.get(0).unwrap();
-        let to: String = row.get(1).unwrap();
+        let from: String = row.get(0).map_err(HiefError::Database)?;
+        let to: String = row.get(1).map_err(HiefError::Database)?;
         adj.entry(from.clone()).or_default().push(to.clone());
         nodes.insert(from);
         nodes.insert(to);
@@ -190,12 +190,12 @@ pub async fn detect_cycles(db: &Database) -> Result<Vec<String>> {
                         adj,
                         cycle_nodes,
                     );
-                    let low_v = *lowlinks.get(v).unwrap();
-                    let low_w = *lowlinks.get(w).unwrap();
+                    let low_v = *lowlinks.get(v).expect("lowlink missing");
+                    let low_w = *lowlinks.get(w).expect("lowlink missing");
                     lowlinks.insert(v.clone(), std::cmp::min(low_v, low_w));
                 } else if on_stack.contains(w) {
-                    let low_v = *lowlinks.get(v).unwrap();
-                    let idx_w = *indices.get(w).unwrap();
+                    let low_v = *lowlinks.get(v).expect("lowlink missing");
+                    let idx_w = *indices.get(w).expect("index missing");
                     lowlinks.insert(v.clone(), std::cmp::min(low_v, idx_w));
                 }
             }
@@ -204,7 +204,7 @@ pub async fn detect_cycles(db: &Database) -> Result<Vec<String>> {
         if lowlinks.get(v) == indices.get(v) {
             let mut scc = Vec::new();
             loop {
-                let w = stack.pop().unwrap();
+                let w = stack.pop().expect("stack underflow");
                 on_stack.remove(&w);
                 scc.push(w.clone());
                 if w == *v {

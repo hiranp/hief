@@ -108,6 +108,9 @@ async fn run(cli: Cli, project_root: PathBuf) -> anyhow::Result<()> {
                         json,
                     )?;
                 }
+                IndexCmd::Semantic { query, top_k } => {
+                    cli::commands::index_semantic(&project_root, &query, top_k, json).await?;
+                }
                 IndexCmd::Status => {
                     cli::commands::index_status(&db, &project_root, json).await?;
                 }

@@ -629,7 +629,7 @@ mod tests {
 
     #[test]
     fn test_install_creates_config() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("tempdir failed");
         let project_root = dir.path();
 
         // Install for VS Code (project scope)
@@ -648,14 +648,14 @@ mod tests {
         assert!(config_path.exists());
 
         let config: Value =
-            serde_json::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+            serde_json::from_str(&std::fs::read_to_string(&config_path).expect("read config failed")).expect("json parse failed");
         assert!(config["servers"]["hief"].is_object());
         assert_eq!(config["servers"]["hief"]["type"], "stdio");
     }
 
     #[test]
     fn test_install_idempotent() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("tempdir failed");
         let project_root = dir.path();
 
         // Install twice
@@ -669,7 +669,7 @@ mod tests {
 
     #[test]
     fn test_uninstall_removes_entry() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("tempdir failed");
         let project_root = dir.path();
 
         // Install then uninstall
@@ -679,14 +679,14 @@ mod tests {
 
         // Verify config no longer has hief
         let config_path = project_root.join(".vscode").join("mcp.json");
-        let config: Value =
-            serde_json::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+        let config: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config_path).expect("read config failed")).expect("json parse failed");
         assert!(!is_hief_registered(&config));
     }
 
     #[test]
     fn test_status_reports_correctly() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("tempdir failed");
         let project_root = dir.path();
 
         // Before install
@@ -704,7 +704,7 @@ mod tests {
 
     #[test]
     fn test_claude_cli_project_config() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("tempdir failed");
         let project_root = dir.path();
 
         let result = install_for_client(McpClient::ClaudeCli, project_root, ConfigScope::Project);
@@ -721,7 +721,7 @@ mod tests {
         assert!(config_path.exists());
 
         let config: Value =
-            serde_json::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+            serde_json::from_str(&std::fs::read_to_string(&config_path).expect("read config failed")).expect("json parse failed");
         assert!(config["mcpServers"]["hief"].is_object());
         assert_eq!(config["mcpServers"]["hief"]["args"][0], "serve");
     }

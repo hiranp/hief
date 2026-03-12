@@ -159,3 +159,30 @@ pub async fn index_status(db: &Database, project_root: &Path, json: bool) -> Res
 
     Ok(())
 }
+
+/// Semantic search using vector embeddings.
+pub async fn index_semantic(
+    _project_root: &Path,
+    query: &str,
+    top_k: usize,
+    json: bool,
+) -> Result<()> {
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({
+                "error": "not_implemented",
+                "message": "Semantic search is currently in development. Vector storage and retrieval are being implemented."
+            })
+        );
+    } else {
+        println!("⚠️  Semantic search is currently in development.");
+        println!("   Vector storage and retrieval via LanceDB are being implemented.");
+        println!(
+            "   Query '{}' (top_k={}) would be executed here.",
+            query, top_k
+        );
+    }
+
+    Ok(())
+}

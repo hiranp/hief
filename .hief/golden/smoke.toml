@@ -19,7 +19,10 @@ id = "no-unsafe-blocks"
 name = "No unsafe blocks in runtime code"
 priority = "critical"
 [cases.checks]
-must_not_contain = ["unsafe {"]
+# Use a structural pattern so we detect real unsafe blocks and skip
+# occurrences inside string literals (e.g. the conventions template
+# in `src/cli/commands/init.rs` embeds `"unsafe { $$$BODY }"`).
+structural_must_not_contain = ["rust:unsafe { $$$BODY }"]
 file_patterns = ["src/**/*.rs"]
 
 [[cases]]

@@ -289,11 +289,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_and_get_intent() {
-        let db = crate::db::Database::open_memory().await.unwrap();
+        let db = crate::db::Database::open_memory().await.expect("db operation failed");
         let intent = Intent::new("feature", "Test intent", None, None);
-        create_intent(&db, &intent).await.unwrap();
+        create_intent(&db, &intent).await.expect("db operation failed");
 
-        let fetched = get_intent(&db, &intent.id).await.unwrap();
+        let fetched = get_intent(&db, &intent.id).await.expect("db operation failed");
         assert_eq!(fetched.id, intent.id);
         assert_eq!(fetched.title, "Test intent");
         assert_eq!(fetched.kind, "feature");
@@ -303,7 +303,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_nonexistent_intent() {
-        let db = crate::db::Database::open_memory().await.unwrap();
+        let db = crate::db::Database::open_memory().await.expect("db operation failed");
         let result = get_intent(&db, "nonexistent-uuid").await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -312,53 +312,53 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_intents_empty() {
-        let db = crate::db::Database::open_memory().await.unwrap();
-        let intents = list_intents(&db, None, None).await.unwrap();
+        let db = crate::db::Database::open_memory().await.expect("db operation failed");
+        let intents = list_intents(&db, None, None).await.expect("db operation failed");
         assert!(intents.is_empty());
     }
 
     #[tokio::test]
     async fn test_list_intents_with_filter() {
-        let db = crate::db::Database::open_memory().await.unwrap();
+        let db = crate::db::Database::open_memory().await.expect("db operation failed");
 
         let i1 = Intent::new("feature", "Feature 1", None, None);
         let i2 = Intent::new("bug", "Bug 1", None, None);
-        create_intent(&db, &i1).await.unwrap();
-        create_intent(&db, &i2).await.unwrap();
+        create_intent(&db, &i1).await.expect("db operation failed");
+        create_intent(&db, &i2).await.expect("db operation failed");
 
-        let all = list_intents(&db, None, None).await.unwrap();
+        let all = list_intents(&db, None, None).await.expect("db operation failed");
         assert_eq!(all.len(), 2);
 
-        let bugs = list_intents(&db, None, Some("bug")).await.unwrap();
+        let bugs = list_intents(&db, None, Some("bug")).await.expect("db operation failed");
         assert_eq!(bugs.len(), 1);
         assert_eq!(bugs[0].kind, "bug");
 
-        let drafts = list_intents(&db, Some("draft"), None).await.unwrap();
+        let drafts = list_intents(&db, Some("draft"), None).await.expect("db operation failed");
         assert_eq!(drafts.len(), 2);
     }
 
     #[tokio::test]
     async fn test_status_update_valid() {
-        let db = crate::db::Database::open_memory().await.unwrap();
+        let db = crate::db::Database::open_memory().await.expect("db operation failed");
         let intent = Intent::new("feature", "Test", None, None);
-        create_intent(&db, &intent).await.unwrap();
+        create_intent(&db, &intent).await.expect("db operation failed");
 
         // draft -> approved
-        update_status(&db, &intent.id, "approved").await.unwrap();
-        let fetched = get_intent(&db, &intent.id).await.unwrap();
+        update_status(&db, &intent.id, "approved").await.expect("db operation failed");
+        let fetched = get_intent(&db, &intent.id).await.expect("db operation failed");
         assert_eq!(fetched.status, "approved");
 
         // approved -> in_progress
-        update_status(&db, &intent.id, "in_progress").await.unwrap();
-        let fetched = get_intent(&db, &intent.id).await.unwrap();
+        update_status(&db, &intent.id, "in_progress").await.expect("db operation failed");
+        let fetched = get_intent(&db, &intent.id).await.expect("db operation failed");
         assert_eq!(fetched.status, "in_progress");
     }
 
     #[tokio::test]
     async fn test_status_update_invalid_transition() {
-        let db = crate::db::Database::open_memory().await.unwrap();
+        let db = crate::db::Database::open_memory().await.expect("db operation failed");
         let intent = Intent::new("feature", "Test", None, None);
-        create_intent(&db, &intent).await.unwrap();
+        create_intent(&db, &intent).await.expect("db operation failed");
 
         // draft -> merged (invalid, must go through approved/in_progress/etc.)
         let result = update_status(&db, &intent.id, "merged").await;
@@ -369,36 +369,36 @@ mod tests {
 
     #[tokio::test]
     async fn test_assign_intent() {
-        let db = crate::db::Database::open_memory().await.unwrap();
+        let db = crate::db::Database::open_memory().await.expect("db operation failed");
         let intent = Intent::new("feature", "Test", None, None);
-        create_intent(&db, &intent).await.unwrap();
+        create_intent(&db, &intent).await.expect("db operation failed");
 
         assign_intent(&db, &intent.id, "agent-claude")
             .await
-            .unwrap();
-        let fetched = get_intent(&db, &intent.id).await.unwrap();
+            .expect("db operation failed");
+        let fetched = get_intent(&db, &intent.id).await.expect("db operation failed");
         assert_eq!(fetched.assigned_to, Some("agent-claude".to_string()));
     }
 
     #[tokio::test]
     async fn test_add_edge_and_ready_intents() {
-        let db = crate::db::Database::open_memory().await.unwrap();
+        let db = crate::db::Database::open_memory().await.expect("db operation failed");
 
         let i1 = Intent::new("feature", "Base feature", None, None);
         let i2 = Intent::new("feature", "Depends on base", None, None);
-        create_intent(&db, &i1).await.unwrap();
-        create_intent(&db, &i2).await.unwrap();
+        create_intent(&db, &i1).await.expect("db operation failed");
+        create_intent(&db, &i2).await.expect("db operation failed");
 
         // i2 depends on i1
         let edge = IntentEdge::depends_on(&i2.id, &i1.id);
-        add_edge(&db, &edge).await.unwrap();
+        add_edge(&db, &edge).await.expect("db operation failed");
 
         // Approve both
-        update_status(&db, &i1.id, "approved").await.unwrap();
-        update_status(&db, &i2.id, "approved").await.unwrap();
+        update_status(&db, &i1.id, "approved").await.expect("db operation failed");
+        update_status(&db, &i2.id, "approved").await.expect("db operation failed");
 
         // i2 should NOT be ready (i1 is only approved, not verified/merged)
-        let ready = ready_intents(&db).await.unwrap();
+        let ready = ready_intents(&db).await.expect("db operation failed");
         let ready_ids: Vec<&str> = ready.iter().map(|i| i.id.as_str()).collect();
         assert!(ready_ids.contains(&i1.id.as_str()), "i1 should be ready");
         assert!(
@@ -407,12 +407,12 @@ mod tests {
         );
 
         // Now move i1 to verified
-        update_status(&db, &i1.id, "in_progress").await.unwrap();
-        update_status(&db, &i1.id, "in_review").await.unwrap();
-        update_status(&db, &i1.id, "verified").await.unwrap();
+        update_status(&db, &i1.id, "in_progress").await.expect("db operation failed");
+        update_status(&db, &i1.id, "in_review").await.expect("db operation failed");
+        update_status(&db, &i1.id, "verified").await.expect("db operation failed");
 
         // Now i2 should be ready
-        let ready = ready_intents(&db).await.unwrap();
+        let ready = ready_intents(&db).await.expect("db operation failed");
         let ready_ids: Vec<&str> = ready.iter().map(|i| i.id.as_str()).collect();
         assert!(
             ready_ids.contains(&i2.id.as_str()),
@@ -422,22 +422,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_intent_with_deps() {
-        let db = crate::db::Database::open_memory().await.unwrap();
+        let db = crate::db::Database::open_memory().await.expect("db operation failed");
 
         let i1 = Intent::new("feature", "Base", None, None);
         let i2 = Intent::new("feature", "Dependent", None, None);
-        create_intent(&db, &i1).await.unwrap();
-        create_intent(&db, &i2).await.unwrap();
+        create_intent(&db, &i1).await.expect("db operation failed");
+        create_intent(&db, &i2).await.expect("db operation failed");
 
         let edge = IntentEdge::depends_on(&i2.id, &i1.id);
-        add_edge(&db, &edge).await.unwrap();
+        add_edge(&db, &edge).await.expect("db operation failed");
 
-        let with_deps = get_intent_with_deps(&db, &i2.id).await.unwrap();
+        let with_deps = get_intent_with_deps(&db, &i2.id).await.expect("db operation failed");
         assert_eq!(with_deps.depends_on.len(), 1);
         assert_eq!(with_deps.depends_on[0].id, i1.id);
         assert!(!with_deps.all_deps_satisfied);
 
-        let with_deps_i1 = get_intent_with_deps(&db, &i1.id).await.unwrap();
+        let with_deps_i1 = get_intent_with_deps(&db, &i1.id).await.expect("db operation failed");
         assert_eq!(with_deps_i1.blocks.len(), 1);
         assert_eq!(with_deps_i1.blocks[0].id, i2.id);
         assert!(with_deps_i1.all_deps_satisfied);
@@ -445,26 +445,26 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_graph_no_cycles() {
-        let db = crate::db::Database::open_memory().await.unwrap();
+        let db = crate::db::Database::open_memory().await.expect("db operation failed");
 
         let i1 = Intent::new("feature", "A", None, None);
         let i2 = Intent::new("feature", "B", None, None);
-        create_intent(&db, &i1).await.unwrap();
-        create_intent(&db, &i2).await.unwrap();
+        create_intent(&db, &i1).await.expect("db operation failed");
+        create_intent(&db, &i2).await.expect("db operation failed");
 
         let edge = IntentEdge::depends_on(&i2.id, &i1.id);
-        add_edge(&db, &edge).await.unwrap();
+        add_edge(&db, &edge).await.expect("db operation failed");
 
-        let validation = validate_graph(&db).await.unwrap();
+        let validation = validate_graph(&db).await.expect("db operation failed");
         assert!(!validation.has_cycles);
         assert!(validation.cycle_nodes.is_empty());
     }
 
     #[tokio::test]
     async fn test_self_loop_edge_rejected() {
-        let db = crate::db::Database::open_memory().await.unwrap();
+        let db = crate::db::Database::open_memory().await.expect("db operation failed");
         let intent = Intent::new("feature", "Self-ref", None, None);
-        create_intent(&db, &intent).await.unwrap();
+        create_intent(&db, &intent).await.expect("db operation failed");
 
         let edge = IntentEdge::depends_on(&intent.id, &intent.id);
         let result = add_edge(&db, &edge).await;
@@ -473,26 +473,26 @@ mod tests {
 
     #[tokio::test]
     async fn test_intent_with_priority() {
-        let db = crate::db::Database::open_memory().await.unwrap();
+        let db = crate::db::Database::open_memory().await.expect("db operation failed");
         let intent = Intent::new("bug", "Critical bug", None, Some("critical".to_string()));
-        create_intent(&db, &intent).await.unwrap();
+        create_intent(&db, &intent).await.expect("db operation failed");
 
-        let fetched = get_intent(&db, &intent.id).await.unwrap();
+        let fetched = get_intent(&db, &intent.id).await.expect("db operation failed");
         assert_eq!(fetched.priority, "critical");
     }
 
     #[tokio::test]
     async fn test_intent_with_description() {
-        let db = crate::db::Database::open_memory().await.unwrap();
+        let db = crate::db::Database::open_memory().await.expect("db operation failed");
         let intent = Intent::new(
             "feature",
             "Title",
             Some("Detailed description".to_string()),
             None,
         );
-        create_intent(&db, &intent).await.unwrap();
+        create_intent(&db, &intent).await.expect("db operation failed");
 
-        let fetched = get_intent(&db, &intent.id).await.unwrap();
+        let fetched = get_intent(&db, &intent.id).await.expect("db operation failed");
         assert_eq!(
             fetched.description,
             Some("Detailed description".to_string())
@@ -550,41 +550,41 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_id_full_match() {
-        let db = crate::db::Database::open_memory().await.unwrap();
+        let db = crate::db::Database::open_memory().await.expect("db operation failed");
         let intent = Intent::new("feature", "Test", None, None);
-        create_intent(&db, &intent).await.unwrap();
+        create_intent(&db, &intent).await.expect("db operation failed");
 
-        let resolved = resolve_id(&db, &intent.id).await.unwrap();
+        let resolved = resolve_id(&db, &intent.id).await.expect("db operation failed");
         assert_eq!(resolved, intent.id);
     }
 
     #[tokio::test]
     async fn test_resolve_id_prefix_match() {
-        let db = crate::db::Database::open_memory().await.unwrap();
+        let db = crate::db::Database::open_memory().await.expect("db operation failed");
         let intent = Intent::new("feature", "Test", None, None);
-        create_intent(&db, &intent).await.unwrap();
+        create_intent(&db, &intent).await.expect("db operation failed");
 
         // Use just the first 6 chars of the hash (after "hief-")
         let short = &intent.id[..9]; // "hief-XXXX" (4 hex chars)
-        let resolved = resolve_id(&db, short).await.unwrap();
+        let resolved = resolve_id(&db, short).await.expect("db operation failed");
         assert_eq!(resolved, intent.id);
     }
 
     #[tokio::test]
     async fn test_resolve_id_without_prefix() {
-        let db = crate::db::Database::open_memory().await.unwrap();
+        let db = crate::db::Database::open_memory().await.expect("db operation failed");
         let intent = Intent::new("feature", "Test", None, None);
-        create_intent(&db, &intent).await.unwrap();
+        create_intent(&db, &intent).await.expect("db operation failed");
 
         // Use just the hex part without "hief-"
         let hex_part = &intent.id[5..]; // 8 hex chars
-        let resolved = resolve_id(&db, hex_part).await.unwrap();
+        let resolved = resolve_id(&db, hex_part).await.expect("db operation failed");
         assert_eq!(resolved, intent.id);
     }
 
     #[tokio::test]
     async fn test_resolve_id_not_found() {
-        let db = crate::db::Database::open_memory().await.unwrap();
+        let db = crate::db::Database::open_memory().await.expect("db operation failed");
         let result = resolve_id(&db, "nonexistent").await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();

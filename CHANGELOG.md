@@ -8,16 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.7] - 2026-03-12
 
 ### Added
-- (placeholder for upcoming changes in 0.2.7)
+- Skills management subsystem allowing creation, listing, and execution of skill recipes. (`skills` module, CLI commands, dynamic MCP tools)
+- `hief init` now auto-generates a project-specific `conventions.toml` based on detected languages and dependencies.
+- New server tools for recovering stale intents and finding function callers.
+- GitHub Actions workflow for automated multi-platform (Linux/macOS/Windows) binary releases.
 
 ### Changed
-- (placeholder for 0.2.7 changes)
+- Version bumped to 0.2.7; `Cargo.toml` and `hief.toml` updated accordingly.
+- Enhanced conventions auto-generation logic and added options for stale intent recovery and evaluation test commands.
+- Documentation paths updated in AGENTS.md; README refined with missing sections and CLI examples; complete docs overhaul for public release.
+- Evaluation engine updated with new file pattern checks and test command results.
 
 ### Fixed
-- (placeholder for 0.2.7 fixes)
+- Improved security around git command and file-path validation; added new error types and fixed fallback template rendering.
 
 ### Security
-- (placeholder for 0.2.7 security notes)
+- Input validation hardened for git commands and path parameters; validated skill names to prevent injection attacks.
 
 
 ## [0.2.6] - 2026-03-12

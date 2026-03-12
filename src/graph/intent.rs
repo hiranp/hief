@@ -251,7 +251,7 @@ pub async fn resolve_id(db: &Database, id_or_prefix: &str) -> Result<String> {
 
     match matches.len() {
         0 => Err(HiefError::IntentNotFound(id_or_prefix.to_string())),
-        1 => Ok(matches.into_iter().next().unwrap()),
+        1 => Ok(matches.into_iter().next().expect("one match present")),
         _ => Err(HiefError::AmbiguousId {
             prefix: id_or_prefix.to_string(),
             matches,

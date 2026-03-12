@@ -293,6 +293,7 @@ async fn evaluate_case(
 ) -> Result<CaseResult> {
     let mut violations = Vec::new();
     let file_globs: &[String] = &case.checks.file_patterns;
+    let exclude_globs: &[String] = &case.checks.exclude_file_patterns;
     let diff_slice = diff_files.map(|v| v.as_slice());
 
     // --- Literal checks ---
@@ -303,6 +304,13 @@ async fn evaluate_case(
     for pattern in &case.checks.must_contain {
         let results = search_literal(db, pattern, file_globs, diff_slice, 1).await?;
 
+        // filter out excluded files
+        let results: Vec<_> = results
+            .into_iter()
+            .filter(|(file, _)| {
+                !exclude_globs.iter().any(|g| glob_matches(file, g))
+            })
+            .collect();
         if results.is_empty() {
             violations.push(Violation {
                 kind: "must_contain_missing".to_string(),
@@ -319,6 +327,10 @@ async fn evaluate_case(
         let results = search_literal(db, pattern, file_globs, diff_slice, 5).await?;
 
         for (file, line) in &results {
+            // ignore excluded files
+            if exclude_globs.iter().any(|g| glob_matches(file, g)) {
+                continue;
+            }
             violations.push(Violation {
                 kind: "must_not_contain_found".to_string(),
                 pattern: pattern.clone(),
@@ -339,16 +351,22 @@ async fn evaluate_case(
         match parse_structural_entry(entry) {
             Some((lang, pattern)) => {
                 match run_structural_check(project_root, lang, pattern, file_globs, diff_slice, 1) {
-                    Ok(matches) if matches.is_empty() => {
-                        violations.push(Violation {
-                            kind: "structural_must_contain_missing".to_string(),
-                            pattern: entry.clone(),
-                            file: "N/A".to_string(),
-                            line: None,
-                            context: Some(format!("No AST match for pattern '{}'", pattern)),
-                        });
+                    Ok(matches) => {
+                        // drop any matches in excluded paths
+                        let non_excluded: Vec<_> = matches
+                            .into_iter()
+                            .filter(|m| !exclude_globs.iter().any(|g| glob_matches(&m.file_path, g)))
+                            .collect();
+                        if non_excluded.is_empty() {
+                            violations.push(Violation {
+                                kind: "structural_must_contain_missing".to_string(),
+                                pattern: entry.clone(),
+                                file: "N/A".to_string(),
+                                line: None,
+                                context: Some(format!("No AST match for pattern '{}'", pattern)),
+                            });
+                        }
                     }
-                    Ok(_) => {} // Found at least one match — passes
                     Err(e) => {
                         warn!("Structural search failed for pattern '{}': {}", pattern, e);
                         violations.push(Violation {
@@ -382,6 +400,7 @@ async fn evaluate_case(
                 match run_structural_check(project_root, lang, pattern, file_globs, diff_slice, 10) {
                     Ok(matches) => {
                         for m in &matches {
+                            if exclude_globs.iter().any(|g| glob_matches(&m.file_path, g)) { continue; }
                             violations.push(Violation {
                                 kind: "structural_must_not_contain_found".to_string(),
                                 pattern: entry.clone(),
@@ -669,6 +688,7 @@ mod tests {
                 must_contain: Vec::new(),
                 must_not_contain: vec![".unwrap()".to_string()],
                 file_patterns: Vec::new(),
+                exclude_file_patterns: Vec::new(),
                 structural_must_contain: Vec::new(),
                 structural_must_not_contain: Vec::new(),
                 diff_only: false,
@@ -704,6 +724,7 @@ mod tests {
                 must_contain: vec!["fn main".to_string()],
                 must_not_contain: Vec::new(),
                 file_patterns: Vec::new(),
+                exclude_file_patterns: Vec::new(),
                 structural_must_contain: Vec::new(),
                 structural_must_not_contain: Vec::new(),
                 diff_only: false,

@@ -47,6 +47,11 @@ pub struct EvalChecks {
     /// means all files are in scope.
     #[serde(default)]
     pub file_patterns: Vec<String>,
+    /// Glob patterns to exclude from evaluation (useful for skipping tests or
+    /// generated code). These are OR-combined: a file matching *any* exclude
+    /// pattern will be ignored for this case.
+    #[serde(default)]
+    pub exclude_file_patterns: Vec<String>,
     /// Structural (ast-grep) patterns that MUST match somewhere in the codebase.
     /// Each entry has the format `"language:pattern"` (e.g. `"rust:pub fn $NAME($$$) -> Result<$RET, $ERR>"`).
     #[serde(default)]

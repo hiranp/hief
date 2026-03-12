@@ -141,12 +141,12 @@ pub fn hooks_status(project_root: &Path, json: bool) -> Result<()> {
     }
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&statuses).unwrap());
+        println!("{}", serde_json::to_string_pretty(&statuses).expect("failed to serialize statuses"));
     } else {
         println!("🪝 Git Hook Status:\n");
         for s in &statuses {
-            let name = s["hook"].as_str().unwrap();
-            let installed = s["installed"].as_bool().unwrap();
+            let name = s["hook"].as_str().expect("hook field missing");
+            let installed = s["installed"].as_bool().expect("installed field missing");
             let icon = if installed { "✅" } else { "❌" };
             println!(
                 "  {} {} — {}",

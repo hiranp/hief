@@ -690,45 +690,49 @@ pub fn check_docs_structure(project_root: &Path, config: &DocsConfig) -> DocsChe
         .join(".hief")
         .join("templates")
         .join("SDD_LLM_PROMPT.md");
-    if !prompt_file.exists() {
+
+    let prompt_content = if prompt_file.exists() {
+        std::fs::read_to_string(&prompt_file).ok()
+    } else {
+        // Fallback to embedded default
+        Some(LLM_PROMPT_TEMPLATE.to_string())
+    };
+
+    if let Some(content) = prompt_content {
+        let issues = validate_llm_prompt_contract(&content);
+        if issues.is_empty() {
+            checks.push(DocsCheckItem {
+                name: "llm_prompt_contract".to_string(),
+                status: "ok".to_string(),
+                message: if prompt_file.exists() {
+                    "SDD_LLM_PROMPT.md exists and includes required anchors"
+                } else {
+                    "Using embedded default SDD_LLM_PROMPT.md (compliant)"
+                }
+                .to_string(),
+            });
+        } else {
+            checks.push(DocsCheckItem {
+                name: "llm_prompt_contract".to_string(),
+                status: "warning".to_string(),
+                message: format!(
+                    "{} is missing {} anchor(s): {}",
+                    if prompt_file.exists() {
+                        "SDD_LLM_PROMPT.md"
+                    } else {
+                        "Embedded SDD_LLM_PROMPT.md"
+                    },
+                    issues.len(),
+                    issues.join("; ")
+                ),
+            });
+        }
+    } else {
         checks.push(DocsCheckItem {
             name: "llm_prompt_contract".to_string(),
             status: "warning".to_string(),
-            message:
-                "Missing .hief/templates/SDD_LLM_PROMPT.md — run `hief docs init` to enforce LLM workflow"
-                    .to_string(),
+            message: "Failed to resolve SDD_LLM_PROMPT.md".to_string(),
         });
-    } else {
-        match std::fs::read_to_string(&prompt_file) {
-            Ok(content) => {
-                let issues = validate_llm_prompt_contract(&content);
-                if issues.is_empty() {
-                    checks.push(DocsCheckItem {
-                        name: "llm_prompt_contract".to_string(),
-                        status: "ok".to_string(),
-                        message: "SDD_LLM_PROMPT.md includes required HIEF workflow anchors"
-                            .to_string(),
-                    });
-                } else {
-                    checks.push(DocsCheckItem {
-                        name: "llm_prompt_contract".to_string(),
-                        status: "warning".to_string(),
-                        message: format!(
-                            "SDD_LLM_PROMPT.md is missing {} anchor(s): {}",
-                            issues.len(),
-                            issues.join("; ")
-                        ),
-                    });
-                }
-            }
-            Err(e) => {
-                checks.push(DocsCheckItem {
-                    name: "llm_prompt_contract".to_string(),
-                    status: "warning".to_string(),
-                    message: format!("Failed to read SDD_LLM_PROMPT.md: {}", e),
-                });
-            }
-        }
     }
 
     // Check for any feature specs
@@ -964,99 +968,13 @@ fn count_unresolved_placeholders_in_dir(dir: &Path) -> usize {
 // Constants
 // ---------------------------------------------------------------------------
 
-const TEMPLATES_README: &str = r#"# Custom Template Overrides
+const TEMPLATES_README: &str = include_str!("../../templates/README.md");
 
-Place template files here to override HIEF's embedded defaults.
-Templates use `{{variable_name}}` syntax for variable substitution.
-
-## Supported Template Files
-
-| File | Overrides |
-|------|-----------|
-| `constitution.md` | Project constitution template |
-| `spec.md` | Feature specification template |
-| `data-model.md` | Data model & contracts template |
-| `harness.md` | Harness specification template |
-| `playbook.md` | Simulation playbook template |
-| `golden.toml` | Golden set evaluation template |
-
-## Variables
-
-Variables are substituted when generating documents. Common variables:
-
-- `{{project_name}}` — Project name (auto-detected from Cargo.toml/package.json/git)
-- `{{feature}}` — Feature name (from `--name` flag)
-- `{{id}}` — Intent ID (from `--id` flag or auto-generated)
-- `{{file_count}}` — Total indexed files (auto-populated from index)
-- `{{languages}}` — Indexed languages (auto-populated from index)
-- `{{chunk_count}}` — Total indexed chunks (auto-populated from index)
-
-Unresolved variables remain as `{{placeholder}}` for manual editing.
-
-## Example
-
-To customize the constitution template:
-
-```bash
-cp $(hief docs show-template constitution) .hief/templates/constitution.md
-# Edit .hief/templates/constitution.md
-hief docs generate constitution
-```
-"#;
-
-const LLM_PROMPT_TEMPLATE: &str = r#"# Role
-You are an expert software architect and technical writer specializing in Spec-Driven Development (SDD) for HIEF (Hybrid Intent-Evaluation Framework).
-
-# Context
-This repository uses HIEF for organizing feature specs, data models, and architectural rules.
-Reference templates and writing approaches:
-- HIEF templates: https://github.com/hiranp/hief/tree/main/templates
-- AWS Kiro prompt library: https://aws.amazon.com/startups/prompt-library/kiro-project-init?lang=en-US
-- GitHub Spec-Kit: https://github.com/github/spec-kit?tab=readme-ov-file#-specify-cli-reference
-- Tessl quickstart docs/rules: https://docs.tessl.io/introduction-to-tessl/quickstart-skills-docs-rules
-
-# Mandatory Workflow (Do Not Skip)
-1. Scaffold first via HIEF CLI:
-    - Feature spec: `hief docs generate spec --name <feature>`
-    - Data model: `hief docs generate data-model`
-    - Harness: `hief docs generate harness --name <feature>`
-2. Read and obey `docs/specs/constitution.md` before writing.
-3. Ground content in the real codebase using local tools (`search_code`, structural search, and project files).
-4. Replace every `{{placeholder}}` with concrete, technically accurate content.
-5. Provide Result by editing the generated file directly (preferred) or returning final markdown.
-
-# Enforcement Rules
-- Never draft spec files freehand when a matching HIEF template exists.
-- If required context is missing, state assumptions explicitly and continue with best-effort draft.
-- Before finalizing, ensure no unresolved placeholders remain in the document.
-
-# Quality Bar
-- Be concise, specific, and technically precise.
-- Prefer verifiable acceptance criteria and explicit invariants.
-- Keep API contracts actionable and implementation-aware.
-"#;
+const LLM_PROMPT_TEMPLATE: &str = include_str!("../../templates/SDD_LLM_PROMPT.md");
 
 const HIEF_WORKFLOW_BLOCK_START: &str = "<!-- HIEF:MANDATORY_WORKFLOW:START -->";
 const HIEF_WORKFLOW_BLOCK_END: &str = "<!-- HIEF:MANDATORY_WORKFLOW:END -->";
-const HIEF_WORKFLOW_BLOCK: &str = r#"<!-- HIEF:MANDATORY_WORKFLOW:START -->
-## HIEF Mandatory Workflow
-
-1. Run `hief docs init` to scaffold/update templates and workflow rules.
-2. Generate docs via templates only:
-    - `hief docs generate spec --name <feature>`
-    - `hief docs generate data-model`
-    - `hief docs generate harness --name <feature>`
-3. Read and obey `docs/specs/constitution.md`.
-4. Ground content in local code context (`search_code`, structural search, and source files).
-5. Replace all `{{placeholder}}` values before review.
-
-Reference URLs:
-- https://github.com/hiranp/hief/tree/main/templates
-- https://aws.amazon.com/startups/prompt-library/kiro-project-init?lang=en-US
-- https://github.com/github/spec-kit?tab=readme-ov-file#-specify-cli-reference
-- https://docs.tessl.io/introduction-to-tessl/quickstart-skills-docs-rules
-<!-- HIEF:MANDATORY_WORKFLOW:END -->
-"#;
+const HIEF_WORKFLOW_BLOCK: &str = include_str!("../../templates/WORKFLOW_BLOCK.md");
 
 const RUST_FRAMEWORK_TEMPLATE: &str = include_str!("../../templates/frameworks/rust.md");
 const PYTHON_FRAMEWORK_TEMPLATE: &str = include_str!("../../templates/frameworks/python.md");
@@ -1205,14 +1123,14 @@ mod tests {
 
     #[test]
     fn test_scaffold_docs_dirs() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().expect("tempdir creation failed");
         let root = tmp.path();
 
         // Create .hief dir (prerequisite)
-        std::fs::create_dir_all(root.join(".hief")).unwrap();
+        std::fs::create_dir_all(root.join(".hief")).expect("mkdir failed");
 
         let config = DocsConfig::default();
-        let report = scaffold_docs_dirs(root, &config).unwrap();
+        let report = scaffold_docs_dirs(root, &config).expect("scaffold failed");
 
         assert!(root.join("docs/specs").exists());
         assert!(root.join("docs/harness").exists());
@@ -1223,25 +1141,25 @@ mod tests {
 
     #[test]
     fn test_scaffold_docs_dirs_idempotent() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().expect("tempdir failed");
         let root = tmp.path();
-        std::fs::create_dir_all(root.join(".hief")).unwrap();
+        std::fs::create_dir_all(root.join(".hief")).expect("mkdir failed");
 
         let config = DocsConfig::default();
 
         // First call creates
-        let report1 = scaffold_docs_dirs(root, &config).unwrap();
+        let report1 = scaffold_docs_dirs(root, &config).expect("scaffold failed");
         assert!(!report1.directories_created.is_empty());
 
         // Second call is idempotent
-        let report2 = scaffold_docs_dirs(root, &config).unwrap();
+        let report2 = scaffold_docs_dirs(root, &config).expect("scaffold failed");
         assert!(report2.directories_created.is_empty());
         assert!(!report2.already_existed.is_empty());
     }
 
     #[test]
     fn test_check_docs_structure_empty() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().expect("tempdir failed");
         let config = DocsConfig::default();
 
         let report = check_docs_structure(tmp.path(), &config);
@@ -1250,12 +1168,12 @@ mod tests {
 
     #[test]
     fn test_check_docs_structure_after_init() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().expect("tempdir failed");
         let root = tmp.path();
-        std::fs::create_dir_all(root.join(".hief")).unwrap();
+        std::fs::create_dir_all(root.join(".hief")).expect("mkdir failed");
 
         let config = DocsConfig::default();
-        scaffold_docs_dirs(root, &config).unwrap();
+        scaffold_docs_dirs(root, &config).expect("scaffold failed");
 
         let report = check_docs_structure(root, &config);
         assert!(report.healthy); // dirs exist now
@@ -1292,11 +1210,11 @@ mod tests {
         let template = "Languages: {% for lang in languages %}{{lang}}{% if not loop.last %}, {% endif %}{% endfor %}";
         // MiniJinja needs a list value; pass via render_with_minijinja directly
         let env = Environment::new();
-        let tmpl = env.template_from_str(template).unwrap();
+        let tmpl = env.template_from_str(template).expect("template parse failed");
         let ctx = minijinja::context! {
             languages => vec!["rust", "python", "typescript"],
         };
-        let result = tmpl.render(ctx).unwrap();
+        let result = tmpl.render(ctx).expect("template render failed");
         assert_eq!(result, "Languages: rust, python, typescript");
     }
 
@@ -1318,8 +1236,8 @@ mod tests {
         // MiniJinja with default filter — the placeholder won't be preserved
         // because `default()` explicitly handles undefined
         let env = Environment::new();
-        let tmpl = env.template_from_str(template).unwrap();
-        let result = tmpl.render(Value::from_serialize(&vars)).unwrap();
+        let tmpl = env.template_from_str(template).expect("template parse failed");
+        let result = tmpl.render(Value::from_serialize(&vars)).expect("template render failed");
         assert_eq!(result, "Author: unknown");
     }
 
@@ -1337,7 +1255,7 @@ mod tests {
 
     #[test]
     fn test_minijinja_renders_embedded_constitution() {
-        let content = templates::get_template_content("constitution").unwrap();
+        let content = templates::get_template_content("constitution").expect("template content load failed");
         let mut vars = HashMap::new();
         vars.insert("project_name".to_string(), "TestProject".to_string());
 
@@ -1351,7 +1269,7 @@ mod tests {
 
     #[test]
     fn test_minijinja_renders_embedded_spec() {
-        let content = templates::get_template_content("spec").unwrap();
+        let content = templates::get_template_content("spec").expect("template content load failed");
         let mut vars = HashMap::new();
         vars.insert("feature".to_string(), "code-search".to_string());
         vars.insert("id".to_string(), "abc123".to_string());
@@ -1368,7 +1286,7 @@ mod tests {
 
     #[test]
     fn test_minijinja_renders_embedded_golden() {
-        let content = templates::get_template_content("golden").unwrap();
+        let content = templates::get_template_content("golden").expect("template content load failed");
         let mut vars = HashMap::new();
         vars.insert("name".to_string(), "quality-check".to_string());
         vars.insert(
@@ -1397,7 +1315,7 @@ mod tests {
     fn test_extract_variables_from_all_templates() {
         // Ensure extract_variables works on every embedded template
         for meta in templates::TEMPLATES {
-            let content = templates::get_template_content(meta.id).unwrap();
+            let content = templates::get_template_content(meta.id).expect("template content load failed");
             let vars = extract_variables(content);
             assert!(
                 !vars.is_empty(),

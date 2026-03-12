@@ -108,6 +108,14 @@ pub enum IndexCmd {
         #[arg(short = 'k', long, default_value = "50")]
         top_k: usize,
     },
+    /// Semantic search using vector embeddings (in development)
+    Semantic {
+        /// Search query
+        query: String,
+        /// Maximum number of results
+        #[arg(short = 'k', long, default_value = "10")]
+        top_k: usize,
+    },
     /// Show index statistics
     Status,
 }

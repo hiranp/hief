@@ -322,17 +322,17 @@ mod tests {
 
     #[test]
     fn test_conventions_missing_file() {
-        let tmp = tempfile::tempdir().unwrap();
-        let result = get_project_conventions(tmp.path()).unwrap();
+        let tmp = tempfile::tempdir().expect("failed to create tempdir");
+        let result = get_project_conventions(tmp.path()).expect("failed to get conventions");
         assert!(!result.loaded);
         assert!(result.content.is_none());
     }
 
     #[test]
     fn test_conventions_with_file() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().expect("failed to create tempdir");
         let hief_dir = tmp.path().join(".hief");
-        std::fs::create_dir_all(&hief_dir).unwrap();
+        std::fs::create_dir_all(&hief_dir).expect("failed to create hief_dir");
         std::fs::write(
             hief_dir.join("conventions.toml"),
             r#"
@@ -346,9 +346,9 @@ severity = "warning"
 severity = "info"
 "#,
         )
-        .unwrap();
+        .expect("failed to write template");
 
-        let result = get_project_conventions(tmp.path()).unwrap();
+        let result = get_project_conventions(tmp.path()).expect("failed to get conventions");
         assert!(result.loaded);
         assert!(result.content.is_some());
         assert_eq!(result.summary.error_count, 1);

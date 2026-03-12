@@ -42,7 +42,7 @@ impl SkillRegistry {
     /// existing entries.
     pub fn load_from_disk(&self, project_root: &Path) -> Result<()> {
         let skills = load_skills_from_disk(project_root)?;
-        let mut map = self.inner.write().unwrap();
+        let mut map = self.inner.write().expect("lock poisoned");
         map.clear();
         for skill in skills {
             map.insert(skill.name.clone(), skill);
@@ -52,13 +52,13 @@ impl SkillRegistry {
 
     /// Retrieve a skill by its tool name (e.g. `execute_skill_foo`).
     pub fn by_tool(&self, tool: &str) -> Option<Skill> {
-        self.inner.read().unwrap().get(tool).cloned()
+        self.inner.read().expect("lock poisoned").get(tool).cloned()
     }
 
     /// Generate a list of MCP tool schema objects suitable for broadcasting
     /// in `ServerInfo` or registering with the router.
     pub fn tool_defs(&self) -> Vec<Tool> {
-        let skills: Vec<Skill> = self.inner.read().unwrap().values().cloned().collect();
+        let skills: Vec<Skill> = self.inner.read().expect("lock poisoned").values().cloned().collect();
         generate_skill_tool_definitions(&skills)
     }
 }
@@ -140,23 +140,23 @@ mod tests {
 
     #[test]
     fn registry_load_and_query() {
-        let tmp = tempdir().unwrap();
+        let tmp = tempdir().expect("failed to create tempdir");
         let config = SkillsConfig::default();
-        skills::scaffold_skills_dir(tmp.path(), &config).unwrap();
+        skills::scaffold_skills_dir(tmp.path(), &config).expect("fail to scaffold skills dir");
         std::fs::write(
             tmp.path().join(&config.skills_path).join("foo.md"),
             "# Foo skill\ndo something",
         )
-        .unwrap();
+        .expect("failed to write skill file");
 
         let reg = SkillRegistry::new();
-        reg.load_from_disk(tmp.path()).unwrap();
+        reg.load_from_disk(tmp.path()).expect("load skills failed");
         let defs = reg.tool_defs();
         assert_eq!(defs.len(), 1);
         assert!(defs[0].name.starts_with("execute_skill_foo"));
 
         let opt = reg.by_tool("execute_skill_foo");
         assert!(opt.is_some());
-        assert!(opt.unwrap().content.contains("do something"));
+        assert!(opt.expect("skill missing").content.contains("do something"));
     }
 }

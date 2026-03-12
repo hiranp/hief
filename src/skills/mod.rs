@@ -40,7 +40,7 @@ pub fn scaffold_skills_dir(project_root: &Path, config: &SkillsConfig) -> Result
     if readme.exists() {
         report
             .already_existed
-            .push(format!("{}/README.md", config.skills_path));
+            .push(format!("{}README.md", if config.skills_path.ends_with('/') { config.skills_path.clone() } else { format!("{}/", config.skills_path) }));
     } else {
         const SKILLS_README: &str = r#"# Skills Directory
 
@@ -55,11 +55,26 @@ for adding a new migration file, running tests, and updating docs.
         std::fs::write(&readme, SKILLS_README)?;
         report
             .files_created
-            .push(format!("{}/README.md", config.skills_path));
+            .push(format!("{}README.md", if config.skills_path.ends_with('/') { config.skills_path.clone() } else { format!("{}/", config.skills_path) }));
+    }
+
+    // Default HIEF Protocol skill
+    let protocol_skill_path = skills_path.join("hief_protocol.md");
+    if protocol_skill_path.exists() {
+        report
+            .already_existed
+            .push(format!("{}hief_protocol.md", if config.skills_path.ends_with('/') { config.skills_path.clone() } else { format!("{}/", config.skills_path) }));
+    } else {
+        std::fs::write(&protocol_skill_path, HIEF_PROTOCOL_SKILL)?;
+        report
+            .files_created
+            .push(format!("{}hief_protocol.md", if config.skills_path.ends_with('/') { config.skills_path.clone() } else { format!("{}/", config.skills_path) }));
     }
 
     Ok(report)
 }
+
+const HIEF_PROTOCOL_SKILL: &str = include_str!("../../templates/skills/hief_protocol.md");
 
 /// List skill names (file stems) present in the skills directory.
 pub fn list_skills(project_root: &Path, config: &SkillsConfig) -> Result<Vec<String>> {

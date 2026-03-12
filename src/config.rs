@@ -309,14 +309,14 @@ mod tests {
 
     #[test]
     fn test_load_nonexistent_file_returns_defaults() {
-        let config = Config::load(Path::new("/nonexistent/hief.toml")).unwrap();
+        let config = Config::load(Path::new("/nonexistent/hief.toml")).expect("failed to load default config");
         assert_eq!(config.index.max_chunk_tokens, 512);
         assert_eq!(config.serve.port, 3100);
     }
 
     #[test]
     fn test_load_valid_toml() {
-        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        let mut tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
         write!(
             tmp,
             r#"
@@ -331,9 +331,9 @@ languages = ["rust"]
 port = 8080
 "#
         )
-        .unwrap();
+        .expect("failed to write sample toml");
 
-        let config = Config::load(tmp.path()).unwrap();
+        let config = Config::load(tmp.path()).expect("failed to load temp config");
         assert_eq!(config.index.max_chunk_tokens, 1024);
         assert_eq!(config.index.languages, vec!["rust"]);
         assert_eq!(config.serve.port, 8080);
@@ -343,8 +343,8 @@ port = 8080
 
     #[test]
     fn test_load_invalid_toml_returns_error() {
-        let mut tmp = tempfile::NamedTempFile::new().unwrap();
-        write!(tmp, "this is {{ not valid toml").unwrap();
+        let mut tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
+        write!(tmp, "this is {{ not valid toml").expect("failed to write invalid toml");
 
         let result = Config::load(tmp.path());
         assert!(result.is_err());
@@ -354,13 +354,13 @@ port = 8080
 
     #[test]
     fn test_write_default_and_reload() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("failed to create tempdir");
         let path = dir.path().join("hief.toml");
 
-        Config::write_default(&path).unwrap();
+        Config::write_default(&path).expect("failed to write default config");
         assert!(path.exists());
 
-        let config = Config::load(&path).unwrap();
+        let config = Config::load(&path).expect("failed to load written config");
         assert_eq!(config.index.chunk_strategy, "ast");
         assert_eq!(config.serve.transport, "stdio");
     }
@@ -383,8 +383,8 @@ port = 8080
     #[test]
     fn test_config_serialization_roundtrip() {
         let original = Config::default();
-        let toml_str = toml::to_string_pretty(&original).unwrap();
-        let deserialized: Config = toml::from_str(&toml_str).unwrap();
+        let toml_str = toml::to_string_pretty(&original).expect("serialization failed");
+        let deserialized: Config = toml::from_str(&toml_str).expect("deserialization failed");
         assert_eq!(
             deserialized.index.max_chunk_tokens,
             original.index.max_chunk_tokens

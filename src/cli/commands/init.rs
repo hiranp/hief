@@ -405,8 +405,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_init_creates_core_files() {
-        let root = tempdir().unwrap();
-        init(root.path()).await.unwrap();
+        let root = tempdir().expect("failed to create tempdir");
+        init(root.path()).await.expect("init failed");
         assert!(root.path().join(".hief/golden").exists());
         assert!(root.path().join("hief.toml").exists());
         assert!(root.path().join(".hief/conventions.toml").exists());
