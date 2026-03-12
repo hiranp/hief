@@ -8,10 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.7] - 2026-03-12
 
 ### Added
+- Refactored skills module and improved code formatting across the project.
+- New framework templates for multiple languages and platforms (Next.js, FastAPI, React, Vue, Swift, Kotlin, etc.) to improve LLM onboarding.
+- Default HIEF Protocol skill implementation during `hief init`.
 - Skills management subsystem allowing creation, listing, and execution of skill recipes. (`skills` module, CLI commands, dynamic MCP tools)
 - `hief init` now auto-generates a project-specific `conventions.toml` based on detected languages and dependencies.
 - New server tools for recovering stale intents and finding function callers.
-- GitHub Actions workflow for automated multi-platform (Linux/macOS/Windows) binary releases.
+- GitHub Actions workflow for automated multi-platform (Linux/macOS/os/Windows) binary releases.
 
 ### Changed
 - Version bumped to 0.2.7; `Cargo.toml` and `hief.toml` updated accordingly.
