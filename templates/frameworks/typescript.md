@@ -6,51 +6,45 @@
 ## Compiler Settings
 - Always enable `strict: true` in `tsconfig.json` (enables `noImplicitAny`, `strictNullChecks`, etc.)
 - Enable `noUncheckedIndexedAccess` to catch unsafe array/object indexing
+- Enable `verbatimModuleSyntax` to enforce consistent `import type` usage and avoid runtime surprises
 - Use `moduleResolution: "bundler"` (Vite/ESM) or `"node16"` (Node.js); never `"classic"`
-- Set `target` to the minimum runtime you actually support — don't over-target `ES5`
+- Set `target` to at least `ES2022` for modern features like top-level await and class fields
+- Use `paths` aliases in `tsconfig.json` for cleaner imports (`@/` → `src/`)
 
-## Types & Interfaces
-- Prefer `interface` for object shapes that may be extended; `type` for unions, intersections, and aliases
-- Never use `any` — use `unknown` and narrow with type guards, or `as const` for literal types
+## Types & Data Validation
+- Prefer `interface` for object shapes; `type` for unions/aliases
+- **Runtime Validation:** Use `Zod` or `Valibot` for all I/O boundaries (API responses, file logs, user input)
+- Never use `any` — use `unknown` and narrow with type guards or `z.infer<T>`
 - Use `satisfies` operator to validate objects against types without widening
 - Define domain types in a co-located `types.ts` — avoid a global `types/` barrel file
-- Use branded/nominal types for IDs and other primitive-typed domain concepts:
-  ```ts
-  type IntentId = string & { readonly _brand: "IntentId" };
-  ```
 
 ## Functions & Modules
-- Prefer named exports over default exports (better refactoring and tree-shaking)
-- Avoid barrel files (`index.ts` re-exporting everything) in large codebases — they hide circular deps
-- Use `const` arrow functions for utilities; `function` declarations for named, hoistable functions
+- Prefer named exports over default exports
+- Avoid barrel files (`index.ts` re-exporting everything) as they cause circular dependencies and slow bundling
 - Mark side-effect-free utilities as `pure` with a JSDoc `/** @pure */` comment
+- Use `const` arrow functions for simple utilities; `function` for hoisted/complex ones
 
 ## Async
-- Always return `Promise<T>` with an explicit type — never leave async return types as `: Promise<any>`
+- Always return `Promise<T>` with an explicit type — never `: Promise<any>`
 - Use `Promise.all` / `Promise.allSettled` for concurrent independent promises
-- Avoid mixing `async/await` and `.then()/.catch()` chains in the same function
 - Handle errors with `try/catch` in async functions; never swallow rejections
 
 ## Error Handling
-- Define custom error classes extending `Error`:
-  ```ts
-  class HiefError extends Error {
-    constructor(message: string, public readonly code: string) {
-      super(message);
-      this.name = "HiefError";
-    }
-  }
-  ```
-- Use `Result<T, E>` pattern (e.g. via `neverthrow`) for domain errors rather than throwing
+- Define custom error classes extending `Error` with a `code` field for programmatic handling
+- Avoid throwing raw strings — always throw `new Error()` or a subclass
+- Consider `neverthrow` or `effect-ts` for Result-based error handling in critical logic paths
 
 ## Testing
-- Use `vitest` (Vite projects) or `jest` with `ts-jest` for unit tests
+- Use `vitest` as the primary test runner for its speed and Vite integration
 - Co-locate test files as `*.test.ts` next to the source file
-- Use `@testing-library` for UI component tests
-- Mock network calls with `msw` (Mock Service Worker) — never mock `fetch` directly
-- Aim for 80%+ branch coverage on domain logic
+- Use `@testing-library` for UI component tests; `msw` for network mocking
+- Use `faker` or `zod-mock` to generate realistic test data
+- Run type-check as a CI step: `tsc --noEmit`
 
-## Tooling
-- `eslint` + `@typescript-eslint` for linting; `prettier` for formatting
-- `lefthook` or `husky` for pre-commit hooks running lint + type-check
-- `publint` or `arethetypeswrong` before publishing any npm package
+## Tooling & Performance
+- **Modern alternative:** Use `biome` as a single fast tool for linting + formatting (replaces eslint + prettier)
+- **Classic stack:** `eslint` + `@typescript-eslint` + `prettier` (still valid, especially for large configs)
+- Use `pnpm` for faster, disk-efficient dependency management
+- Enable `isolatedModules: true` to ensure compatibility with modern transpilers (esbuild, swc)
+- Use `import type` for type-only imports to improve bundling and respect `verbatimModuleSyntax`
+- Use `tsx` for running TypeScript files directly in scripts/tooling without a build step

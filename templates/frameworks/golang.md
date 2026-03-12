@@ -3,56 +3,54 @@
 > SDD conventions and best practices for Go projects using HIEF.
 > Reference: https://google.github.io/styleguide/go/ | https://go.dev/doc/effective_go
 
-## Code Style
-- Run `gofmt` and `goimports` on every save — enforce in CI with `gofmt -l .`
-- Use `golangci-lint` with at least `errcheck`, `staticcheck`, `govet`, and `unused` enabled
-- Prefer short, lowercase names for local variables; longer descriptive names for package-level identifiers
-- Group imports: stdlib → external → internal; separated by blank lines (enforced by `goimports`)
+## Code Style & Tooling
+- Run `gofmt` and `goimports` on every save; enforce in CI with `gofmt -l .` failing on diff
+- Use `golangci-lint` with a comprehensive config (enable `revive`, `gocritic`, `errcheck`, `exhaustruct`)
+- Group imports: stdlib → external → internal (separated by blank lines)
+- Use `go work` for multi-module workspace management if applicable
 
-## Packages & Modules
-- One concept per package; package name is singular and lowercase (e.g. `graph`, `index`, `docs`)
-- Avoid `util`, `common`, `helpers` package names — name by what the package *does*
-- Use `internal/` to prevent external packages from importing implementation details
-- Keep `main.go` thin — parse flags, wire dependencies, call into domain packages
+## Packages & Project Structure
+- Follow the "Standard Go Project Layout" (`/cmd`, `/internal`, `/pkg`)
+- One concept per package; name should be singular, lowercase, and descriptive
+- Avoid `util` or `common` packages — instead, name by what the package *provides*
+- Keep `main.go` minimal — focus on wiring dependencies and handling OS signals with `os/signal`
 
 ## Error Handling
-- Always check errors — never assign to `_` unless you've explicitly reasoned that the error is safe to ignore (with a comment)
-- Return errors as the last return value: `func Foo() (Result, error)`
-- Wrap errors with context: `fmt.Errorf("doing X: %w", err)` (never use `errors.New` after nesting)
-- Define sentinel errors with `var ErrNotFound = errors.New("not found")` for callers to inspect with `errors.Is`
-- Define domain error types for structured inspection: `type ValidationError struct { Field string; Message string }`
-
-## Interfaces
-- Define interfaces at the point of use (the consuming package), not in the implementing package
-- Keep interfaces small — prefer single-method interfaces (`io.Reader`, `io.Writer`)
-- Accept interfaces, return concrete types (the "accept interfaces, return structs" principle)
-- Use `//go:generate mockgen` or `moq` to generate mocks from interfaces
+- Always check returned errors; wrap with context: `fmt.Errorf("reading config: %w", err)`
+- Define sentinel errors with `errors.New` and custom error types for structured data
+- Use `errors.Is` and `errors.As` for error inspection — never compare error strings
+- Return errors as the last result: `func DoWork() (Value, error)`
 
 ## Concurrency
-- Use `context.Context` as the first parameter in all functions that do I/O or may block
-- Cancel contexts promptly — always `defer cancel()` after `context.WithCancel` / `WithTimeout`
-- Protect shared mutable state with `sync.Mutex` or `sync.RWMutex`; document which fields a mutex guards
-- Prefer channels for coordination; prefer `sync` primitives for simple state protection
-- Use `sync.WaitGroup` + `errgroup.Group` (golang.org/x/sync) for fan-out concurrency
+- **Context:** Pass `context.Context` as the first argument to all blocking or I/O calls
+- Use `errgroup.Group` from `golang.org/x/sync/errgroup` for managing multiple goroutines
+- Protect shared state with `sync.Mutex` or `sync.RWMutex`; document what the mutex guards
+- Prefer channels for communication; mutexes for simple state protection
+- Never leak goroutines — ensure they exit when the context is cancelled
+- Use `sync.Once` for lazy initialization of singletons
+
+## Logging & Observability
+- Use `log/slog` (Go 1.21+) for structured, leveled logging
+- Use `slog.Info`, `slog.Error`, etc., with key-value pairs for context
+- Register a global logger at startup; use `slog.With(...)` to create child loggers with shared attributes
+- Export OpenTelemetry traces and metrics using the `go.opentelemetry.io/otel` SDK
+
+## Database & API
+- Use `pgx` (v5) for PostgreSQL — it outperforms `database/sql` with native Postgres types
+- Use `sqlc` to generate type-safe Go from SQL queries — keeps queries as source of truth
+- For REST APIs, use `chi` or `gin` for routing; document with OpenAPI/Swagger via `swaggo`
+- For gRPC and Protobuf, use `buf` for schema management, linting, and code generation
 
 ## Testing
-- Use `testing.T`; table-driven tests for variant coverage:
-  ```go
-  tests := []struct{ name string; input X; want Y }{ ... }
-  for _, tc := range tests { t.Run(tc.name, func(t *testing.T) { ... }) }
-  ```
-- Use `t.TempDir()` for filesystem tests — cleaned up automatically
-- Benchmark with `testing.B`; use `b.ResetTimer()` after expensive setup
-- Mock I/O with interface substitution rather than monkey-patching
-- Use `testcontainers-go` for integration tests requiring real databases
+- Use `testing.T` and table-driven tests for broad coverage
+- Use `t.TempDir()` for all filesystem-related tests
+- Use `testcontainers-go` for spinning up real DBs/services in integration tests
+- Mock external dependencies using interfaces and generated mocks (e.g., `mockgen`, `moq`)
+- Run `go test -race ./...` in CI to catch concurrency bugs early
+- Use `go test -fuzz` for fuzz testing parsing and decoding logic (Go 1.18+)
 
 ## Dependency Management
-- Use Go modules (`go.mod` / `go.sum`); commit `go.sum`
-- Pin direct dependencies to exact minor versions; let patch versions float
-- Audit dependencies with `govulncheck` in CI
-- Prefer the standard library over third-party packages for non-trivial functionality
-
-## Documentation
-- All exported identifiers must have a doc comment beginning with the name: `// Foo does ...`
-- Package-level docs in `doc.go` for complex packages
-- Use `go doc` output as a quality check before merging
+- Use Go modules; always commit `go.sum`
+- Run `go mod tidy` to clean up unused dependencies
+- Audit dependencies with `govulncheck` to identify security vulnerabilities
+- Favor the standard library over third-party packages whenever feasible

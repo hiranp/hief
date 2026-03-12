@@ -3,54 +3,42 @@
 > SDD conventions and best practices for Java projects using HIEF.
 > Reference: https://google.github.io/styleguide/javaguide.html | https://openjdk.org/
 
-## Code Style
-- Follow Google Java Style Guide; enforce with `google-java-format` in CI
-- Max line length: 120 characters
-- Use 4-space indentation (never tabs)
-- Organise imports: `java.*` → `javax.*` → third-party → project-local; no wildcards
+## Code Style & Tooling
+- Follow Google Java Style Guide; enforce with `google-java-format` or `palantir-java-format`
+- Max line length: 120 characters; 4-space indentation
+- Use `Lombok` for reducing boilerplate in legacy POJOs, but prefer **Records** for new data carriers
+- Organize imports logically; no wildcards allowed
+- Run `checkstyle` in CI against your style config to catch deviations early
 
 ## Modernity (Java 17+)
-- Prefer `record` types for immutable data carriers over manual POJOs
-- Use `sealed` classes + `instanceof` pattern matching for exhaustive variant handling
-- Use `var` for local variables only when the type is obvious from the right-hand side
-- Use `switch` expressions (not statements) with arrow syntax (`->`) for exhaustive switches
-- Use text blocks (`"""..."""`) for multiline strings (SQL, JSON, templates)
+- Use **Records** for immutable data transfer objects (DTOs)
+- Use **Sealed Classes** and **Pattern Matching** (`instanceof`, `switch`) to ensure exhaustiveness
+- Use **Text Blocks** (`"""..."""`) for multiline SQL, JSON, or HTML templates
+- Use **`var`** only when the type is clearly visible from the assignment (e.g., `var list = new ArrayList<String>()`)
+- **GraalVM Native Image:** Build with `native-image` via the GraalVM toolchain to produce fast-start,
+  low-memory native binaries — ideal for CLI tools and serverless functions
 
-## Nullability
-- Annotate all public parameters and return types with `@NonNull` / `@Nullable` (JSR-305 or JSpecify)
-- Prefer `Optional<T>` for methods that may return no value — never return `null` from a public API
-- Validate constructor parameters with `Objects.requireNonNull` or use `@NonNull` + a null-checking framework (e.g. Lombok `@NonNull`)
+## Framework Patterns (Spring Boot / Quarkus)
+- Use constructor injection instead of field `@Autowired` for better testability and immutability
+- Apply `@Validated` (from `jakarta.validation`) at controller/service boundaries for declarative constraint enforcement
+- Keep controllers thin; delegate business logic to `@Service` components
+- Use **Spring Boot Actuator** for health, metrics, and info endpoints in production services
+- For Jakarta EE / MicroProfile stacks, prefer Quarkus or OpenLiberty for cloud-native deployment
 
 ## Error Handling
-- Use checked exceptions for recoverable conditions the caller *must* handle
-- Use unchecked exceptions (`RuntimeException`) for programming errors (bad state, contract violations)
-- Never catch `Exception` or `Throwable` without re-throwing or logging at ERROR level
-- Wrap third-party exceptions in domain exceptions to avoid leaking implementation details
-
-## Collections & Streams
-- Prefer immutable collections: `List.of(...)`, `Map.of(...)`, `Set.of(...)` for constants
-- Use `Stream` API for data transformations; avoid imperative loops for non-trivial mappings
-- Avoid `null` values in collections — use `Optional` or a sentinel value with documentation
+- Use custom exception hierarchies extending `RuntimeException` for most domain errors
+- Use `@ControllerAdvice` (Spring) or `ExceptionMapper` (Jakarta) for centralized, consistent API error responses
+- Never swallow exceptions; always log with enough context to reproduce the issue
+- Use `Optional<T>` for values that may be absent — do not return `null` from public methods
 
 ## Concurrency
-- Prefer `java.util.concurrent` (e.g. `CompletableFuture`, `ExecutorService`) over raw `Thread`
-- Use structured concurrency (`StructuredTaskScope`, Java 21 preview) for parallel subtasks
-- Annotate shared mutable fields with `@GuardedBy("lock")` and document the locking strategy
-- Prefer `ConcurrentHashMap` over `Collections.synchronizedMap()`
-
-## Dependency Management (Maven / Gradle)
-- Use Gradle (Kotlin DSL) for new projects; version catalogs (`libs.versions.toml`) for dependency management
-- Pin all dependency versions — no `+` or `latest.release` in production dependencies
-- Use `dependencyCheck` plugin to scan for CVEs in CI
+- Use **Structured Concurrency** (JEP 428 preview, Java 21) and **Virtual Threads** (`Executors.newVirtualThreadPerTaskExecutor()`) for high-throughput I/O
+- Avoid raw thread management; use `CompletableFuture` for async pipelines or reactive (Project Reactor) when needed
+- Use `synchronized` sparingly; prefer `java.util.concurrent` classes for shared state
 
 ## Testing
-- Use JUnit 5 (`@Test`, `@ParameterizedTest`, `@ExtendWith`) — not JUnit 4
-- Use `AssertJ` for fluent assertions over bare `assertEquals`
-- Use `Mockito` for mocking; `WireMock` for HTTP mocking
-- Aim for ≥ 80% branch coverage on domain logic; use `JaCoCo` in CI
-- Integration tests in a separate `src/integrationTest/` source set — do not mix with unit tests
-
-## Documentation
-- All `public` and `protected` members must have `/** Javadoc */` comments
-- Include `@param`, `@return`, and `@throws` tags for non-trivial methods
-- Use `{@code ...}` for inline code references in Javadoc
+- Use **JUnit 5** and **AssertJ** for expressive, readable tests
+- Use **Testcontainers** for integration testing with real databases or message brokers
+- Use **Mockito** for mocking dependencies in unit tests; prefer `@InjectMocks` with constructor injection
+- Run tests with a dedicated profile (e.g., `test`) to avoid polluting development data
+- Aim for ≥ 80% line coverage measured by JaCoCo; enforce via CI build gate

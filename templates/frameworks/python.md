@@ -3,50 +3,51 @@
 > SDD conventions and best practices for Python projects using HIEF.
 > Reference: https://peps.python.org/pep-0008/ | https://docs.pydantic.dev/
 
-## Code Style
-- Follow PEP 8; use `ruff` for linting and formatting (replaces `flake8` + `black`)
-- Max line length: 100 characters
-- Use f-strings over `.format()` or `%` formatting
-- Prefer `pathlib.Path` over `os.path` for all filesystem operations
+## Tooling & Environment
+- Use `uv` for lightning-fast dependency management and virtual environments
+- Enforce linting and formatting with `ruff` (replaces `black`, `isort`, `flake8`)
+- Use `pyproject.toml` as the single source of truth for project metadata
+- Always pin dependencies in `uv.lock` for reproducible builds
+- Use `pre-commit` hooks to run `ruff format` and `ruff check --fix` before every commit
 
-## Type Hints
-- All function signatures must include parameter and return type hints (PEP 484)
-- Use `from __future__ import annotations` for forward references in Python < 3.10
-- Use `TypeAlias` (3.10+) or `NewType` to document domain-specific scalar types
-- Prefer `X | None` over `Optional[X]` (Python 3.10+)
+## Type Hints & Modernity
+- Use Python 3.10+ features: `X | Y` for unions, `match` statements for branching
+- All functions must have complete type hints (parameters and return type)
+- Use `TypeAlias` (3.10+) or `Annotated` (3.9+) to document domain concepts
+- Run `mypy` in strict mode or `pyright` (faster, better IDE integration) to catch type errors statically
+- **Emerging:** `ty` (from the Ruff team) is a next-generation type checker worth tracking for speed
 
-## Data Validation
-- Use `pydantic` (v2) for all data models crossing API or I/O boundaries
-- Define Pydantic models with `model_config = ConfigDict(frozen=True)` for immutable data
-- Validate environment variables at startup using `pydantic-settings`
-- Never use raw `dict` for structured data that lives beyond a single function
+## Data Validation (Pydantic v2)
+- Use `pydantic` for all data crossing boundaries (API, Config, Filesystem)
+- Prefer `BaseModel` with `model_config = ConfigDict(frozen=True, extra="forbid")`
+- Use `Field(..., description="...")` to document model fields for LLMs/Agents and OpenAPI specs
+- Use `pydantic-settings` for environment variable management with full type safety
 
 ## Error Handling
-- Never silence exceptions with bare `except:` — always catch specific exception types
-- Use custom exception classes inheriting from a domain base (`class HiefError(Exception)`)
-- Log errors with `logging.exception()` (captures traceback) rather than `logging.error()`
-- Use `contextlib.suppress` only for genuinely ignorable exceptions, documented with a comment
+- Use custom exception hierarchies: `class ProjectError(Exception)`
+- Never catch `Exception` without re-raising or logging with `logging.exception()`
+- Use `contextlib.suppress` only for expected, safe-to-ignore cases
+- Prefer `raise exc from cause` to preserve traceback chains
+
+## Logging & Observability
+- Use `structlog` for structured, context-rich logging in production services
+- Use `loguru` for simpler scripts and CLIs that benefit from its ergonomic API
+- Avoid bare `print()` in application code; prefer `logging.debug()` for development traces
 
 ## Async (asyncio)
-- Use `asyncio` + `httpx` for async HTTP; avoid mixing sync/async in the same call stack
-- Use `async with` for resource management (DB sessions, HTTP clients)
-- Use `asyncio.TaskGroup` (3.11+) for structured concurrency rather than bare `asyncio.create_task`
-- Profile with `asyncio.get_event_loop().set_debug(True)` before optimising
+- Use `asyncio` for I/O bound tasks; `httpx` for async HTTP requests
+- Use `asyncio.TaskGroup` (3.11+) for structured concurrency
+- Avoid `loop.run_until_complete` inside library code; propagate `async` up the stack
+- Use `anyio` if the project needs to support multiple async backends (asyncio + trio)
 
 ## Testing
-- Use `pytest` with `pytest-asyncio` for async tests
-- Use `pytest-cov` to enforce ≥ 80% coverage on new code
-- Fixtures in `conftest.py` — never inline test setup in test functions
-- Use `tmp_path` fixture (pytest built-in) for filesystem tests
-- Mock external I/O with `unittest.mock.AsyncMock` or `respx` (for `httpx`)
-
-## Dependency Management
-- Use `uv` for dependency management and virtual environments
-- Pin dependencies in `uv.lock`; use version ranges in `pyproject.toml`
-- Separate `[project.dependencies]` (runtime) from `[project.optional-dependencies]` (`dev`, `test`)
-- Never import from `src/` with relative imports across package boundaries
+- Use `pytest` with `pytest-asyncio` for all testing
+- Use `pytest-mock` for cleaner mocking than the standard library
+- Enforce coverage targets (≥ 80%) using `pytest-cov`
+- Use `hypothesis` for property-based testing of complex parsing or data-transform logic
+- Run `mypy --strict` or `pyright` as a CI check alongside tests
 
 ## Documentation
-- Docstrings: Google style for all `public` functions and classes
-- Include `Args:`, `Returns:`, and `Raises:` sections
-- Generate API docs with `mkdocs` + `mkdocstrings`
+- Follow **Google Style** or **NumPy Style** docstrings for all public members
+- Include `Args:`, `Returns:`, and `Raises:` sections explicitly
+- Use `mkdocs-material` for high-quality project documentation with search and versioning

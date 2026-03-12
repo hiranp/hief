@@ -1,45 +1,46 @@
 # Tauri Framework Rules
 
 > SDD conventions and best practices for Tauri (Rust + TypeScript/JS) desktop apps.
-> Reference: https://tauri.app/v2/guide/ | https://tauri.app/v2/reference/
+> Reference: https://tauri.app/ | https://v2.tauri.app/
 
-## Architecture Boundary
-- **Frontend** (`src/` or `ui/`): UI rendering, user events, display state — no business logic
-- **Backend** (`src-tauri/`): File I/O, database, system calls, heavy computation — no DOM concerns
-- All cross-boundary calls must go through typed Tauri `invoke` commands — never use `eval()` or bypass the IPC layer
+## Architecture & Boundaries
+- **Tauri v2:** Favor Tauri v2 features (multi-window, mobile support, scoped capabilities, IPC v2)
+- Clearly separate Frontend (UI/State) and Backend (I/O/Computation/System APIs)
+- Use the **Command** pattern for all cross-boundary communication (`#[tauri::command]`)
+- Use `tauri-specta` + `specta` to automatically generate TypeScript types from Rust command signatures — eliminates manual type duplication and drift
 
 ## Tauri Commands
-- Define commands in `src-tauri/src/commands/` — one file per domain area
-- All commands must return `Result<T, String>` (or a custom serialisable error type)
-- Use `#[tauri::command]` on public functions only; mark helpers `pub(crate)` or private
-- Register all commands in `tauri::Builder::invoke_handler(tauri::generate_handler![...])`
-- Validate all inputs server-side even if validated on the frontend — never trust IPC payloads
+- Return `Result<T, String>` (or a custom serializable error type) from all commands to handle failures gracefully on the frontend
+- Validate all data on the Rust side even if already validated in the frontend — the Rust layer is the trust boundary
+- Keep commands thin; delegate heavy logic to domain modules that are independently testable
+- Use `tokio::spawn` or `tauri::async_runtime::spawn` for long-running tasks; emit progress via Tauri Events
 
-## State Management
-- Use `tauri::State<T>` for shared app state (e.g. DB connection pools, config)
-- Wrap mutable shared state in `Arc<Mutex<T>>` or `Arc<RwLock<T>>`; prefer `RwLock` for read-heavy state
-- Emit events to the frontend with `AppHandle::emit_all` rather than return values for long-running operations
-- Never store large blobs (images, binaries) in Tauri state — write to disk and pass paths
+## Events & State
+- Use `tauri::State<T>` for shared backend resources (DB pools, configurations, file handles)
+- Use Tauri **Events** (`emit`, `listen`) for pushing data from Rust to UI (e.g., progress, notifications, system changes)
+- Prefer Events over polling for real-time updates — they are efficient and cancellation-safe
+- Version your event payloads; add a `version: u32` field to avoid breaking changes as the app evolves
 
-## Frontend (TypeScript/Svelte/Vue/React)
-- Use the official `@tauri-apps/api` package for all Tauri API calls
-- Avoid direct `window.__TAURI__` access — use typed wrappers from `@tauri-apps/api`
-- Keep frontend state management minimal; Tauri backend is the source of truth for persisted data
-- Use `vite` for bundling; do not eject or customise the build pipeline without documenting why
+## Plugin Ecosystem
+- Prefer official **Tauri plugins** (`tauri-plugin-fs`, `tauri-plugin-shell`, `tauri-plugin-store`, `tauri-plugin-updater`) over custom reimplementations
+- Pin plugin versions in `Cargo.toml` and audit changes on upgrade — plugins run with full native access
+- For custom plugins, follow the `tauri-plugin-*` generator pattern for consistent initialization and permission declarations
 
 ## Security
-- Set `withWebview` + `devtools` only in `#[cfg(debug_assertions)]`
-- Define a strict `allowlist` / `permissions` in `tauri.conf.json` — deny by default
-- Sanitise all paths received from the frontend before filesystem operations
-- Use `tauri::path::AppLocalDataDir` for user data, never hardcode paths
+- Define fine-grained **Capabilities** (`src-tauri/capabilities/*.json`) — grant only the permissions each window actually needs
+- Disable remote URL access (`dangerousRemoteHttpAccess`) unless explicitly required and audited
+- Use **Scoped Filesystem Access** to restrict where the app can read/write data
+- Sanitize and validate all paths received from the frontend to prevent path traversal attacks
+- Run `cargo audit` and `npm audit` as part of your CI pipeline
 
 ## Testing
-- Unit test Rust commands with `#[tokio::test]` and mock external I/O with trait objects
-- Integration test the full IPC surface using `tauri::test::mock_builder()` (Tauri v2)
-- E2E tests with `WebdriverIO` + `tauri-driver` for critical user flows (launch, load, save)
-- Run `cargo clippy --all-targets` and `cargo audit` in CI
+- Unit test Rust commands in isolation by extracting logic into pure functions testable without a Tauri runtime
+- Use `tauri::test::mock_builder()` for lightweight integration tests of command handlers
+- Use `tauri-action` (GitHub Action) for automated multi-platform builds in CI
+- Use `WebdriverIO` + `tauri-driver` or `Playwright` for E2E testing of the fully integrated app
 
 ## Build & Distribution
-- Version follows SemVer — update `src-tauri/Cargo.toml` and `package.json` in lockstep
-- Code-sign releases for macOS and Windows before publishing
-- Use Tauri's built-in updater (`tauri-plugin-updater`) rather than rolling a custom update mechanism
+- Sign all binaries: use Apple Developer ID (macOS) and Authenticode (Windows) before distribution
+- Use the built-in **`tauri-plugin-updater`** for seamless, cryptographically verified app updates
+- Use `tauri bundle` targets per platform; test installers on clean VMs before release
+- Embed app version from `Cargo.toml` into the UI using `TAURI_ENV_APP_VERSION` at build time

@@ -488,6 +488,17 @@ pub fn scaffold_docs_dirs(project_root: &Path, config: &DocsConfig) -> Result<Do
         ("typescript.md", TYPESCRIPT_FRAMEWORK_TEMPLATE),
         ("java.md", JAVA_FRAMEWORK_TEMPLATE),
         ("golang.md", GOLANG_FRAMEWORK_TEMPLATE),
+        ("react.md", REACT_FRAMEWORK_TEMPLATE),
+        ("nextjs.md", NEXTJS_FRAMEWORK_TEMPLATE),
+        ("fastapi.md", FASTAPI_FRAMEWORK_TEMPLATE),
+        ("vue.md", VUE_FRAMEWORK_TEMPLATE),
+        ("swift.md", SWIFT_FRAMEWORK_TEMPLATE),
+        ("kotlin.md", KOTLIN_FRAMEWORK_TEMPLATE),
+        ("flutter.md", FLUTTER_FRAMEWORK_TEMPLATE),
+        ("dotnet.md", DOTNET_FRAMEWORK_TEMPLATE),
+        ("django.md", DJANGO_FRAMEWORK_TEMPLATE),
+        ("svelte.md", SVELTE_FRAMEWORK_TEMPLATE),
+        ("elixir.md", ELIXIR_FRAMEWORK_TEMPLATE),
     ];
 
     for (filename, content) in framework_templates {
@@ -983,6 +994,17 @@ const TYPESCRIPT_FRAMEWORK_TEMPLATE: &str =
     include_str!("../../templates/frameworks/typescript.md");
 const JAVA_FRAMEWORK_TEMPLATE: &str = include_str!("../../templates/frameworks/java.md");
 const GOLANG_FRAMEWORK_TEMPLATE: &str = include_str!("../../templates/frameworks/golang.md");
+const REACT_FRAMEWORK_TEMPLATE: &str = include_str!("../../templates/frameworks/react.md");
+const NEXTJS_FRAMEWORK_TEMPLATE: &str = include_str!("../../templates/frameworks/nextjs.md");
+const FASTAPI_FRAMEWORK_TEMPLATE: &str = include_str!("../../templates/frameworks/fastapi.md");
+const VUE_FRAMEWORK_TEMPLATE: &str = include_str!("../../templates/frameworks/vue.md");
+const SWIFT_FRAMEWORK_TEMPLATE: &str = include_str!("../../templates/frameworks/swift.md");
+const KOTLIN_FRAMEWORK_TEMPLATE: &str = include_str!("../../templates/frameworks/kotlin.md");
+const FLUTTER_FRAMEWORK_TEMPLATE: &str = include_str!("../../templates/frameworks/flutter.md");
+const DOTNET_FRAMEWORK_TEMPLATE: &str = include_str!("../../templates/frameworks/dotnet.md");
+const DJANGO_FRAMEWORK_TEMPLATE: &str = include_str!("../../templates/frameworks/django.md");
+const SVELTE_FRAMEWORK_TEMPLATE: &str = include_str!("../../templates/frameworks/svelte.md");
+const ELIXIR_FRAMEWORK_TEMPLATE: &str = include_str!("../../templates/frameworks/elixir.md");
 
 // ---------------------------------------------------------------------------
 // Tests
