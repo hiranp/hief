@@ -13,6 +13,7 @@
 //! - **Related files**: Uses the co-access graph to suggest files related to a given file.
 
 use serde::Serialize;
+use schemars::JsonSchema;
 use tracing::debug;
 use uuid::Uuid;
 
@@ -47,7 +48,7 @@ pub struct CoAccessEdge {
 }
 
 /// A related file suggestion from the co-access graph.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct RelatedFile {
     pub file_path: String,
     pub strength: f64,
@@ -64,7 +65,7 @@ pub struct FileAccessStats {
 }
 
 /// Session context: files accessed this session plus related suggestions.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct SessionContext {
     /// Files accessed in the current session with access counts.
     pub accessed_files: Vec<SessionFileAccess>,
@@ -75,7 +76,7 @@ pub struct SessionContext {
 }
 
 /// A file access entry within a session.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct SessionFileAccess {
     pub file_path: String,
     pub access_count: i64,

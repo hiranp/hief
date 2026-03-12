@@ -64,6 +64,10 @@ pub enum Commands {
     #[command(subcommand)]
     Docs(DocsCmd),
 
+    /// Skill file management (imperative recipes)
+    #[command(subcommand)]
+    Skills(SkillsCmd),
+
     /// MCP server registration for AI coding frameworks
     #[command(subcommand)]
     Mcp(McpCmd),
@@ -127,6 +131,9 @@ pub enum GraphCmd {
         /// Depends on these intent IDs (comma-separated)
         #[arg(long)]
         depends_on: Option<String>,
+        /// Related skill name to attach to the intent (filename without extension)
+        #[arg(long)]
+        skill: Option<String>,
     },
     /// List intents
     List {
@@ -234,6 +241,19 @@ pub enum DocsCmd {
     Variables {
         /// Template ID to inspect
         template: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum SkillsCmd {
+    /// Initialize the skills directory (.hief/skills)
+    Init,
+    /// List available skill files
+    List,
+    /// Show the contents of a skill
+    Show {
+        /// Skill name (filename without extension)
+        name: String,
     },
 }
 

@@ -6,6 +6,7 @@
 //! 3. **Differential** — When `diff_only = true`, only checks files changed since last eval
 
 use serde::Serialize;
+use schemars::JsonSchema;
 use std::path::Path;
 use tracing::{debug, warn};
 
@@ -14,7 +15,7 @@ use crate::errors::{HiefError, Result};
 use crate::eval::golden::{EvalCase, GoldenSet};
 
 /// Overall result of evaluating a golden set.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct EvalResult {
     pub golden_set: String,
     pub overall_score: f64,
@@ -26,7 +27,7 @@ pub struct EvalResult {
 }
 
 /// Describes what was evaluated.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct EvalScope {
     /// "full" or "diff"
     pub mode: String,
@@ -37,7 +38,7 @@ pub struct EvalScope {
 }
 
 /// Result of evaluating a single case.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct CaseResult {
     pub case_id: String,
     pub case_name: String,
@@ -48,7 +49,7 @@ pub struct CaseResult {
 }
 
 /// A specific violation found during evaluation.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct Violation {
     pub kind: String,
     pub pattern: String,

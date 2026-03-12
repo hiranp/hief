@@ -13,6 +13,7 @@ mod errors;
 mod eval;
 mod graph;
 mod index;
+mod skills;
 mod mcp;
 
 use std::path::PathBuf;
@@ -21,7 +22,7 @@ use std::process;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-use cli::{Cli, Commands, DocsCmd, EvalCmd, GoldenCmd, GraphCmd, HooksCmd, IndexCmd, McpCmd};
+use cli::{Cli, Commands, DocsCmd, EvalCmd, GoldenCmd, GraphCmd, HooksCmd, IndexCmd, McpCmd, SkillsCmd};
 use config::Config;
 use db::Database;
 
@@ -125,6 +126,7 @@ async fn run(cli: Cli, project_root: PathBuf) -> anyhow::Result<()> {
                     description,
                     priority,
                     depends_on,
+                    skill,
                 } => {
                     cli::commands::graph_create(
                         &db,
@@ -133,6 +135,7 @@ async fn run(cli: Cli, project_root: PathBuf) -> anyhow::Result<()> {
                         description.as_deref(),
                         &priority,
                         depends_on.as_deref(),
+                        skill.as_deref(),
                         json,
                     )
                     .await?;
@@ -254,6 +257,21 @@ async fn run(cli: Cli, project_root: PathBuf) -> anyhow::Result<()> {
                 }
                 DocsCmd::Variables { template } => {
                     cli::commands::docs_variables(&template, json)?;
+                }
+            }
+        }
+
+        Commands::Skills(cmd) => {
+            let config = Config::load(&config_path)?;
+            match cmd {
+                SkillsCmd::Init => {
+                    cli::commands::skills_init(&project_root, &config, json)?;
+                }
+                SkillsCmd::List => {
+                    cli::commands::skills_list(&project_root, &config, json)?;
+                }
+                SkillsCmd::Show { name } => {
+                    cli::commands::skills_show(&project_root, &config, &name, json)?;
                 }
             }
         }

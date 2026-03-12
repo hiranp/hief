@@ -76,6 +76,16 @@ HIEF Server
 
 ### 📝 Documentation Scaffolding — *"How do we start?"*
 
+### 🧠 Custom Skills & Dynamic Tools — *"Teach the agent new workflows"*
+
+- Place any markdown/YAML recipe in `.hief/skills/` and HIEF will expose it
+  as a **dynamic MCP tool** named `execute_skill_<filename>` (hyphens
+  become underscores).
+- The tool returns the full file contents when invoked, allowing agents to
+  load instructions on demand and follow project‑specific procedures.
+- Skills can be listed (`hief skills list`) and inspected (`hief skills show`).
+
+
 - **Spec-Driven Development (SDD)**: Scaffold new feature specs from embedded or custom templates.
 - **Harness-Driven Development (HDD)**: Generate test harnesses and simulation playbooks.
 - **Auto-population**: Templates can automatically inject project name, index statistics, and more.
@@ -144,23 +154,35 @@ HIEF exposes the following tools via the [Model Context Protocol](https://modelc
 | Tool | Purpose |
 |------|---------|
 | **Search** | |
-| `search_code` | Keyword search over indexed code chunks |
-| `structural_search` | AST pattern matching (e.g., `$X.unwrap()`) |
+| `search_code` | Keyword search over indexed code chunks (FTS5). Optional cognitive memory boost via `boost_by_history`. |
+| `structural_search` | AST pattern matching via ast-grep (e.g., `$X.unwrap()`, `fn $NAME($$$)`) |
 | `semantic_search` | Vector similarity search *(in development)* |
-| `index_status` | Index statistics (file count, languages, health) |
+| `index_status` | Index statistics (file count, chunk count, languages, DB size) |
 | `git_blame` | Git authorship info for a file range |
 | **Intents** | |
-| `create_intent` | Create a task in the dependency graph |
-| `list_intents` | List intents filtered by status or kind |
-| `update_intent` | Update intent status or assignee |
-| `ready_intents` | Show intents whose dependencies are satisfied |
+| `create_intent` | Create a task in the dependency graph. Pass `skill` to get JIT recipe injection. |
+| `list_intents` | List intents filtered by status and/or kind |
+| `update_intent` | Update intent status or assignee (transitions are validated) |
+| `ready_intents` | Show intents whose all dependencies are satisfied |
 | **Evaluation** | |
-| `run_evaluation` | Run golden set quality checks |
+| `run_evaluation` | Run golden set quality checks against the indexed codebase |
 | `get_eval_scores` | Score history for a golden set |
 | **Context** | |
-| `get_project_context` | Index stats + active intents + health overview |
-| `get_conventions` | Machine-readable project rules |
-| `get_project_health` | Eval scores, regressions, and warnings |
+| `get_project_context` | Index stats + active intents + ready intents snapshot |
+| `get_conventions` | Machine-readable project rules from `.hief/conventions.toml` |
+| `get_project_health` | Latest eval scores, regressions, and warnings |
+| `get_session_context` | Files accessed this session + co-access graph suggestions |
+| `related_files` | Files frequently accessed alongside a given file (co-access graph) |
+| **Skills** | |
+| `list_skills` | List all skill recipe files in `.hief/skills/` |
+| `get_skill` | Fetch the contents of a named skill file |
+| `reload_skills` | Hot-reload skill files without restarting the server |
+| `execute_skill_<name>` | *(dynamic)* Invoke any skill recipe — returns its full markdown text |
+
+> **Dynamic skills:** Any `.md` or `.yaml` file placed in `.hief/skills/` is automatically
+> advertised as a custom MCP tool named `execute_skill_<filename>` (hyphens converted to
+> underscores). Calling `create_intent` with a `skill` parameter injects the recipe content
+> directly into the response — giving the agent executable context before it starts work.
 
 ### 🛠️ Scaffolding Commands
 
@@ -170,6 +192,9 @@ HIEF exposes the following tools via the [Model Context Protocol](https://modelc
 | `hief docs list` | List all available scaffolding templates |
 | `hief docs generate` | Generate a new document from a template |
 | `hief docs check` | Verify completion of required documentation |
+| `hief skills init` | Create .hief/skills directory with README |
+| `hief skills list` | List all skill recipes available |
+| `hief skills show <name>` | Display the contents of a skill file |
 
 ## CLI Reference
 
@@ -187,6 +212,9 @@ hief hooks install                           # Install git hooks for auto-indexi
 hief docs init                               # Initialize standard docs structure
 hief docs generate spec --name "feature"     # Scaffold a new feature spec
 hief docs generate harness --name "feature"  # Scaffold a new test harness
+hief skills init                              # Create skills directory for recipes
+hief skills list                              # List available skill files
+hief skills show create_database_migration    # Print a specific skill
 ```
 
 ## Project Structure

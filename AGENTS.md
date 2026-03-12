@@ -21,17 +21,21 @@ Keep the server running; agents connect here for all tooling operations.
 ## Available MCP Tools
 
 ### Search (Context Retrieval)
-* `search_code`: Keyword search over indexed code (FTS5 syntax).
-* `structural_search`: AST pattern matching via ast-grep (e.g., `"$X.unwrap()"`).
-* `semantic_search`: Vector similarity search — find code by meaning *(building)*.
-* `index_status`: Index statistics (file count, languages, health).
+* `search_code`: Keyword search over indexed code (FTS5 syntax). Supports `boost_by_history=true` to rank recently/frequently accessed code higher.
+* `structural_search`: AST pattern matching via ast-grep (e.g., `"$X.unwrap()"`, `"fn $NAME($$$)"`).
+* `semantic_search`: Vector similarity search — find code by meaning *(in development)*.
+* `index_status`: Index statistics (file count, chunk count, languages, database size).
 * `git_blame`: Git authorship info for a file range.
 
+### Cognitive Memory (Proactive Context)
+* `get_session_context`: Files accessed in this session + co-access graph suggestions. Call early in every session.
+* `related_files`: Find files frequently co-accessed with a given file (Hebbian co-access graph).
+
 ### Intents (Task Coordination)
-* `create_intent`: Create a task in the dependency graph.
+* `create_intent`: Create a task in the dependency graph. Pass `skill="<name>"` to receive the recipe content inline.
 * `list_intents`: List intents filtered by status or kind.
-* `update_intent`: Update intent status or assignee.
-* `ready_intents`: Show intents whose dependencies are satisfied.
+* `update_intent`: Update intent status or assignee (transitions validated).
+* `ready_intents`: Show intents whose all dependencies are satisfied.
 
 ### Eval (Quality Guardrails)
 * `run_evaluation`: Run golden set evaluation against the codebase.
@@ -42,6 +46,12 @@ Keep the server running; agents connect here for all tooling operations.
 * `get_conventions`: Machine-readable project rules from `.hief/conventions.toml`.
 * `get_project_health`: Eval scores, regressions, and warnings.
 
+### Skills (Executable Conventions)
+* `list_skills`: List all skill recipe files in `.hief/skills/`.
+* `get_skill`: Fetch the contents of a named skill file.
+* `reload_skills`: Hot-reload skill files without restarting the server.
+* `execute_skill_<name>`: *(dynamic)* Returns the full markdown text of a skill recipe. Replace `<name>` with the skill identifier.
+
 ## Session Protocol
 
 Follow this protocol for every coding session:
@@ -51,6 +61,7 @@ Follow this protocol for every coding session:
 Call: get_project_context    → Understand project state
 Call: get_conventions        → Learn the project's rules
 Call: get_project_health     → Check for regressions
+Call: get_session_context    → Resume context from prior session (pass your session_id)
 ```
 
 ### 2. Search (Find Context)
@@ -59,6 +70,7 @@ Know the term?     → search_code "DatabaseConnection"
 Know the pattern?  → structural_search "$X.unwrap()" --language rust
 Know the concept?  → semantic_search "authentication logic"
 Know the file?     → git_blame "src/db.rs" 10 30
+Related to a file? → related_files "src/db.rs"
 ```
 
 ### 3. Intend (For Non-Trivial Changes)

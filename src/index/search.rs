@@ -1,6 +1,7 @@
 //! FTS5 full-text search over indexed code chunks.
 
 use serde::Serialize;
+use schemars::JsonSchema;
 use tracing::debug;
 
 use crate::db::Database;
@@ -47,7 +48,7 @@ impl SearchQuery {
 }
 
 /// A search result with ranking metadata.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct SearchResult {
     pub file_path: String,
     pub symbol_name: Option<String>,

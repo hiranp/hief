@@ -1,12 +1,13 @@
 //! Intent node CRUD operations.
 
 use serde::{Deserialize, Serialize};
+use schemars::JsonSchema;
 
 use crate::db::Database;
 use crate::errors::{HiefError, Result};
 
 /// An intent node — a unit of work in the dependency graph.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Intent {
     pub id: String,
     pub kind: String,

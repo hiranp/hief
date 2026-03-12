@@ -12,6 +12,7 @@ mod graph;
 mod hooks;
 mod index;
 mod init;
+mod skills;
 pub mod mcp;
 mod upgrade;
 
@@ -23,5 +24,6 @@ pub use graph::*;
 pub use hooks::*;
 pub use index::*;
 pub use init::*;
+pub use skills::*;
 pub use mcp::{mcp_install, mcp_status, mcp_uninstall};
 pub use upgrade::*;

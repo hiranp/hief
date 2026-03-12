@@ -2,6 +2,8 @@
 
 use uuid::Uuid;
 
+use schemars::JsonSchema;
+
 use crate::db::Database;
 use crate::errors::{HiefError, Result};
 use crate::eval::RegressionStatus;
@@ -62,7 +64,7 @@ pub async fn get_history(db: &Database, golden_set: &str, limit: usize) -> Resul
 }
 
 /// A single score entry from history.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, JsonSchema)]
 pub struct ScoreEntry {
     pub id: String,
     pub score: f64,

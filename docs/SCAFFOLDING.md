@@ -4,6 +4,9 @@ HIEF includes a powerful documentation scaffolding engine designed to support **
 
 ## Core Commands
 
+> **New in 0.2.6:** HIEF now supports an imperative "skills" directory where you can store small markdown/yaml recipes for common tasks. Agents can list and read these via the MCP server (`list_skills` / `get_skill`).
+
+
 ### `hief docs init`
 Initializes a standard documentation structure in your project root:
 - `docs/specs/`: For feature specifications and constitutions.
@@ -14,6 +17,16 @@ Initializes a standard documentation structure in your project root:
 Lists all available embedded templates, their required variables, and default output paths.
 
 ### `hief docs generate <template_id>`
+
+### `hief skills init`
+Create the default skills directory (`.hief/skills/`) and a README explaining its purpose.
+
+### `hief skills list`
+List available skill files (filenames without extension) under the skills directory.
+
+### `hief skills show <name>`
+Print the contents of a named skill so you can inspect or copy it.
+
 Generates a new document from a template. 
 - Use `--name <value>` to satisfy the primary variable (e.g., the feature name).
 - Use `--var KEY=VALUE` for additional custom variables.

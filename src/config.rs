@@ -20,6 +20,8 @@ pub struct Config {
     #[serde(default)]
     pub docs: DocsConfig,
     #[serde(default)]
+    pub skills: SkillsConfig,
+    #[serde(default)]
     pub vectors: crate::index::vectors::VectorConfig,
 }
 
@@ -180,6 +182,25 @@ pub struct DocsConfig {
     pub harness_path: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillsConfig {
+    /// Path where skill files live (relative to project root)
+    #[serde(default = "default_skills_path")]
+    pub skills_path: String,
+}
+
+impl Default for SkillsConfig {
+    fn default() -> Self {
+        Self {
+            skills_path: default_skills_path(),
+        }
+    }
+}
+
+fn default_skills_path() -> String {
+    ".hief/skills/".to_string()
+}
+
 impl Default for DocsConfig {
     fn default() -> Self {
         Self {
@@ -249,6 +270,7 @@ impl Default for Config {
             eval: EvalConfig::default(),
             serve: ServeConfig::default(),
             docs: DocsConfig::default(),
+            skills: SkillsConfig::default(),
             vectors: crate::index::vectors::VectorConfig::default(),
         }
     }
@@ -271,6 +293,8 @@ mod tests {
         assert_eq!(config.serve.transport, "stdio");
         assert_eq!(config.serve.host, "127.0.0.1");
         assert_eq!(config.serve.port, 3100);
+        // skills path default
+        assert_eq!(config.skills.skills_path, ".hief/skills/");
     }
 
     #[test]
@@ -303,6 +327,8 @@ port = 8080
         assert_eq!(config.index.max_chunk_tokens, 1024);
         assert_eq!(config.index.languages, vec!["rust"]);
         assert_eq!(config.serve.port, 8080);
+        // default skills path remains unchanged when not specified
+        assert_eq!(config.skills.skills_path, ".hief/skills/");
     }
 
     #[test]

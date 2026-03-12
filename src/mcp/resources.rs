@@ -18,6 +18,8 @@ use std::path::Path;
 
 use serde::Serialize;
 
+use schemars::JsonSchema;
+
 use crate::config::Config;
 use crate::db::Database;
 use crate::errors::Result;
@@ -47,7 +49,7 @@ pub struct IndexSummary {
     pub has_vector_index: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct IntentSummary {
     pub id: String,
     pub title: String,
@@ -70,7 +72,7 @@ pub struct IntentCounts {
 /// Project health resource content.
 ///
 /// Provides the latest evaluation scores and any regressions.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ProjectHealth {
     /// Latest eval run results, one per golden set.
     pub eval_scores: Vec<EvalScoreSummary>,
@@ -80,7 +82,7 @@ pub struct ProjectHealth {
     pub warnings: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct EvalScoreSummary {
     pub golden_set: String,
     pub score: f64,
@@ -92,7 +94,7 @@ pub struct EvalScoreSummary {
 /// Conventions resource content.
 ///
 /// Machine-readable project rules loaded from `.hief/conventions.toml`.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ProjectConventions {
     /// Whether conventions file exists.
     pub loaded: bool,
@@ -102,7 +104,7 @@ pub struct ProjectConventions {
     pub summary: ConventionSummary,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ConventionSummary {
     pub error_count: usize,
     pub warning_count: usize,

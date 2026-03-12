@@ -1,5 +1,6 @@
 //! MCP tool definitions for the HIEF server.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use rmcp::handler::server::tool::ToolRouter;
@@ -7,16 +8,19 @@ use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::{Implementation, ServerCapabilities, ServerInfo};
 use rmcp::schemars;
 use rmcp::{ErrorData, ServerHandler, tool, tool_handler, tool_router};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use schemars::JsonSchema;
 
 use super::resources;
+use super::skills::SkillRegistry;
+use rmcp::handler::server::tool::ToolName;
 use crate::config::Config;
 use crate::db::Database;
 use crate::graph;
 use crate::graph::edges::IntentEdge;
 use crate::graph::intent::Intent;
 use crate::index;
-use crate::index::search::SearchQuery;
+use crate::index::search::{SearchQuery, SearchResult};
 use crate::index::structural;
 
 /// The HIEF MCP server handler.
@@ -25,15 +29,34 @@ pub struct HiefServer {
     db: Database,
     project_root: PathBuf,
     tool_router: ToolRouter<Self>,
+    skills: SkillRegistry,
 }
 
 impl HiefServer {
+    /// Construct a new server instance and register dynamic skill tools.
     pub fn new(db: Database, project_root: PathBuf) -> Self {
-        let tool_router = Self::tool_router();
+        let mut tool_router = Self::tool_router();
+
+        // load dynamic skills and register their tool definitions
+        let skills = SkillRegistry::new();
+        if let Err(e) = skills.load_from_disk(&project_root) {
+            tracing::warn!("failed to load skills: {}", e);
+        }
+        // register each skill using the generic handler; ToolRoute ensures both
+        // schema and handler are wired up.
+        for tool in skills.tool_defs() {
+            let route = rmcp::handler::server::router::tool::ToolRoute::new(
+                tool.clone(),
+                HiefServer::execute_dynamic_skill,
+            );
+            tool_router = tool_router.with_route(route);
+        }
+
         Self {
             db,
             project_root,
             tool_router,
+            skills,
         }
     }
 
@@ -63,9 +86,61 @@ impl HiefServer {
         let val = top_k.unwrap_or(default);
         if val > 1000 { 1000 } else { val }
     }
+
+    /// Validates a skill name: allows only alphanumeric characters, underscores, and hyphens.
+    /// Rejects path separators, dots, and leading hyphens to prevent path traversal.
+    fn validate_skill_name(name: &str) -> std::result::Result<(), ErrorData> {
+        if name.is_empty() {
+            return Err(ErrorData::invalid_params("skill name must not be empty", None));
+        }
+        if !name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
+            let err = crate::errors::HiefError::SecurityViolation(format!(
+                "Invalid skill name '{}': only alphanumeric characters, underscores, and hyphens are allowed",
+                name
+            ));
+            return Err(ErrorData::invalid_params(err.to_string(), None));
+        }
+        if name.starts_with('-') {
+            let err = crate::errors::HiefError::SecurityViolation(format!(
+                "Invalid skill name '{}': cannot start with a hyphen",
+                name
+            ));
+            return Err(ErrorData::invalid_params(err.to_string(), None));
+        }
+        Ok(())
+    }
 }
 
 // -- Parameter structs --
+
+
+/// Wrapper useful for tool outputs: ensures root type is `object` in schema.
+#[derive(Serialize, JsonSchema)]
+pub struct ObjectResponse<T> {
+    pub result: T,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct SemanticSearchResponse {
+    pub status: String,
+    pub message: String,
+    pub query: String,
+    pub top_k: usize,
+    pub language: Option<String>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct ProjectContext {
+    pub index: crate::index::IndexStats,
+    pub active_intents: Vec<crate::graph::intent::Intent>,
+    pub ready_intents: Vec<crate::graph::intent::Intent>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct CreateIntentResponse {
+    pub intent: Intent,
+    pub skill_content: Option<String>,
+}
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SearchCodeParams {
@@ -95,6 +170,8 @@ pub struct CreateIntentParams {
     pub priority: Option<String>,
     /// Comma-separated intent IDs this depends on
     pub depends_on: Option<String>,
+    /// Optional skill name to associate with the intent (filename without extension)
+    pub skill: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -159,6 +236,20 @@ pub struct RelatedFilesParams {
     pub top_k: Option<usize>,
 }
 
+#[derive(Serialize, JsonSchema)]
+pub struct ReloadSkillsResponse {
+    /// Number of skills now loaded in the registry.
+    pub count: usize,
+    /// Tool names for all loaded skills (e.g. `execute_skill_foo`).
+    pub skill_names: Vec<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct GetSkillParams {
+    /// Skill name (filename without extension)
+    pub name: String,
+}
+
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct GetSessionContextParams {
     /// MCP session identifier
@@ -186,7 +277,7 @@ impl HiefServer {
     async fn search_code(
         &self,
         Parameters(params): Parameters<SearchCodeParams>,
-    ) -> Result<Json<String>, ErrorData> {
+    ) -> Result<Json<ObjectResponse<Vec<SearchResult>>>, ErrorData> {
         let mut search_query = SearchQuery::new(&params.query);
         search_query.top_k = self.validate_top_k(params.top_k, 10);
         search_query.language = params.language;
@@ -236,23 +327,19 @@ impl HiefServer {
             });
         }
 
-        let json = serde_json::to_string_pretty(&results)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        Ok(Json(json))
+        Ok(Json(ObjectResponse { result: results }))
     }
 
     #[tool(
         name = "index_status",
         description = "Get the current index statistics: file count, chunk count, languages, last indexed time, and database size."
     )]
-    async fn index_status(&self) -> Result<Json<String>, ErrorData> {
+    async fn index_status(&self) -> Result<Json<ObjectResponse<index::IndexStats>>, ErrorData> {
         let stats = index::status(&self.db, &self.project_root)
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
-        let json = serde_json::to_string_pretty(&stats)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        Ok(Json(json))
+        Ok(Json(ObjectResponse { result: stats }))
     }
 
     #[tool(
@@ -262,13 +349,18 @@ impl HiefServer {
     async fn create_intent(
         &self,
         Parameters(params): Parameters<CreateIntentParams>,
-    ) -> Result<Json<String>, ErrorData> {
-        let intent = Intent::new(
+    ) -> Result<Json<CreateIntentResponse>, ErrorData> {
+        let mut intent = Intent::new(
             params.kind,
             params.title,
             params.description,
             params.priority,
         );
+
+        // record skill name as a label if provided
+        if let Some(skill_name) = &params.skill {
+            intent.labels.push(format!("skill:{}", skill_name));
+        }
 
         graph::create_intent(&self.db, &intent)
             .await
@@ -285,9 +377,26 @@ impl HiefServer {
             }
         }
 
-        let json = serde_json::to_string_pretty(&intent)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        Ok(Json(json))
+        // build response object with optional skill content
+        let mut skill_content = None;
+        if let Some(skill_name) = &params.skill {
+            Self::validate_skill_name(skill_name)?;
+            let config = Config::load(&self.project_root.join("hief.toml"))
+                .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+            let skills_dir = self.project_root.join(&config.skills.skills_path);
+            let candidates = ["md", "yaml", "yml", "txt"];
+            for ext in &candidates {
+                let path = skills_dir.join(format!("{}.{}", skill_name, ext));
+                if path.exists() {
+                    if let Ok(txt) = std::fs::read_to_string(&path) {
+                        skill_content = Some(txt);
+                    }
+                    break;
+                }
+            }
+        }
+
+        Ok(Json(CreateIntentResponse { intent, skill_content }))
     }
 
     #[tool(
@@ -297,15 +406,13 @@ impl HiefServer {
     async fn list_intents(
         &self,
         Parameters(params): Parameters<ListIntentsParams>,
-    ) -> Result<Json<String>, ErrorData> {
+    ) -> Result<Json<ObjectResponse<Vec<Intent>>>, ErrorData> {
         let intents =
             graph::list_intents(&self.db, params.status.as_deref(), params.kind.as_deref())
                 .await
                 .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
-        let json = serde_json::to_string_pretty(&intents)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        Ok(Json(json))
+        Ok(Json(ObjectResponse { result: intents }))
     }
 
     #[tool(
@@ -315,7 +422,7 @@ impl HiefServer {
     async fn update_intent(
         &self,
         Parameters(params): Parameters<UpdateIntentParams>,
-    ) -> Result<Json<String>, ErrorData> {
+    ) -> Result<Json<Intent>, ErrorData> {
         if let Some(new_status) = &params.status {
             graph::update_status(&self.db, &params.id, new_status)
                 .await
@@ -332,23 +439,19 @@ impl HiefServer {
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
-        let json = serde_json::to_string_pretty(&intent)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        Ok(Json(json))
+        Ok(Json(intent))
     }
 
     #[tool(
         name = "ready_intents",
         description = "Show intents that are approved and whose all dependencies are satisfied."
     )]
-    async fn ready_intents(&self) -> Result<Json<String>, ErrorData> {
+    async fn ready_intents(&self) -> Result<Json<ObjectResponse<Vec<Intent>>>, ErrorData> {
         let intents = graph::ready_intents(&self.db)
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
-        let json = serde_json::to_string_pretty(&intents)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        Ok(Json(json))
+        Ok(Json(ObjectResponse { result: intents }))
     }
 
     #[tool(
@@ -358,7 +461,7 @@ impl HiefServer {
     async fn run_evaluation(
         &self,
         Parameters(params): Parameters<RunEvaluationParams>,
-    ) -> Result<Json<String>, ErrorData> {
+    ) -> Result<Json<ObjectResponse<Vec<crate::eval::EvalResult>>>, ErrorData> {
         let config = Config::load(&self.project_root.join("hief.toml"))
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
@@ -371,9 +474,7 @@ impl HiefServer {
         .await
         .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
-        let json = serde_json::to_string_pretty(&results)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        Ok(Json(json))
+        Ok(Json(ObjectResponse { result: results }))
     }
 
     #[tool(
@@ -383,7 +484,7 @@ impl HiefServer {
     async fn get_eval_scores(
         &self,
         Parameters(params): Parameters<GetEvalScoresParams>,
-    ) -> Result<Json<String>, ErrorData> {
+    ) -> Result<Json<ObjectResponse<Vec<crate::eval::history::ScoreEntry>>>, ErrorData> {
         let history = crate::eval::history::get_history(
             &self.db,
             &params.golden_set,
@@ -392,16 +493,14 @@ impl HiefServer {
         .await
         .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
-        let json = serde_json::to_string_pretty(&history)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        Ok(Json(json))
+        Ok(Json(ObjectResponse { result: history }))
     }
 
     #[tool(
         name = "get_project_context",
         description = "Get a high-level project overview: index stats, active intents, and ready intents."
     )]
-    async fn get_project_context(&self) -> Result<Json<String>, ErrorData> {
+    async fn get_project_context(&self) -> Result<Json<ObjectResponse<ProjectContext>>, ErrorData> {
         let stats = index::status(&self.db, &self.project_root)
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
@@ -414,15 +513,8 @@ impl HiefServer {
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
-        let context = serde_json::json!({
-            "index": stats,
-            "active_intents": active_intents,
-            "ready_intents": ready,
-        });
-
-        let json = serde_json::to_string_pretty(&context)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        Ok(Json(json))
+        let context = ProjectContext { index: stats, active_intents, ready_intents: ready };
+        Ok(Json(ObjectResponse { result: context }))
     }
 
     #[tool(
@@ -432,13 +524,13 @@ impl HiefServer {
     async fn git_blame(
         &self,
         Parameters(params): Parameters<GitBlameParams>,
-    ) -> Result<Json<String>, ErrorData> {
+    ) -> Result<Json<ObjectResponse<String>>, ErrorData> {
         let _ = self.validate_path(&params.file)?;
         let result =
             crate::index::search::git_blame_range(&params.file, params.start_line, params.end_line)
                 .await
                 .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        Ok(Json(result))
+        Ok(Json(ObjectResponse { result }))
     }
 
     #[tool(
@@ -448,7 +540,7 @@ impl HiefServer {
     async fn structural_search(
         &self,
         Parameters(params): Parameters<StructuralSearchParams>,
-    ) -> Result<Json<String>, ErrorData> {
+    ) -> Result<Json<ObjectResponse<Vec<crate::index::structural::StructuralMatch>>>, ErrorData> {
         let mut query = structural::StructuralQuery::new(&params.pattern, &params.language);
         query.top_k = self.validate_top_k(params.top_k, 50);
 
@@ -473,9 +565,7 @@ impl HiefServer {
             });
         }
 
-        let json = serde_json::to_string_pretty(&results)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        Ok(Json(json))
+        Ok(Json(ObjectResponse { result: results }))
     }
 
     #[tool(
@@ -485,7 +575,7 @@ impl HiefServer {
     async fn related_files(
         &self,
         Parameters(params): Parameters<RelatedFilesParams>,
-    ) -> Result<Json<String>, ErrorData> {
+    ) -> Result<Json<ObjectResponse<Vec<crate::index::memory::RelatedFile>>>, ErrorData> {
         let _ = self.validate_path(&params.file)?;
         let top_k = self.validate_top_k(params.top_k, 10);
 
@@ -493,9 +583,55 @@ impl HiefServer {
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
-        let json = serde_json::to_string_pretty(&related)
+        Ok(Json(ObjectResponse { result: related }))
+    }
+
+    #[tool(
+        name = "list_skills",
+        description = "List all skill filenames available under the project's skills directory (usually .hief/skills)."
+    )]
+    async fn list_skills(&self) -> Result<Json<ObjectResponse<Vec<String>>>, ErrorData> {
+        let config = Config::load(&self.project_root.join("hief.toml"))
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        Ok(Json(json))
+        let skills_dir = self.project_root.join(&config.skills.skills_path);
+        let mut names = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(&skills_dir) {
+            for entry in entries.flatten() {
+                if let Some(stem) = entry.path().file_stem().and_then(|s| s.to_str()) {
+                    if stem != "README" {
+                        names.push(stem.to_string());
+                    }
+                }
+            }
+        }
+        Ok(Json(ObjectResponse { result: names }))
+    }
+
+    #[tool(
+        name = "get_skill",
+        description = "Fetch the text contents of a named skill file. Supply the skill name without extension."
+    )]
+    async fn get_skill(
+        &self,
+        Parameters(params): Parameters<GetSkillParams>,
+    ) -> Result<Json<ObjectResponse<String>>, ErrorData> {
+        Self::validate_skill_name(&params.name)?;
+        let config = Config::load(&self.project_root.join("hief.toml"))
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        let skills_dir = self.project_root.join(&config.skills.skills_path);
+        let candidates = ["md", "yaml", "yml", "txt"];
+        for ext in &candidates {
+            let path = skills_dir.join(format!("{}.{}", params.name, ext));
+            if path.exists() {
+                let contents = std::fs::read_to_string(&path)
+                    .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+                return Ok(Json(ObjectResponse { result: contents }));
+            }
+        }
+        Err(ErrorData::invalid_params(
+            format!("skill not found: {}", params.name),
+            None,
+        ))
     }
 
     #[tool(
@@ -505,16 +641,14 @@ impl HiefServer {
     async fn get_session_context(
         &self,
         Parameters(params): Parameters<GetSessionContextParams>,
-    ) -> Result<Json<String>, ErrorData> {
+    ) -> Result<Json<ObjectResponse<crate::index::memory::SessionContext>>, ErrorData> {
         let limit = self.validate_top_k(params.suggestion_limit, 10);
 
         let ctx = index::memory::get_session_context(&self.db, &params.session_id, limit)
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
-        let json = serde_json::to_string_pretty(&ctx)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        Ok(Json(json))
+        Ok(Json(ObjectResponse { result: ctx }))
     }
 
     #[tool(
@@ -524,7 +658,7 @@ impl HiefServer {
     async fn semantic_search(
         &self,
         Parameters(params): Parameters<SemanticSearchParams>,
-    ) -> Result<Json<String>, ErrorData> {
+    ) -> Result<Json<SemanticSearchResponse>, ErrorData> {
         let config = Config::load(&self.project_root.join("hief.toml"))
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
@@ -537,37 +671,33 @@ impl HiefServer {
 
         // TODO: Generate query embedding via host agent callback or local model
         // For now, return a helpful message indicating the feature is being built
-        let response = serde_json::json!({
-            "status": "not_yet_available",
-            "message": "Semantic search is enabled in config but the LanceDB integration is still being built. Use search_code (keyword) or structural_search (AST pattern) in the meantime.",
-            "query": params.query,
-            "top_k": self.validate_top_k(params.top_k, 10),
-            "language": params.language,
-        });
+        let resp = SemanticSearchResponse {
+            status: "not_yet_available".to_string(),
+            message: "Semantic search is enabled in config but the LanceDB integration is still being built. Use search_code (keyword) or structural_search (AST pattern) in the meantime.".to_string(),
+            query: params.query.clone(),
+            top_k: self.validate_top_k(params.top_k, 10),
+            language: params.language.clone(),
+        };
 
-        let json = serde_json::to_string_pretty(&response)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        Ok(Json(json))
+        Ok(Json(resp))
     }
 
     #[tool(
         name = "get_conventions",
         description = "Get the project's machine-readable conventions from .hief/conventions.toml. Returns rules that the agent should follow when writing code, including check patterns, scopes, and severity levels."
     )]
-    async fn get_conventions(&self) -> Result<Json<String>, ErrorData> {
+    async fn get_conventions(&self) -> Result<Json<ObjectResponse<resources::ProjectConventions>>, ErrorData> {
         let conventions = resources::get_project_conventions(&self.project_root)
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
-        let json = serde_json::to_string_pretty(&conventions)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        Ok(Json(json))
+        Ok(Json(ObjectResponse { result: conventions }))
     }
 
     #[tool(
         name = "get_project_health",
         description = "Get project health: latest eval scores, regressions, and warnings. Use this to check if the codebase is in good shape before starting work."
     )]
-    async fn get_project_health(&self) -> Result<Json<String>, ErrorData> {
+    async fn get_project_health(&self) -> Result<Json<ObjectResponse<resources::ProjectHealth>>, ErrorData> {
         let config = Config::load(&self.project_root.join("hief.toml"))
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
@@ -575,9 +705,151 @@ impl HiefServer {
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
-        let json = serde_json::to_string_pretty(&health)
+        Ok(Json(ObjectResponse { result: health }))
+    }
+
+    // ------------------------------------------------------------------
+    // Skills management
+    // ------------------------------------------------------------------
+
+    #[tool(
+        name = "reload_skills",
+        description = "Hot-reload skill files from .hief/skills/ without restarting the server. \
+                       Content changes to existing skills are reflected immediately. \
+                       Returns the updated list of loaded skill tool-names."
+    )]
+    async fn reload_skills(&self) -> Result<Json<ObjectResponse<ReloadSkillsResponse>>, ErrorData> {
+        self.skills
+            .load_from_disk(&self.project_root)
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        Ok(Json(json))
+
+        let defs = self.skills.tool_defs();
+        let skill_names: Vec<String> = defs.iter().map(|t| t.name.to_string()).collect();
+        Ok(Json(ObjectResponse {
+            result: ReloadSkillsResponse {
+                count: skill_names.len(),
+                skill_names,
+            },
+        }))
+    }
+
+    // ------------------------------------------------------------------
+    // Dynamic skill execution (wildcard)
+    // ------------------------------------------------------------------
+
+    #[tool(
+        name = "execute_skill_*",
+        description = "Return the markdown contents of a named skill. Replace '*' with the skill identifier. Requires `reason` parameter."
+    )]
+    async fn execute_dynamic_skill(
+        &self,
+        Parameters(_params): Parameters<HashMap<String, String>>,
+        tool: ToolName,
+    ) -> Result<Json<ObjectResponse<String>>, ErrorData> {
+        let tool_name = tool.0.as_ref();
+        if let Some(skill) = self.skills.by_tool(tool_name) {
+            Ok(Json(ObjectResponse { result: skill.content }))
+        } else {
+            Err(ErrorData::resource_not_found(
+                format!("skill not found: {}", tool_name),
+                None,
+            ))
+        }
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn create_intent_with_skill_returns_skill_content() {
+        let tmp = tempdir().unwrap();
+        let db_path = tmp.path().join("hief.db");
+        let db = Database::open(&db_path).await.unwrap();
+        let server = HiefServer::new(db.clone(), tmp.path().to_path_buf());
+
+        // create skills directory and file
+        let config = Config::default();
+        let skills_dir = tmp.path().join(&config.skills.skills_path);
+        std::fs::create_dir_all(&skills_dir).unwrap();
+        std::fs::write(skills_dir.join("foo.md"), "do something").unwrap();
+
+        let params = CreateIntentParams {
+            kind: "feature".to_string(),
+            title: "Add foo".to_string(),
+            description: None,
+            priority: None,
+            depends_on: None,
+            skill: Some("foo".to_string()),
+        };
+        let result = server.create_intent(Parameters(params)).await;
+        assert!(result.is_ok());
+        let Json(val) = result.unwrap();
+        let json_str = serde_json::to_string(&val).unwrap();
+        assert!(json_str.contains("skill_content"));
+        assert!(json_str.contains("do something"));
+    }
+
+    #[tokio::test]
+    async fn dynamic_skill_registry_and_handler() {
+        let tmp = tempdir().unwrap();
+        let db_path = tmp.path().join("hief.db");
+        let db = Database::open(&db_path).await.unwrap();
+        // create a skill file before server startup
+        let config = Config::default();
+        let skills_dir = tmp.path().join(&config.skills.skills_path);
+        std::fs::create_dir_all(&skills_dir).unwrap();
+        std::fs::write(skills_dir.join("foo.md"), "# Foo\nstep1").unwrap();
+
+        let server = HiefServer::new(db.clone(), tmp.path().to_path_buf());
+
+        // registry should contain execute_skill_foo
+        let opt = server.skills.by_tool("execute_skill_foo");
+        assert!(opt.is_some());
+        assert!(opt.unwrap().content.contains("step1"));
+
+        // calling the generic handler directly
+        let params: HashMap<String, String> = [("reason".to_string(), "test".to_string())]
+            .into_iter()
+            .collect();
+        let resp = server
+            .execute_dynamic_skill(Parameters(params), ToolName("execute_skill_foo".into()))
+            .await
+            .unwrap();
+        let Json(ObjectResponse { result: text }) = resp;
+        assert!(text.contains("step1"));
+    }
+
+    #[tokio::test]
+    async fn reload_skills_picks_up_new_content() {
+        let tmp = tempdir().unwrap();
+        let db_path = tmp.path().join("hief.db");
+        let db = Database::open(&db_path).await.unwrap();
+        // create skill file BEFORE server start so initial load succeeds
+        let config = Config::default();
+        let skills_dir = tmp.path().join(&config.skills.skills_path);
+        std::fs::create_dir_all(&skills_dir).unwrap();
+        std::fs::write(skills_dir.join("deploy.md"), "# Deploy\nold step").unwrap();
+
+        let server = HiefServer::new(db.clone(), tmp.path().to_path_buf());
+        assert!(server.skills.by_tool("execute_skill_deploy").is_some());
+
+        // overwrite with updated content
+        std::fs::write(skills_dir.join("deploy.md"), "# Deploy\nnew step").unwrap();
+
+        // reload_skills should update the registry
+        let resp = server.reload_skills().await.unwrap();
+        let Json(ObjectResponse { result: body }) = resp;
+        assert_eq!(body.count, 1);
+        assert!(body.skill_names.contains(&"execute_skill_deploy".to_string()));
+
+        // registry entry should reflect new content
+        let skill = server.skills.by_tool("execute_skill_deploy").unwrap();
+        assert!(skill.content.contains("new step"));
     }
 }
 
@@ -598,6 +870,7 @@ impl ServerHandler for HiefServer {
                  See docs/agent-protocol.md for the full interaction protocol."
                     .to_string(),
             ),
+            ..Default::default()
         }
     }
 }

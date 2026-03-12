@@ -14,15 +14,21 @@ pub async fn graph_create(
     description: Option<&str>,
     priority: &str,
     depends_on: Option<&str>,
+    skill: Option<&str>,
     json: bool,
 ) -> Result<()> {
-    let intent = Intent::new(
+    let mut intent = Intent::new(
         kind,
         title,
         description.map(String::from),
         Some(priority.to_string()),
     );
 
+    // If a skill name was provided, record it as a label so it can be
+    // surfaced later by tools/agents. Labels are a free-form string list.
+    if let Some(skill_name) = skill {
+        intent.labels.push(format!("skill:{}", skill_name));
+    }
     graph::create_intent(db, &intent).await?;
 
     // Add dependency edges if specified

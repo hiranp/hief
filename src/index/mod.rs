@@ -15,12 +15,14 @@ use crate::config::IndexConfig;
 use crate::db::Database;
 use crate::errors::Result;
 
+use schemars::JsonSchema;
+
 use self::chunker::{Chunk, Chunker};
 use self::search::{SearchQuery, SearchResult};
 use self::walker::FileWalker;
 
 /// Statistics about the current index state.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, JsonSchema)]
 pub struct IndexStats {
     pub total_files: usize,
     pub total_chunks: usize,

@@ -5,6 +5,7 @@
 //! with HIEF's existing tree-sitter grammars.
 
 use serde::Serialize;
+use schemars::JsonSchema;
 use std::path::Path;
 use tracing::debug;
 
@@ -39,7 +40,7 @@ impl StructuralQuery {
 }
 
 /// A structural search match result.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct StructuralMatch {
     pub file_path: String,
     pub matched_text: String,

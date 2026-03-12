@@ -43,6 +43,33 @@ pub async fn init(project_root: &Path) -> Result<()> {
         println!("✅ Created AGENTS.md");
     }
 
+    // Scaffold initial skills directory if config provides it (default .hief/skills)
+    let config = Config::load(&config_path).unwrap_or_default();
+    match crate::skills::scaffold_skills_dir(project_root, &config.skills) {
+        Ok(report) => {
+            for dir in &report.directories_created {
+                println!("✅ Created {}", dir);
+            }
+            for file in &report.files_created {
+                println!("✅ Created {}", file);
+            }
+            for item in &report.already_existed {
+                println!("⏭️  {} already exists", item);
+            }
+        }
+        Err(e) => {
+            eprintln!("⚠️  failed to create skills directory: {}", e);
+        }
+    }
+
+    // Create a conventions.toml placeholder if missing
+    let conv_path = project_root.join(".hief").join("conventions.toml");
+    if !conv_path.exists() {
+        let placeholder = "# HIEF conventions toml\n# Define project rules here.\n";
+        std::fs::write(&conv_path, placeholder)?;
+        println!("✅ Created {}", conv_path.display());
+    }
+
     // Append to .gitignore
     let gitignore_path = project_root.join(".gitignore");
     let gitignore_entry = ".hief/hief.db\n.hief/hief.db-*\n";
@@ -132,3 +159,20 @@ hief serve --transport http --port 3100   # http transport
 * Run evaluations before marking work as complete.
 * No agent may mark its own intent `approved` — a human must review.
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_init_creates_core_files() {
+        let root = tempdir().unwrap();
+        init(root.path()).await.unwrap();
+        assert!(root.path().join(".hief/golden").exists());
+        assert!(root.path().join("hief.toml").exists());
+        assert!(root.path().join(".hief/conventions.toml").exists());
+        assert!(root.path().join(".hief/skills/README.md").exists());
+        assert!(root.path().join("AGENTS.md").exists());
+    }
+}
