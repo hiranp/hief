@@ -647,8 +647,10 @@ mod tests {
         let config_path = project_root.join(".vscode").join("mcp.json");
         assert!(config_path.exists());
 
-        let config: Value =
-            serde_json::from_str(&std::fs::read_to_string(&config_path).expect("read config failed")).expect("json parse failed");
+        let config: Value = serde_json::from_str(
+            &std::fs::read_to_string(&config_path).expect("read config failed"),
+        )
+        .expect("json parse failed");
         assert!(config["servers"]["hief"].is_object());
         assert_eq!(config["servers"]["hief"]["type"], "stdio");
     }
@@ -679,8 +681,10 @@ mod tests {
 
         // Verify config no longer has hief
         let config_path = project_root.join(".vscode").join("mcp.json");
-        let config: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&config_path).expect("read config failed")).expect("json parse failed");
+        let config: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&config_path).expect("read config failed"),
+        )
+        .expect("json parse failed");
         assert!(!is_hief_registered(&config));
     }
 
@@ -720,8 +724,10 @@ mod tests {
         let config_path = project_root.join(".mcp.json");
         assert!(config_path.exists());
 
-        let config: Value =
-            serde_json::from_str(&std::fs::read_to_string(&config_path).expect("read config failed")).expect("json parse failed");
+        let config: Value = serde_json::from_str(
+            &std::fs::read_to_string(&config_path).expect("read config failed"),
+        )
+        .expect("json parse failed");
         assert!(config["mcpServers"]["hief"].is_object());
         assert_eq!(config["mcpServers"]["hief"]["args"][0], "serve");
     }

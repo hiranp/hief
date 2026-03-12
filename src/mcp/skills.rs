@@ -10,10 +10,13 @@
 //! registry at startup and adds wildcard routes for `execute_skill_*` tools.
 
 use anyhow::Result;
+use rmcp::model::{JsonObject, Tool};
 use serde_json::json;
-use rmcp::model::{Tool, JsonObject};
-use std::{collections::HashMap, path::Path, sync::{Arc, RwLock}};
-
+use std::{
+    collections::HashMap,
+    path::Path,
+    sync::{Arc, RwLock},
+};
 
 /// A parsed skill file.
 #[derive(Debug, Clone)]
@@ -58,7 +61,13 @@ impl SkillRegistry {
     /// Generate a list of MCP tool schema objects suitable for broadcasting
     /// in `ServerInfo` or registering with the router.
     pub fn tool_defs(&self) -> Vec<Tool> {
-        let skills: Vec<Skill> = self.inner.read().expect("lock poisoned").values().cloned().collect();
+        let skills: Vec<Skill> = self
+            .inner
+            .read()
+            .expect("lock poisoned")
+            .values()
+            .cloned()
+            .collect();
         generate_skill_tool_definitions(&skills)
     }
 }
@@ -134,20 +143,19 @@ pub fn generate_skill_tool_definitions(skills: &[Skill]) -> Vec<Tool> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     use crate::config::SkillsConfig;
-    use crate::skills;
+    use tempfile::tempdir;
 
     #[test]
     fn registry_load_and_query() {
         let tmp = tempdir().expect("failed to create tempdir");
         let config = SkillsConfig::default();
-        skills::scaffold_skills_dir(tmp.path(), &config).expect("fail to scaffold skills dir");
-        std::fs::write(
-            tmp.path().join(&config.skills_path).join("foo.md"),
-            "# Foo skill\ndo something",
-        )
-        .expect("failed to write skill file");
+        // Create dir manually — avoid scaffold creating hief_protocol.md which
+        // would show up in the registry and break the defs.len() == 1 assertion.
+        let skills_dir = tmp.path().join(&config.skills_path);
+        std::fs::create_dir_all(&skills_dir).expect("failed to create skills dir");
+        std::fs::write(skills_dir.join("foo.md"), "# Foo skill\ndo something")
+            .expect("failed to write skill file");
 
         let reg = SkillRegistry::new();
         reg.load_from_disk(tmp.path()).expect("load skills failed");

@@ -129,7 +129,8 @@ mod tests {
 
     #[test]
     fn test_template_content_contains_variables() {
-        let content = get_template_content("constitution").expect("failed to load constitution template");
+        let content =
+            get_template_content("constitution").expect("failed to load constitution template");
         assert!(content.contains("{{project_name}}"));
     }
 

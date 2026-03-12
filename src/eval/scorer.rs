@@ -5,8 +5,8 @@
 //! 2. **Structural (ast-grep)** — `structural_must_contain` / `structural_must_not_contain`
 //! 3. **Differential** — When `diff_only = true`, only checks files changed since last eval
 
-use serde::Serialize;
 use schemars::JsonSchema;
+use serde::Serialize;
 use std::path::Path;
 use tracing::{debug, warn};
 
@@ -307,9 +307,7 @@ async fn evaluate_case(
         // filter out excluded files
         let results: Vec<_> = results
             .into_iter()
-            .filter(|(file, _)| {
-                !exclude_globs.iter().any(|g| glob_matches(file, g))
-            })
+            .filter(|(file, _)| !exclude_globs.iter().any(|g| glob_matches(file, g)))
             .collect();
         if results.is_empty() {
             violations.push(Violation {
@@ -355,7 +353,9 @@ async fn evaluate_case(
                         // drop any matches in excluded paths
                         let non_excluded: Vec<_> = matches
                             .into_iter()
-                            .filter(|m| !exclude_globs.iter().any(|g| glob_matches(&m.file_path, g)))
+                            .filter(|m| {
+                                !exclude_globs.iter().any(|g| glob_matches(&m.file_path, g))
+                            })
                             .collect();
                         if non_excluded.is_empty() {
                             violations.push(Violation {
@@ -397,10 +397,13 @@ async fn evaluate_case(
     for entry in &case.checks.structural_must_not_contain {
         match parse_structural_entry(entry) {
             Some((lang, pattern)) => {
-                match run_structural_check(project_root, lang, pattern, file_globs, diff_slice, 10) {
+                match run_structural_check(project_root, lang, pattern, file_globs, diff_slice, 10)
+                {
                     Ok(matches) => {
                         for m in &matches {
-                            if exclude_globs.iter().any(|g| glob_matches(&m.file_path, g)) { continue; }
+                            if exclude_globs.iter().any(|g| glob_matches(&m.file_path, g)) {
+                                continue;
+                            }
                             violations.push(Violation {
                                 kind: "structural_must_not_contain_found".to_string(),
                                 pattern: entry.clone(),

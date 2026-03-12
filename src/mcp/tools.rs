@@ -8,12 +8,11 @@ use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::{Implementation, ServerCapabilities, ServerInfo};
 use rmcp::schemars;
 use rmcp::{ErrorData, ServerHandler, tool, tool_handler, tool_router};
-use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 use super::resources;
 use super::skills::SkillRegistry;
-use rmcp::handler::server::tool::ToolName;
 use crate::config::Config;
 use crate::db::Database;
 use crate::graph;
@@ -22,6 +21,7 @@ use crate::graph::intent::Intent;
 use crate::index;
 use crate::index::search::{SearchQuery, SearchResult};
 use crate::index::structural;
+use rmcp::handler::server::tool::ToolName;
 
 /// The HIEF MCP server handler.
 #[derive(Clone)]
@@ -96,7 +96,6 @@ impl HiefServer {
 }
 
 // -- Parameter structs --
-
 
 /// Wrapper useful for tool outputs: ensures root type is `object` in schema.
 #[derive(Serialize, JsonSchema)]
@@ -401,7 +400,10 @@ impl HiefServer {
             }
         }
 
-        Ok(Json(CreateIntentResponse { intent, skill_content }))
+        Ok(Json(CreateIntentResponse {
+            intent,
+            skill_content,
+        }))
     }
 
     #[tool(
@@ -515,7 +517,11 @@ impl HiefServer {
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
-        let context = ProjectContext { index: stats, active_intents, ready_intents: ready };
+        let context = ProjectContext {
+            index: stats,
+            active_intents,
+            ready_intents: ready,
+        };
         Ok(Json(ObjectResponse { result: context }))
     }
 
@@ -542,7 +548,8 @@ impl HiefServer {
     async fn structural_search(
         &self,
         Parameters(params): Parameters<StructuralSearchParams>,
-    ) -> Result<Json<ObjectResponse<Vec<crate::index::structural::StructuralMatch>>>, ErrorData> {
+    ) -> Result<Json<ObjectResponse<Vec<crate::index::structural::StructuralMatch>>>, ErrorData>
+    {
         let mut query = structural::StructuralQuery::new(&params.pattern, &params.language);
         query.top_k = self.validate_top_k(params.top_k, 50);
 
@@ -680,18 +687,24 @@ impl HiefServer {
         name = "get_conventions",
         description = "Get the project's machine-readable conventions from .hief/conventions.toml. Returns rules that the agent should follow when writing code, including check patterns, scopes, and severity levels."
     )]
-    async fn get_conventions(&self) -> Result<Json<ObjectResponse<resources::ProjectConventions>>, ErrorData> {
+    async fn get_conventions(
+        &self,
+    ) -> Result<Json<ObjectResponse<resources::ProjectConventions>>, ErrorData> {
         let conventions = resources::get_project_conventions(&self.project_root)
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
-        Ok(Json(ObjectResponse { result: conventions }))
+        Ok(Json(ObjectResponse {
+            result: conventions,
+        }))
     }
 
     #[tool(
         name = "get_project_health",
         description = "Get project health: latest eval scores, regressions, and warnings. Use this to check if the codebase is in good shape before starting work."
     )]
-    async fn get_project_health(&self) -> Result<Json<ObjectResponse<resources::ProjectHealth>>, ErrorData> {
+    async fn get_project_health(
+        &self,
+    ) -> Result<Json<ObjectResponse<resources::ProjectHealth>>, ErrorData> {
         let health = resources::get_project_health(&self.db, &self.project_root, &self.config)
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
@@ -826,7 +839,9 @@ impl HiefServer {
     ) -> Result<Json<ObjectResponse<String>>, ErrorData> {
         let tool_name = tool.0.as_ref();
         if let Some(skill) = self.skills.by_tool(tool_name) {
-            Ok(Json(ObjectResponse { result: skill.content }))
+            Ok(Json(ObjectResponse {
+                result: skill.content,
+            }))
         } else {
             Err(ErrorData::resource_not_found(
                 format!("skill not found: {}", tool_name),
@@ -834,8 +849,30 @@ impl HiefServer {
             ))
         }
     }
-}
+} // end #[tool_router] impl HiefServer
 
+/// Implement ServerHandler for the HIEF MCP server.
+#[tool_handler]
+impl ServerHandler for HiefServer {
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo {
+            protocol_version: Default::default(),
+            capabilities: ServerCapabilities::builder().enable_tools().build(),
+            server_info: Implementation::from_build_env(),
+            instructions: Some(
+                "HIEF is your local persistent memory layer for AI coding agents.\n\
+                 • Search code with precision: keyword, structural (AST), or semantic vectors.\n\
+                 • Coordinate work using a lightweight intent graph (create, list, update, recover).\n\
+                 • Enforce quality with golden-set evaluation before sharing or merging changes.\n\
+                 • Always begin a session by calling `get_project_context` then `get_conventions` \
+                   to bootstrap your agent's view of the repo and coding rules.\n\
+                 • Most tools return `ObjectResponse` wrappers; check `result` field.\n\
+                 • For detailed examples and full protocol, see dev-docs/agent-protocol.md."
+                    .to_string(),
+            ),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -854,7 +891,8 @@ mod tests {
         let config = Config::default();
         let skills_dir = tmp.path().join(&config.skills.skills_path);
         std::fs::create_dir_all(&skills_dir).expect("failed to create skills_dir");
-        std::fs::write(skills_dir.join("foo.md"), "do something").expect("failed to write skill file");
+        std::fs::write(skills_dir.join("foo.md"), "do something")
+            .expect("failed to write skill file");
 
         let params = CreateIntentParams {
             kind: "feature".to_string(),
@@ -881,7 +919,8 @@ mod tests {
         let config = Config::default();
         let skills_dir = tmp.path().join(&config.skills.skills_path);
         std::fs::create_dir_all(&skills_dir).expect("failed to create skills_dir");
-        std::fs::write(skills_dir.join("foo.md"), "# Foo\nstep1").expect("failed to write skill file");
+        std::fs::write(skills_dir.join("foo.md"), "# Foo\nstep1")
+            .expect("failed to write skill file");
 
         let server = HiefServer::new(db.clone(), tmp.path().to_path_buf());
 
@@ -911,44 +950,30 @@ mod tests {
         let config = Config::default();
         let skills_dir = tmp.path().join(&config.skills.skills_path);
         std::fs::create_dir_all(&skills_dir).expect("failed to create skills_dir");
-        std::fs::write(skills_dir.join("deploy.md"), "# Deploy\nold step").expect("failed to write skill file");
+        std::fs::write(skills_dir.join("deploy.md"), "# Deploy\nold step")
+            .expect("failed to write skill file");
 
         let server = HiefServer::new(db.clone(), tmp.path().to_path_buf());
         assert!(server.skills.by_tool("execute_skill_deploy").is_some());
 
         // overwrite with updated content
-        std::fs::write(skills_dir.join("deploy.md"), "# Deploy\nnew step").expect("failed to write skill file");
+        std::fs::write(skills_dir.join("deploy.md"), "# Deploy\nnew step")
+            .expect("failed to write skill file");
 
         // reload_skills should update the registry
         let resp = server.reload_skills().await.expect("reload_skills failed");
         let Json(ObjectResponse { result: body }) = resp;
         assert_eq!(body.count, 1);
-        assert!(body.skill_names.contains(&"execute_skill_deploy".to_string()));
+        assert!(
+            body.skill_names
+                .contains(&"execute_skill_deploy".to_string())
+        );
 
         // registry entry should reflect new content
-        let skill = server.skills.by_tool("execute_skill_deploy").expect("skill missing");
+        let skill = server
+            .skills
+            .by_tool("execute_skill_deploy")
+            .expect("skill missing");
         assert!(skill.content.contains("new step"));
-    }
-}
-
-/// Implement ServerHandler for the HIEF MCP server.
-#[tool_handler]
-impl ServerHandler for HiefServer {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            protocol_version: Default::default(),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            server_info: Implementation::from_build_env(),
-            instructions: Some(
-                "HIEF is your local persistent memory layer for AI coding agents.\n\
-                 • Search code with precision: keyword, structural (AST), or semantic vectors.\n\
-                 • Coordinate work using a lightweight intent graph (create, list, update, recover).\n\
-                 • Enforce quality with golden-set evaluation before sharing or merging changes.\n\
-                 • Always begin a session by calling `get_project_context` then `get_conventions` \
-                   to bootstrap your agent’s view of the repo and coding rules.\n\
-                 • Most tools return `ObjectResponse` wrappers; check `result` field.\n\
-                 • For detailed examples and full protocol, see dev-docs/agent-protocol.md.".to_string(),
-            ),
-        }
     }
 }

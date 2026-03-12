@@ -141,7 +141,10 @@ pub fn hooks_status(project_root: &Path, json: bool) -> Result<()> {
     }
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&statuses).expect("failed to serialize statuses"));
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&statuses).expect("failed to serialize statuses")
+        );
     } else {
         println!("🪝 Git Hook Status:\n");
         for s in &statuses {

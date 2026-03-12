@@ -10,7 +10,10 @@ pub fn skills_init(project_root: &Path, config: &Config, json: bool) -> Result<(
     let report = crate::skills::scaffold_skills_dir(project_root, &config.skills)?;
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&report).expect("failed to serialize report"));
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report).expect("failed to serialize report")
+        );
     } else {
         for dir in &report.directories_created {
             println!("✅ Created {}", dir);
@@ -37,7 +40,10 @@ pub fn skills_init(project_root: &Path, config: &Config, json: bool) -> Result<(
 pub fn skills_list(project_root: &Path, config: &Config, json: bool) -> Result<()> {
     let names = crate::skills::list_skills(project_root, &config.skills)?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&names).expect("failed to serialize names"));
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&names).expect("failed to serialize names")
+        );
     } else {
         println!("📋 Skills ({}):", names.len());
         for n in names {
@@ -48,15 +54,13 @@ pub fn skills_list(project_root: &Path, config: &Config, json: bool) -> Result<(
 }
 
 /// Show contents of a skill.
-pub fn skills_show(
-    project_root: &Path,
-    config: &Config,
-    name: &str,
-    json: bool,
-) -> Result<()> {
+pub fn skills_show(project_root: &Path, config: &Config, name: &str, json: bool) -> Result<()> {
     let content = crate::skills::get_skill(project_root, &config.skills, name)?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&content).expect("failed to serialize content"));
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&content).expect("failed to serialize content")
+        );
     } else {
         println!("--- {} ---\n{}", name, content);
     }
@@ -76,23 +80,28 @@ mod tests {
         Config::write_default(&config_path).expect("failed to write default config");
         let config = Config::load(&config_path).expect("failed to load config");
 
-        // init should create skills directory and README
+        // init should create skills directory, README, and the default hief_protocol skill
         skills_init(root.path(), &config, false).expect("skills_init failed");
         let skills_dir = root.path().join(&config.skills.skills_path);
         assert!(skills_dir.exists());
         assert!(skills_dir.join("README.md").exists());
+        assert!(skills_dir.join("hief_protocol.md").exists());
 
-        // initially list returns empty vector
-        let names = crate::skills::list_skills(root.path(), &config.skills).expect("list_skills failed");
-        assert!(names.is_empty());
+        // after init, hief_protocol is the only non-README skill listed
+        let names =
+            crate::skills::list_skills(root.path(), &config.skills).expect("list_skills failed");
+        assert!(names.contains(&"hief_protocol".to_string()));
 
-        // add a dummy skill file and ensure it's listed
+        // add a custom skill and ensure it appears alongside hief_protocol
         std::fs::write(skills_dir.join("foo.md"), "bar").expect("failed to write foo skill");
-        let names = crate::skills::list_skills(root.path(), &config.skills).expect("list_skills failed");
-        assert_eq!(names, vec!["foo".to_string()]);
+        let names =
+            crate::skills::list_skills(root.path(), &config.skills).expect("list_skills failed");
+        assert!(names.contains(&"foo".to_string()));
+        assert!(names.contains(&"hief_protocol".to_string()));
         skills_list(root.path(), &config, false).expect("skills_list failed");
 
-        let content = crate::skills::get_skill(root.path(), &config.skills, "foo").expect("get_skill failed");
+        let content =
+            crate::skills::get_skill(root.path(), &config.skills, "foo").expect("get_skill failed");
         assert_eq!(content, "bar");
         skills_show(root.path(), &config, "foo", false).expect("skills_show failed");
     }

@@ -1,7 +1,7 @@
 //! FTS5 full-text search over indexed code chunks.
 
-use serde::Serialize;
 use schemars::JsonSchema;
+use serde::Serialize;
 use tracing::debug;
 
 use crate::db::Database;

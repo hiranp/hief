@@ -1,7 +1,7 @@
 //! Intent node CRUD operations.
 
-use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 use crate::db::Database;
 use crate::errors::{HiefError, Result};

@@ -67,7 +67,10 @@ pub async fn init(project_root: &Path) -> Result<()> {
     if !conv_path.exists() {
         let conventions = generate_conventions(project_root);
         std::fs::write(&conv_path, conventions)?;
-        println!("✅ Created {} (auto-generated from project — review and customise)", conv_path.display());
+        println!(
+            "✅ Created {} (auto-generated from project — review and customise)",
+            conv_path.display()
+        );
     }
 
     // Append to .gitignore

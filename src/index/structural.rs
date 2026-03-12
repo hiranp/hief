@@ -4,8 +4,8 @@
 //! goes beyond keyword search to find code by structure. Uses ast-grep-core
 //! with HIEF's existing tree-sitter grammars.
 
-use serde::Serialize;
 use schemars::JsonSchema;
+use serde::Serialize;
 use std::path::Path;
 use tracing::debug;
 

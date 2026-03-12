@@ -12,8 +12,8 @@
 //!   recently and frequently accessed code ranks higher.
 //! - **Related files**: Uses the co-access graph to suggest files related to a given file.
 
-use serde::Serialize;
 use schemars::JsonSchema;
+use serde::Serialize;
 use tracing::debug;
 use uuid::Uuid;
 

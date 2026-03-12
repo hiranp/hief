@@ -1232,7 +1232,9 @@ mod tests {
         let template = "Languages: {% for lang in languages %}{{lang}}{% if not loop.last %}, {% endif %}{% endfor %}";
         // MiniJinja needs a list value; pass via render_with_minijinja directly
         let env = Environment::new();
-        let tmpl = env.template_from_str(template).expect("template parse failed");
+        let tmpl = env
+            .template_from_str(template)
+            .expect("template parse failed");
         let ctx = minijinja::context! {
             languages => vec!["rust", "python", "typescript"],
         };
@@ -1258,8 +1260,12 @@ mod tests {
         // MiniJinja with default filter — the placeholder won't be preserved
         // because `default()` explicitly handles undefined
         let env = Environment::new();
-        let tmpl = env.template_from_str(template).expect("template parse failed");
-        let result = tmpl.render(Value::from_serialize(&vars)).expect("template render failed");
+        let tmpl = env
+            .template_from_str(template)
+            .expect("template parse failed");
+        let result = tmpl
+            .render(Value::from_serialize(&vars))
+            .expect("template render failed");
         assert_eq!(result, "Author: unknown");
     }
 
@@ -1277,7 +1283,8 @@ mod tests {
 
     #[test]
     fn test_minijinja_renders_embedded_constitution() {
-        let content = templates::get_template_content("constitution").expect("template content load failed");
+        let content =
+            templates::get_template_content("constitution").expect("template content load failed");
         let mut vars = HashMap::new();
         vars.insert("project_name".to_string(), "TestProject".to_string());
 
@@ -1291,7 +1298,8 @@ mod tests {
 
     #[test]
     fn test_minijinja_renders_embedded_spec() {
-        let content = templates::get_template_content("spec").expect("template content load failed");
+        let content =
+            templates::get_template_content("spec").expect("template content load failed");
         let mut vars = HashMap::new();
         vars.insert("feature".to_string(), "code-search".to_string());
         vars.insert("id".to_string(), "abc123".to_string());
@@ -1308,7 +1316,8 @@ mod tests {
 
     #[test]
     fn test_minijinja_renders_embedded_golden() {
-        let content = templates::get_template_content("golden").expect("template content load failed");
+        let content =
+            templates::get_template_content("golden").expect("template content load failed");
         let mut vars = HashMap::new();
         vars.insert("name".to_string(), "quality-check".to_string());
         vars.insert(
@@ -1337,7 +1346,8 @@ mod tests {
     fn test_extract_variables_from_all_templates() {
         // Ensure extract_variables works on every embedded template
         for meta in templates::TEMPLATES {
-            let content = templates::get_template_content(meta.id).expect("template content load failed");
+            let content =
+                templates::get_template_content(meta.id).expect("template content load failed");
             let vars = extract_variables(content);
             assert!(
                 !vars.is_empty(),

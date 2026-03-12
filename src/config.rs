@@ -309,7 +309,8 @@ mod tests {
 
     #[test]
     fn test_load_nonexistent_file_returns_defaults() {
-        let config = Config::load(Path::new("/nonexistent/hief.toml")).expect("failed to load default config");
+        let config = Config::load(Path::new("/nonexistent/hief.toml"))
+            .expect("failed to load default config");
         assert_eq!(config.index.max_chunk_tokens, 512);
         assert_eq!(config.serve.port, 3100);
     }

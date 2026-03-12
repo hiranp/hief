@@ -25,22 +25,23 @@ pub fn scaffold_skills_dir(project_root: &Path, config: &SkillsConfig) -> Result
 
     let skills_path = project_root.join(&config.skills_path);
     if skills_path.exists() {
-        report
-            .already_existed
-            .push(config.skills_path.clone());
+        report.already_existed.push(config.skills_path.clone());
     } else {
         std::fs::create_dir_all(&skills_path)?;
-        report
-            .directories_created
-            .push(config.skills_path.clone());
+        report.directories_created.push(config.skills_path.clone());
     }
 
     // README explaining what skills are
     let readme = skills_path.join("README.md");
     if readme.exists() {
-        report
-            .already_existed
-            .push(format!("{}README.md", if config.skills_path.ends_with('/') { config.skills_path.clone() } else { format!("{}/", config.skills_path) }));
+        report.already_existed.push(format!(
+            "{}README.md",
+            if config.skills_path.ends_with('/') {
+                config.skills_path.clone()
+            } else {
+                format!("{}/", config.skills_path)
+            }
+        ));
     } else {
         const SKILLS_README: &str = r#"# Skills Directory
 
@@ -53,22 +54,37 @@ Example: `create_database_migration.md` might contain step-by-step commands
 for adding a new migration file, running tests, and updating docs.
 "#;
         std::fs::write(&readme, SKILLS_README)?;
-        report
-            .files_created
-            .push(format!("{}README.md", if config.skills_path.ends_with('/') { config.skills_path.clone() } else { format!("{}/", config.skills_path) }));
+        report.files_created.push(format!(
+            "{}README.md",
+            if config.skills_path.ends_with('/') {
+                config.skills_path.clone()
+            } else {
+                format!("{}/", config.skills_path)
+            }
+        ));
     }
 
     // Default HIEF Protocol skill
     let protocol_skill_path = skills_path.join("hief_protocol.md");
     if protocol_skill_path.exists() {
-        report
-            .already_existed
-            .push(format!("{}hief_protocol.md", if config.skills_path.ends_with('/') { config.skills_path.clone() } else { format!("{}/", config.skills_path) }));
+        report.already_existed.push(format!(
+            "{}hief_protocol.md",
+            if config.skills_path.ends_with('/') {
+                config.skills_path.clone()
+            } else {
+                format!("{}/", config.skills_path)
+            }
+        ));
     } else {
         std::fs::write(&protocol_skill_path, HIEF_PROTOCOL_SKILL)?;
-        report
-            .files_created
-            .push(format!("{}hief_protocol.md", if config.skills_path.ends_with('/') { config.skills_path.clone() } else { format!("{}/", config.skills_path) }));
+        report.files_created.push(format!(
+            "{}hief_protocol.md",
+            if config.skills_path.ends_with('/') {
+                config.skills_path.clone()
+            } else {
+                format!("{}/", config.skills_path)
+            }
+        ));
     }
 
     Ok(report)
@@ -102,7 +118,9 @@ pub fn get_skill(project_root: &Path, config: &SkillsConfig, name: &str) -> Resu
     // Validate: only allow alphanumeric, underscores, hyphens; no dots, slashes, or leading hyphens.
     if name.is_empty()
         || name.starts_with('-')
-        || !name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+        || !name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
     {
         return Err(HiefError::SecurityViolation(format!(
             "Invalid skill name '{}': only alphanumeric characters, underscores, and hyphens are allowed",
@@ -133,23 +151,48 @@ mod tests {
         let config = SkillsConfig::default();
         let report = scaffold_skills_dir(dir.path(), &config).unwrap();
         assert!(report.directories_created.contains(&config.skills_path));
-        assert!(report.files_created.contains(&format!("{}/README.md", config.skills_path)));
 
-        // running again should mark as already_existed
+        // skills_path may have a trailing slash; compute the prefix consistently
+        let prefix = if config.skills_path.ends_with('/') {
+            config.skills_path.clone()
+        } else {
+            format!("{}/", config.skills_path)
+        };
+        assert!(
+            report
+                .files_created
+                .contains(&format!("{}README.md", prefix))
+        );
+        assert!(
+            report
+                .files_created
+                .contains(&format!("{}hief_protocol.md", prefix))
+        );
+
+        // running again should mark everything as already_existed
         let report2 = scaffold_skills_dir(dir.path(), &config).unwrap();
         assert!(report2.already_existed.contains(&config.skills_path));
-        assert!(report2.already_existed.contains(&format!("{}/README.md", config.skills_path)));
+        assert!(
+            report2
+                .already_existed
+                .contains(&format!("{}README.md", prefix))
+        );
+        assert!(
+            report2
+                .already_existed
+                .contains(&format!("{}hief_protocol.md", prefix))
+        );
     }
 
     #[test]
     fn test_list_and_get_skill() {
         let dir = tempdir().unwrap();
         let config = SkillsConfig::default();
-        scaffold_skills_dir(dir.path(), &config).unwrap();
-        let skill_path = dir
-            .path()
-            .join(&config.skills_path)
-            .join("foo.md");
+        // Create the directory manually — don't scaffold, to avoid hief_protocol.md
+        // being included in list_skills results.
+        let skills_path = dir.path().join(&config.skills_path);
+        std::fs::create_dir_all(&skills_path).unwrap();
+        let skill_path = skills_path.join("foo.md");
         std::fs::write(&skill_path, "hello").unwrap();
 
         let names = list_skills(dir.path(), &config).unwrap();
