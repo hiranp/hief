@@ -8,12 +8,10 @@ chunk_strategy = "ast"      # ast | fixed
 max_chunk_tokens = 512
 languages = ["rust", "python", "typescript"]
 
-# Optional: enable vector search via local LLM
-# [index.embeddings]
-# provider = "ollama"
-# model = "nomic-embed-text"
-# base_url = "http://localhost:11434"
-# dimensions = 768
+[vectors]
+enabled = true
+dimensions = 384
+metric = "cosine"
 
 [graph]
 require_approval = true     # Intents must be human-approved before work

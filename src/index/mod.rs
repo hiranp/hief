@@ -46,11 +46,14 @@ pub async fn build(
     db: &Database,
     project_root: &Path,
     config: &IndexConfig,
+    vector_config: &vectors::VectorConfig,
 ) -> Result<BuildReport> {
     let start = std::time::Instant::now();
     let mut files_new = 0usize;
     let mut files_updated = 0usize;
     let mut total_chunks = 0usize;
+
+    vectors::init(project_root, vector_config).await?;
 
     let walker = FileWalker::new(project_root);
     let chunker = Chunker::new(config.max_chunk_tokens);
@@ -102,10 +105,20 @@ pub async fn build(
         // Parse and chunk
         let chunks = chunker.chunk(&content, &language, &rel_path);
 
+        if vector_config.enabled {
+            vectors::prune_deleted(project_root, std::slice::from_ref(&rel_path), vector_config)
+                .await?;
+        }
+
         // Insert chunks
         let chunk_count = chunks.len();
         for chunk in &chunks {
             insert_chunk(db, chunk).await?;
+        }
+
+        if vector_config.enabled && !chunks.is_empty() {
+            let embedded_chunks = vectors::embed_chunks(&chunks, vector_config.dimensions)?;
+            vectors::store_embeddings(project_root, &embedded_chunks, vector_config).await?;
         }
 
         // Update file metadata
@@ -114,7 +127,11 @@ pub async fn build(
     }
 
     // Prune files no longer on disk
-    let files_removed = prune_deleted_files(db, &seen_paths).await?;
+    let deleted_paths = prune_deleted_files(db, &seen_paths).await?;
+    if vector_config.enabled && !deleted_paths.is_empty() {
+        vectors::prune_deleted(project_root, &deleted_paths, vector_config).await?;
+    }
+    let files_removed = deleted_paths.len();
 
     let duration_ms = start.elapsed().as_millis() as u64;
 
@@ -319,7 +336,7 @@ async fn upsert_file_meta(
     Ok(())
 }
 
-async fn prune_deleted_files(db: &Database, seen_paths: &[String]) -> Result<usize> {
+async fn prune_deleted_files(db: &Database, seen_paths: &[String]) -> Result<Vec<String>> {
     // Get all indexed file paths
     let mut rows = db
         .conn()
@@ -350,5 +367,5 @@ async fn prune_deleted_files(db: &Database, seen_paths: &[String]) -> Result<usi
             .map_err(crate::errors::HiefError::Database)?;
     }
 
-    Ok(to_delete.len())
+    Ok(to_delete)
 }

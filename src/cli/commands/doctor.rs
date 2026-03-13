@@ -104,7 +104,7 @@ pub async fn doctor(
             fixed: false,
         };
         if fix {
-            crate::index::build(db, project_root, &config.index).await?;
+            crate::index::build(db, project_root, &config.index, &config.vectors).await?;
             check.status = "ok".to_string();
             check.message = "Index rebuilt successfully".to_string();
             check.fixed = true;
@@ -329,7 +329,7 @@ pub async fn doctor(
             eval_probe.fixable = true;
 
             if fix {
-                crate::index::build(db, project_root, &config.index).await?;
+                crate::index::build(db, project_root, &config.index, &config.vectors).await?;
                 match crate::eval::run_ci(db, project_root, &config.eval, None).await {
                     Ok(0) => {
                         eval_probe.status = "ok".to_string();

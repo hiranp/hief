@@ -52,6 +52,10 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # Database
 libsql = "0.6"
+lancedb = { version = "0.26.2", default-features = false }
+arrow-array = "57.2"
+arrow-schema = "57.2"
+futures = "0.3"
 
 # AST parsing
 tree-sitter = "0.24"

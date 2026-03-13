@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crate::config::Config;
 use crate::db::Database;
-use crate::errors::Result;
+use crate::errors::{HiefError, Result};
 
 /// Build or update the code index.
 pub async fn index_build(
@@ -13,7 +13,7 @@ pub async fn index_build(
     config: &Config,
     json: bool,
 ) -> Result<()> {
-    let report = crate::index::build(db, project_root, &config.index).await?;
+    let report = crate::index::build(db, project_root, &config.index, &config.vectors).await?;
 
     if json {
         println!("{}", serde_json::to_string_pretty(&report).unwrap());
@@ -162,27 +162,116 @@ pub async fn index_status(db: &Database, project_root: &Path, json: bool) -> Res
 
 /// Semantic search using vector embeddings.
 pub async fn index_semantic(
-    _project_root: &Path,
+    project_root: &Path,
+    config: &Config,
     query: &str,
     top_k: usize,
     json: bool,
 ) -> Result<()> {
-    if json {
-        println!(
-            "{}",
-            serde_json::json!({
-                "error": "not_implemented",
-                "message": "Semantic search is currently in development. Vector storage and retrieval are being implemented."
-            })
-        );
-    } else {
-        println!("⚠️  Semantic search is currently in development.");
-        println!("   Vector storage and retrieval via LanceDB are being implemented.");
-        println!(
-            "   Query '{}' (top_k={}) would be executed here.",
-            query, top_k
-        );
+    if !config.vectors.enabled {
+        return Err(HiefError::Config(
+            "Semantic search is not enabled. Set vectors.enabled = true in hief.toml and rebuild the index.".to_string(),
+        ));
     }
 
+    let query_vector = crate::index::vectors::embed_text(query, config.vectors.dimensions)?;
+    let semantic_query = crate::index::vectors::SemanticQuery {
+        query: query.to_string(),
+        top_k,
+        language: None,
+    };
+    let results = crate::index::vectors::search(
+        project_root,
+        &query_vector,
+        &semantic_query,
+        &config.vectors,
+    )
+    .await?;
+
+    print_semantic_results(query, &results, json);
+
     Ok(())
+}
+
+fn print_semantic_results(
+    query: &str,
+    results: &[crate::index::vectors::SemanticResult],
+    json: bool,
+) {
+    print!("{}", render_semantic_results(query, results, json));
+}
+
+fn render_semantic_results(
+    query: &str,
+    results: &[crate::index::vectors::SemanticResult],
+    json: bool,
+) -> String {
+    if json {
+        format!("{}\n", serde_json::to_string_pretty(results).unwrap())
+    } else if results.is_empty() {
+        format!("No semantic results found for '{}'\n", query)
+    } else {
+        let mut output = format!("Found {} semantic results for '{}':\n\n", results.len(), query);
+        for (index, result) in results.iter().enumerate() {
+            let symbol = result.symbol_name.as_deref().unwrap_or("(anonymous)");
+            output.push_str(&format!(
+                "  {}. {} [score {:.3}] — {}:{}–{}\n",
+                index + 1,
+                symbol,
+                result.score,
+                result.file_path,
+                result.start_line,
+                result.end_line,
+            ));
+            for line in result.content.lines().take(3) {
+                output.push_str(&format!("     {}\n", line));
+            }
+            output.push('\n');
+        }
+        output
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_semantic_results;
+
+    #[test]
+    fn test_render_semantic_results_json() {
+        let results = vec![crate::index::vectors::SemanticResult {
+            chunk_id: "chunk-1".to_string(),
+            file_path: "src/main.rs".to_string(),
+            symbol_name: Some("main".to_string()),
+            parent_scope: None,
+            language: "rust".to_string(),
+            content: "fn main() {}".to_string(),
+            start_line: 1,
+            end_line: 1,
+            score: 0.91,
+        }];
+
+        let json = render_semantic_results("main", &results, true);
+        assert!(json.contains("\"chunk_id\": \"chunk-1\""));
+        assert!(json.contains("\"score\": 0.91"));
+    }
+
+    #[test]
+    fn test_render_semantic_results_human() {
+        let results = vec![crate::index::vectors::SemanticResult {
+            chunk_id: "chunk-1".to_string(),
+            file_path: "src/main.rs".to_string(),
+            symbol_name: Some("main".to_string()),
+            parent_scope: None,
+            language: "rust".to_string(),
+            content: "fn main() {}".to_string(),
+            start_line: 1,
+            end_line: 1,
+            score: 0.91,
+        }];
+
+        let output = render_semantic_results("main", &results, false);
+        assert!(output.contains("Found 1 semantic results for 'main'"));
+        assert!(output.contains("1. main [score 0.910]"));
+        assert!(output.contains("src/main.rs:1–1"));
+    }
 }

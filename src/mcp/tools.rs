@@ -106,10 +106,11 @@ pub struct ObjectResponse<T> {
 #[derive(Serialize, JsonSchema)]
 pub struct SemanticSearchResponse {
     pub status: String,
-    pub message: String,
+    pub message: Option<String>,
     pub query: String,
     pub top_k: usize,
     pub language: Option<String>,
+    pub results: Vec<crate::index::vectors::SemanticResult>,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -670,14 +671,36 @@ impl HiefServer {
             ));
         }
 
-        // TODO: Generate query embedding via host agent callback or local model
-        // For now, return a helpful message indicating the feature is being built
-        let resp = SemanticSearchResponse {
-            status: "not_yet_available".to_string(),
-            message: "Semantic search is enabled in config but the LanceDB integration is still being built. Use search_code (keyword) or structural_search (AST pattern) in the meantime.".to_string(),
+        let query_vector = crate::index::vectors::embed_text(
+            &params.query,
+            self.config.vectors.dimensions,
+        )
+        .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        let query = crate::index::vectors::SemanticQuery {
             query: params.query.clone(),
             top_k: self.validate_top_k(params.top_k, 10),
             language: params.language.clone(),
+        };
+        let results = crate::index::vectors::search(
+            &self.project_root,
+            &query_vector,
+            &query,
+            &self.config.vectors,
+        )
+        .await
+        .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
+        let resp = SemanticSearchResponse {
+            status: "ok".to_string(),
+            message: if results.is_empty() {
+                Some("No semantic matches found for the query.".to_string())
+            } else {
+                None
+            },
+            query: params.query.clone(),
+            top_k: query.top_k,
+            language: params.language.clone(),
+            results,
         };
 
         Ok(Json(resp))
