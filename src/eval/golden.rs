@@ -323,4 +323,113 @@ must_contain = ["foo"]
         let sets = load_golden_sets(dir.path(), None).unwrap();
         assert_eq!(sets[0].cases[0].intent, Some("abc-123".to_string()));
     }
+
+    #[test]
+    fn test_load_missing_metadata_name_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        write_golden_toml(
+            dir.path(),
+            "missing_name",
+            r#"
+[metadata]
+description = "missing name"
+
+[[cases]]
+id = "c1"
+name = "case"
+[cases.checks]
+must_contain = ["foo"]
+"#,
+        );
+
+        let result = load_golden_sets(dir.path(), None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_missing_cases_checks_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        write_golden_toml(
+            dir.path(),
+            "missing_checks",
+            r#"
+[metadata]
+name = "missing-checks"
+description = "missing checks table"
+
+[[cases]]
+id = "c1"
+name = "case"
+"#,
+        );
+
+        let result = load_golden_sets(dir.path(), None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_wrong_field_types_fail() {
+        let dir = tempfile::tempdir().unwrap();
+        write_golden_toml(
+            dir.path(),
+            "wrong_types",
+            r#"
+[metadata]
+name = "wrong-types"
+description = "wrong type values"
+
+[[cases]]
+id = "c1"
+name = "case"
+[cases.checks]
+must_contain = "foo"
+diff_only = "true"
+"#,
+        );
+
+        let result = load_golden_sets(dir.path(), None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_placeholder_shape_missing_cases_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        write_golden_toml(
+            dir.path(),
+            "placeholder_shape",
+            r#"
+[metadata]
+name = "{{name}}"
+description = "{{description}}"
+"#,
+        );
+
+        let result = load_golden_sets(dir.path(), None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_placeholder_values_can_be_valid_when_shape_is_valid() {
+        let dir = tempfile::tempdir().unwrap();
+        write_golden_toml(
+            dir.path(),
+            "placeholder_values",
+            r#"
+[metadata]
+name = "{{name}}"
+description = "{{description}}"
+
+[[cases]]
+id = "{{case_1_id}}"
+name = "{{case_1_name}}"
+[cases.checks]
+must_not_contain = ["{{case_1_must_not_contain}}"]
+file_patterns = ["src/**/*.rs"]
+"#,
+        );
+
+        let sets = load_golden_sets(dir.path(), None).unwrap();
+        assert_eq!(sets.len(), 1);
+        assert_eq!(sets[0].metadata.name, "{{name}}");
+    }
 }

@@ -47,3 +47,29 @@ jobs:
       uses: Swatinem/rust-cache@v2
     - name: Run clippy
       run: cargo clippy --all-targets --all-features -- -D warnings
+
+  eval-guarded:
+    name: Eval (Guarded Burn-In)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@v2
+    - name: Run guarded evaluation
+      run: |
+        if ls .hief/golden/*.toml >/dev/null 2>&1; then
+          echo "Golden sets found, running guarded eval burn-in"
+          cargo run --quiet -- index build
+          cargo run --quiet -- eval run --ci
+          echo "eval_guarded_status=pass" >> "$GITHUB_ENV"
+        else
+          echo "No golden sets found under .hief/golden; skipping guarded eval"
+          echo "eval_guarded_status=skip" >> "$GITHUB_ENV"
+        fi
+    - name: Burn-in summary
+      if: always()
+      run: |
+        echo "Guarded eval status: ${eval_guarded_status:-fail}"

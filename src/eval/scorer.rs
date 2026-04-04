@@ -741,4 +741,141 @@ mod tests {
         assert!(result.passed);
         assert_eq!(result.score, 1.0);
     }
+
+    #[tokio::test]
+    async fn test_structural_must_not_contain_detects_unwrap() {
+        let db = Database::open_memory().await.unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src/lib.rs");
+        std::fs::create_dir_all(src.parent().unwrap()).unwrap();
+        std::fs::write(
+            &src,
+            "pub fn f() { let v = Some(1); let _ = v.unwrap(); }\n",
+        )
+        .unwrap();
+
+        let case = EvalCase {
+            id: "s1".to_string(),
+            name: "no unwrap structurally".to_string(),
+            priority: "high".to_string(),
+            intent: None,
+            checks: crate::eval::golden::EvalChecks {
+                must_contain: Vec::new(),
+                must_not_contain: Vec::new(),
+                file_patterns: vec!["src/**/*.rs".to_string()],
+                exclude_file_patterns: Vec::new(),
+                structural_must_contain: Vec::new(),
+                structural_must_not_contain: vec!["rust:$X.unwrap()".to_string()],
+                diff_only: false,
+                test_command: None,
+            },
+        };
+
+        let result = evaluate_case(&db, &case, dir.path(), None).await.unwrap();
+        assert!(!result.passed);
+        assert!(
+            result
+                .violations
+                .iter()
+                .any(|v| v.kind == "structural_must_not_contain_found")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_structural_must_contain_finds_function_pattern() {
+        let db = Database::open_memory().await.unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src/lib.rs");
+        std::fs::create_dir_all(src.parent().unwrap()).unwrap();
+        std::fs::write(&src, "struct Point {\n    x: i32,\n}\n").unwrap();
+
+        let case = EvalCase {
+            id: "s2".to_string(),
+            name: "has struct".to_string(),
+            priority: "medium".to_string(),
+            intent: None,
+            checks: crate::eval::golden::EvalChecks {
+                must_contain: Vec::new(),
+                must_not_contain: Vec::new(),
+                file_patterns: vec!["src/**/*.rs".to_string()],
+                exclude_file_patterns: Vec::new(),
+                structural_must_contain: vec!["rust:struct $NAME $BODY".to_string()],
+                structural_must_not_contain: Vec::new(),
+                diff_only: false,
+                test_command: None,
+            },
+        };
+
+        let result = evaluate_case(&db, &case, dir.path(), None).await.unwrap();
+        assert!(result.passed);
+    }
+
+    #[tokio::test]
+    async fn test_structural_invalid_entry_reports_invalid_pattern_violation() {
+        let db = Database::open_memory().await.unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src/lib.rs");
+        std::fs::create_dir_all(src.parent().unwrap()).unwrap();
+        std::fs::write(&src, "pub fn h() {}\n").unwrap();
+
+        let case = EvalCase {
+            id: "s3".to_string(),
+            name: "bad pattern format".to_string(),
+            priority: "medium".to_string(),
+            intent: None,
+            checks: crate::eval::golden::EvalChecks {
+                must_contain: Vec::new(),
+                must_not_contain: Vec::new(),
+                file_patterns: vec!["src/**/*.rs".to_string()],
+                exclude_file_patterns: Vec::new(),
+                structural_must_contain: vec!["$X.unwrap()".to_string()],
+                structural_must_not_contain: Vec::new(),
+                diff_only: false,
+                test_command: None,
+            },
+        };
+
+        let result = evaluate_case(&db, &case, dir.path(), None).await.unwrap();
+        assert!(!result.passed);
+        assert!(
+            result
+                .violations
+                .iter()
+                .any(|v| v.kind == "invalid_structural_pattern")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_structural_exclude_file_patterns_filters_matches() {
+        let db = Database::open_memory().await.unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src/gen.rs");
+        std::fs::create_dir_all(src.parent().unwrap()).unwrap();
+        std::fs::write(
+            &src,
+            "pub fn i() { let v = Some(1); let _ = v.unwrap(); }\n",
+        )
+        .unwrap();
+
+        let case = EvalCase {
+            id: "s4".to_string(),
+            name: "exclude generated files".to_string(),
+            priority: "medium".to_string(),
+            intent: None,
+            checks: crate::eval::golden::EvalChecks {
+                must_contain: Vec::new(),
+                must_not_contain: Vec::new(),
+                file_patterns: vec!["src/**/*.rs".to_string()],
+                exclude_file_patterns: vec!["src/**/gen.rs".to_string()],
+                structural_must_contain: Vec::new(),
+                structural_must_not_contain: vec!["rust:$X.unwrap()".to_string()],
+                diff_only: false,
+                test_command: None,
+            },
+        };
+
+        let result = evaluate_case(&db, &case, dir.path(), None).await.unwrap();
+        assert!(result.passed);
+        assert!(result.violations.is_empty());
+    }
 }
