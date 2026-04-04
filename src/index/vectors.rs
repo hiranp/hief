@@ -166,7 +166,11 @@ pub fn embed_text(text: &str, dimensions: usize) -> Result<Vec<f32>> {
     }
 
     for token in &tokens {
-        accumulate_feature(&mut vector, token, 1.0 + (token.len().min(12) as f32 / 12.0));
+        accumulate_feature(
+            &mut vector,
+            token,
+            1.0 + (token.len().min(12) as f32 / 12.0),
+        );
     }
 
     for trigram in char_ngrams(&normalized, 3) {
@@ -197,11 +201,7 @@ pub async fn init(project_root: &Path, config: &VectorConfig) -> Result<()> {
     }
 
     let db = connect_db(&dir).await?;
-    let table_names = db
-        .table_names()
-        .execute()
-        .await
-        .map_err(map_vector_error)?;
+    let table_names = db.table_names().execute().await.map_err(map_vector_error)?;
     if !table_names.iter().any(|name| name == TABLE_NAME) {
         db.create_empty_table(TABLE_NAME, vector_schema(config.dimensions))
             .execute()
@@ -244,9 +244,8 @@ pub async fn store_embeddings(
     }
     let batch = chunks_to_record_batch(chunks, config.dimensions)?;
     let schema = batch.schema();
-    let reader: Box<dyn arrow_array::RecordBatchReader + Send> = Box::new(
-        RecordBatchIterator::new(vec![Ok(batch)], schema),
-    );
+    let reader: Box<dyn arrow_array::RecordBatchReader + Send> =
+        Box::new(RecordBatchIterator::new(vec![Ok(batch)], schema));
     table
         .add(reader)
         .execute()
@@ -295,7 +294,7 @@ pub async fn search(
 
     vector_query = vector_query.distance_type(distance_type(&config.metric)?);
     if let Some(language) = &query.language {
-        vector_query = vector_query.only_if(&eq_predicate("language", language));
+        vector_query = vector_query.only_if(eq_predicate("language", language));
     }
 
     let batches = vector_query
@@ -561,35 +560,51 @@ fn batch_to_results(batch: &RecordBatch) -> Result<Vec<SemanticResult>> {
     let chunk_ids = batch
         .column_by_name("chunk_id")
         .and_then(|column| column.as_any().downcast_ref::<StringArray>())
-        .ok_or_else(|| HiefError::Other("missing chunk_id column in vector search result".to_string()))?;
+        .ok_or_else(|| {
+            HiefError::Other("missing chunk_id column in vector search result".to_string())
+        })?;
     let file_paths = batch
         .column_by_name("file_path")
         .and_then(|column| column.as_any().downcast_ref::<StringArray>())
-        .ok_or_else(|| HiefError::Other("missing file_path column in vector search result".to_string()))?;
+        .ok_or_else(|| {
+            HiefError::Other("missing file_path column in vector search result".to_string())
+        })?;
     let symbol_names = batch
         .column_by_name("symbol_name")
         .and_then(|column| column.as_any().downcast_ref::<StringArray>())
-        .ok_or_else(|| HiefError::Other("missing symbol_name column in vector search result".to_string()))?;
+        .ok_or_else(|| {
+            HiefError::Other("missing symbol_name column in vector search result".to_string())
+        })?;
     let parent_scopes = batch
         .column_by_name("parent_scope")
         .and_then(|column| column.as_any().downcast_ref::<StringArray>())
-        .ok_or_else(|| HiefError::Other("missing parent_scope column in vector search result".to_string()))?;
+        .ok_or_else(|| {
+            HiefError::Other("missing parent_scope column in vector search result".to_string())
+        })?;
     let languages = batch
         .column_by_name("language")
         .and_then(|column| column.as_any().downcast_ref::<StringArray>())
-        .ok_or_else(|| HiefError::Other("missing language column in vector search result".to_string()))?;
+        .ok_or_else(|| {
+            HiefError::Other("missing language column in vector search result".to_string())
+        })?;
     let contents = batch
         .column_by_name("content")
         .and_then(|column| column.as_any().downcast_ref::<StringArray>())
-        .ok_or_else(|| HiefError::Other("missing content column in vector search result".to_string()))?;
+        .ok_or_else(|| {
+            HiefError::Other("missing content column in vector search result".to_string())
+        })?;
     let start_lines = batch
         .column_by_name("start_line")
         .and_then(|column| column.as_any().downcast_ref::<Int64Array>())
-        .ok_or_else(|| HiefError::Other("missing start_line column in vector search result".to_string()))?;
+        .ok_or_else(|| {
+            HiefError::Other("missing start_line column in vector search result".to_string())
+        })?;
     let end_lines = batch
         .column_by_name("end_line")
         .and_then(|column| column.as_any().downcast_ref::<Int64Array>())
-        .ok_or_else(|| HiefError::Other("missing end_line column in vector search result".to_string()))?;
+        .ok_or_else(|| {
+            HiefError::Other("missing end_line column in vector search result".to_string())
+        })?;
 
     let mut results = Vec::with_capacity(batch.num_rows());
     for row in 0..batch.num_rows() {
@@ -598,7 +613,8 @@ fn batch_to_results(batch: &RecordBatch) -> Result<Vec<SemanticResult>> {
             chunk_id: chunk_ids.value(row).to_string(),
             file_path: file_paths.value(row).to_string(),
             symbol_name: (!symbol_names.is_null(row)).then(|| symbol_names.value(row).to_string()),
-            parent_scope: (!parent_scopes.is_null(row)).then(|| parent_scopes.value(row).to_string()),
+            parent_scope: (!parent_scopes.is_null(row))
+                .then(|| parent_scopes.value(row).to_string()),
             language: languages.value(row).to_string(),
             content: contents.value(row).to_string(),
             start_line: start_lines.value(row) as u32,
@@ -748,13 +764,16 @@ mod tests {
             symbol_name: Some("authenticate_user".to_string()),
             parent_scope: None,
             language: "rust".to_string(),
-            content: "fn authenticate_user(token: &str) -> bool { token.starts_with(\"bearer\") }".to_string(),
+            content: "fn authenticate_user(token: &str) -> bool { token.starts_with(\"bearer\") }"
+                .to_string(),
             start_line: 1,
             end_line: 3,
             vector: embed_text("authenticate user bearer token", config.dimensions).unwrap(),
         }];
 
-        store_embeddings(tmp.path(), &chunks, &config).await.unwrap();
+        store_embeddings(tmp.path(), &chunks, &config)
+            .await
+            .unwrap();
 
         let mut query = SemanticQuery::new("bearer token auth");
         query.top_k = 5;
@@ -795,7 +814,9 @@ mod tests {
             vector: embed_text("legacy cleanup function", config.dimensions).unwrap(),
         }];
 
-        store_embeddings(tmp.path(), &chunks, &config).await.unwrap();
+        store_embeddings(tmp.path(), &chunks, &config)
+            .await
+            .unwrap();
         let removed = prune_deleted(tmp.path(), &["src/old.rs".to_string()], &config)
             .await
             .unwrap();
@@ -839,7 +860,9 @@ mod tests {
                 vector: embed_text("authentication logic", config.dimensions).unwrap(),
             },
         ];
-        store_embeddings(tmp.path(), &chunks, &config).await.unwrap();
+        store_embeddings(tmp.path(), &chunks, &config)
+            .await
+            .unwrap();
 
         let mut query = SemanticQuery::new("authentication logic");
         query.language = Some("python".to_string());

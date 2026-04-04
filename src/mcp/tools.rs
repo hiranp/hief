@@ -671,11 +671,9 @@ impl HiefServer {
             ));
         }
 
-        let query_vector = crate::index::vectors::embed_text(
-            &params.query,
-            self.config.vectors.dimensions,
-        )
-        .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        let query_vector =
+            crate::index::vectors::embed_text(&params.query, self.config.vectors.dimensions)
+                .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         let query = crate::index::vectors::SemanticQuery {
             query: params.query.clone(),
             top_k: self.validate_top_k(params.top_k, 10),

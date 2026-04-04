@@ -211,7 +211,11 @@ fn render_semantic_results(
     } else if results.is_empty() {
         format!("No semantic results found for '{}'\n", query)
     } else {
-        let mut output = format!("Found {} semantic results for '{}':\n\n", results.len(), query);
+        let mut output = format!(
+            "Found {} semantic results for '{}':\n\n",
+            results.len(),
+            query
+        );
         for (index, result) in results.iter().enumerate() {
             let symbol = result.symbol_name.as_deref().unwrap_or("(anonymous)");
             output.push_str(&format!(
