@@ -16,9 +16,11 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@v1
+      uses: dtolnay/rust-toolchain@stable
     - name: Rust Cache
       uses: Swatinem/rust-cache@v2
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
     - name: Run tests
       run: cargo test --all-features
 
@@ -28,7 +30,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@v1
+      uses: dtolnay/rust-toolchain@stable
       with:
         components: rustfmt
     - name: Check formatting
@@ -40,11 +42,13 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@v1
+      uses: dtolnay/rust-toolchain@stable
       with:
         components: clippy
     - name: Rust Cache
       uses: Swatinem/rust-cache@v2
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
     - name: Run clippy
       run: cargo clippy --all-targets --all-features -- -D warnings
 
@@ -55,9 +59,11 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@v1
+      uses: dtolnay/rust-toolchain@stable
     - name: Rust Cache
       uses: Swatinem/rust-cache@v2
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
     - name: Run guarded evaluation
       run: |
         if ls .hief/golden/*.toml >/dev/null 2>&1; then

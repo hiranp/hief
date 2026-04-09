@@ -47,6 +47,9 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+
       - name: Install Dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
