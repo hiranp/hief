@@ -48,3 +48,4 @@ yarn-error.log*
 dev-docs/
 .hief/hief.db
 .hief/hief.db-*
+ACTIVE_CONTEXT.md
