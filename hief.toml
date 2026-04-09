@@ -1,7 +1,7 @@
 # HIEF Configuration
 
 [hief]
-version = "0.2.7"
+version = "0.2.8"
 
 [index]
 chunk_strategy = "ast"      # ast | fixed

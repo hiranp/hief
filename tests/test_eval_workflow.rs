@@ -74,7 +74,7 @@ fn test_eval_run_persists_history_and_config_loads() {
         &root.join("hief.toml"),
         r#"
 [hief]
-version = "0.2.7"
+version = "0.2.8"
 "#,
     );
 
@@ -147,7 +147,7 @@ fn test_eval_run_ci_returns_nonzero_on_failure() {
         &root.join("hief.toml"),
         r#"
 [hief]
-version = "0.2.7"
+version = "0.2.8"
 "#,
     );
 
@@ -195,7 +195,7 @@ fn test_diff_only_scopes_to_changed_files_since_last_eval() {
         &root.join("hief.toml"),
         r#"
 [hief]
-version = "0.2.7"
+version = "0.2.8"
 "#,
     );
 
