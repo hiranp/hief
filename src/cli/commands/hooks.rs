@@ -9,11 +9,14 @@ use crate::errors::Result;
 // ---------------------------------------------------------------------------
 
 const POST_COMMIT_HOOK: &str = r#"#!/bin/sh
-# HIEF auto-index hook — installed by `hief hooks install`
-# HIEF_HOOK_VERSION=2
-# Incrementally updates the code index after every commit.
+# HIEF auto-index + drift check hook — installed by `hief hooks install`
+# HIEF_HOOK_VERSION=3
+# After every commit: incrementally reindex and check for documentation drift.
 if command -v hief >/dev/null 2>&1; then
+    # Reindex in background (non-blocking)
     hief index build --json >/dev/null 2>&1 &
+    # Drift check — only prints when score < 100
+    hief check --quiet 2>/dev/null | grep -v "100/100" || true
 fi
 "#;
 

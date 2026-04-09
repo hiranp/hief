@@ -46,7 +46,7 @@ HIEF Server
   ├── INDEX:   AST-aware search (keyword + structural + semantic)
   ├── INTENTS: Lightweight task coordination + provenance
   ├── EVAL:    Golden-set quality guardrails
-  └── DOCS:    Documentation scaffolding + template engine
+  └── DOCS:    Documentation scaffolding + drift/sync workflows
 ```
 
 ## Features
@@ -76,6 +76,11 @@ HIEF Server
 
 ### 📝 Documentation Scaffolding — *"How do we start?"*
 
+- **Spec-Driven Development (SDD)**: Scaffold new feature specs from embedded or custom templates.
+- **Harness-Driven Development (HDD)**: Generate test harnesses and simulation playbooks.
+- **Auto-population**: Templates can automatically inject project name, index statistics, and more.
+- **Template Overrides**: Customize any default template by placing an override in `.hief/templates/`.
+
 ### 🧠 Custom Skills & Dynamic Tools — *"Teach the agent new workflows"*
 
 - Place any markdown/YAML recipe in `.hief/skills/` and HIEF will expose it
@@ -84,12 +89,6 @@ HIEF Server
 - The tool returns the full file contents when invoked, allowing agents to
   load instructions on demand and follow project‑specific procedures.
 - Skills can be listed (`hief skills list`) and inspected (`hief skills show`).
-
-
-- **Spec-Driven Development (SDD)**: Scaffold new feature specs from embedded or custom templates.
-- **Harness-Driven Development (HDD)**: Generate test harnesses and simulation playbooks.
-- **Auto-population**: Templates can automatically inject project name, index statistics, and more.
-- **Template Overrides**: Customize any default template by placing an override in `.hief/templates/`.
 
 ## Getting Started
 
@@ -164,15 +163,29 @@ HIEF exposes the following tools via the [Model Context Protocol](https://modelc
 | `list_intents` | List intents filtered by status and/or kind |
 | `update_intent` | Update intent status or assignee (transitions are validated) |
 | `ready_intents` | Show intents whose all dependencies are satisfied |
+| `recover_stale_intents` | Recover stale `in_progress` intents past timeout back to `approved` |
+| `get_transitive_deps` | Resolve recursive dependency chain for an intent |
+| `find_callers` | Find call-sites using structural patterns |
 | **Evaluation** | |
 | `run_evaluation` | Run golden set quality checks against the indexed codebase |
+| `run_test_suite` | Run local test commands with timeout and structured pass/fail summaries |
+| `judge_with_local_model` | Run local rubric judging via `ollama` or `custom` backend |
 | `get_eval_scores` | Score history for a golden set |
+| `check_drift` | Run drift checkers and return a 0-100 scaffold synchronization score |
 | **Context** | |
 | `get_project_context` | Index stats + active intents + ready intents snapshot |
 | `get_conventions` | Machine-readable project rules from `.hief/conventions.toml` |
 | `get_project_health` | Latest eval scores, regressions, and warnings |
 | `get_session_context` | Files accessed this session + co-access graph suggestions |
 | `related_files` | Files frequently accessed alongside a given file (co-access graph) |
+| `list_context_files` | List `.hief/context/` files and metadata |
+| `read_context_file` | Read a named `.hief/context/` file |
+| `write_context_file` | Create/update a `.hief/context/` file |
+| `get_routing_table` | Fetch task-to-context routing from `.hief/router.toml` |
+| **Patterns** | |
+| `list_patterns` | List project patterns in `.hief/patterns/` |
+| `get_pattern` | Fetch full markdown for a named pattern |
+| `create_pattern` | Create/update a pattern and auto-sync pattern index |
 | **Skills** | |
 | `list_skills` | List all skill recipe files in `.hief/skills/` |
 | `get_skill` | Fetch the contents of a named skill file |
@@ -205,10 +218,17 @@ hief index search "query"                    # Search indexed code
 hief index structural '$X.unwrap()' -l rust  # AST pattern search
 hief serve                                   # Start MCP server (stdio)
 hief serve --transport http --port 3100      # Start MCP server (HTTP)
+hief check                                   # Run drift checker suite
+hief sync --backend none                     # Generate targeted sync prompt
+hief sync --backend codex --apply            # Generate prompt + run fixer backend
+hief watch --agent local-a                   # Watch filesystem + conflict warnings
+hief patterns list                           # List project patterns
+hief patterns create fix-api --title "Fix API"  # Create/update a pattern
 hief eval run                                # Run golden set evaluation
 hief eval report                             # Show eval score history
 hief doctor --fix                            # Health check + auto-fix
 hief hooks install                           # Install git hooks for auto-indexing
+hief hooks watch                             # Alias for hooks install
 hief docs init                               # Initialize standard docs structure
 hief docs generate spec --name "feature"     # Scaffold a new feature spec
 hief docs generate harness --name "feature"  # Scaffold a new test harness
@@ -223,14 +243,19 @@ hief skills show create_database_migration    # Print a specific skill
 .hief/
 ├── hief.db              # SQLite database (FTS5 index, intents, eval scores)
 ├── vectors/             # LanceDB directory (semantic embeddings)
-└── conventions.toml     # Machine-readable project rules
+├── conventions.toml     # Machine-readable project rules
+├── context/             # Agent-maintained context docs (architecture/setup/etc.)
+├── patterns/            # Project-specific task patterns + INDEX.md
+└── router.toml          # Task-to-context routing table
 
 golden/
 └── *.toml               # Golden set evaluation criteria
 
 src/
 ├── cli/                 # CLI commands (clap)
+├── context/             # Context file read/write/list logic
 ├── docs/                # Doc scaffolding engine (MiniJinja templates)
+├── drift/               # Drift checkers + scoring
 ├── eval/                # Golden set evaluation engine
 ├── graph/               # Intent dependency graph (DAG)
 ├── index/               # AST-aware code indexing + search
@@ -242,6 +267,9 @@ src/
 ├── mcp/                 # MCP server (rmcp)
 │   ├── tools.rs         # Tool implementations
 │   └── resources.rs     # Resource definitions
+├── patterns/            # Pattern library and index sync
+├── router/              # Session routing table loader/defaults
+├── watcher/             # Filesystem watcher + conflict warnings
 ├── config.rs            # TOML configuration (hief.toml)
 ├── db.rs                # Database initialization (libsql)
 ├── errors.rs            # Error types (thiserror)

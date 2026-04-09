@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- MCP tool `run_test_suite` for deterministic local test execution with command selection, timeout controls, and structured pass/fail summaries.
+- MCP tool `judge_with_local_model` with pluggable local backends (`ollama` or `custom`) and structured rubric parsing.
+- MCP tool `reload_skills` is now explicitly surfaced in the MCP router for hot-reload workflows.
+
+### Changed
+- Documentation drift and agent protocol docs updated to reflect expanded MCP surface (drift/context/pattern/routing/test/judge workflows).
+- Documentation now aligns with strict verification workflow (`fmt`, `clippy -D warnings`, `test`, guarded eval).
+
+### Fixed
+- Clippy `-D warnings` blockers in test-module placement/order (`items_after_test_module`, misplaced test blocks).
+- Golden-set `no unwrap` structural guardrails now pass consistently in affected test modules.
+
 ## [0.2.7] - 2026-03-12
 
 ### Added

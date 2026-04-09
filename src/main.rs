@@ -7,14 +7,19 @@
 
 mod cli;
 mod config;
+mod context;
 mod db;
 mod docs;
+mod drift;
 mod errors;
 mod eval;
 mod graph;
 mod index;
 mod mcp;
+mod patterns;
+mod router;
 mod skills;
+mod watcher;
 
 use std::path::PathBuf;
 use std::process;
@@ -23,7 +28,8 @@ use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
 use cli::{
-    Cli, Commands, DocsCmd, EvalCmd, GoldenCmd, GraphCmd, HooksCmd, IndexCmd, McpCmd, SkillsCmd,
+    Cli, Commands, DocsCmd, EvalCmd, GoldenCmd, GraphCmd, HooksCmd, IndexCmd, McpCmd, PatternsCmd,
+    SkillsCmd,
 };
 use config::Config;
 use db::Database;
@@ -209,12 +215,71 @@ async fn run(cli: Cli, project_root: PathBuf) -> anyhow::Result<()> {
             cli::commands::doctor(&db, &project_root, &config_path, &config, fix, json).await?;
         }
 
+        Commands::Check { quiet } => {
+            let config = Config::load(&config_path)?;
+            let exit_code = cli::commands::run_check(&project_root, &config, quiet, json).await?;
+            if exit_code != 0 {
+                process::exit(exit_code);
+            }
+        }
+
+        Commands::Patterns(cmd) => match cmd {
+            PatternsCmd::List => {
+                cli::commands::patterns_list(&project_root, json)?;
+            }
+            PatternsCmd::Show { name } => {
+                cli::commands::patterns_show(&project_root, &name, json)?;
+            }
+            PatternsCmd::Create {
+                name,
+                title,
+                content,
+            } => {
+                cli::commands::patterns_create(
+                    &project_root,
+                    &name,
+                    title.as_deref(),
+                    content.as_deref(),
+                    json,
+                )?;
+            }
+            PatternsCmd::Sync => {
+                cli::commands::patterns_sync(&project_root, json)?;
+            }
+        },
+
+        Commands::Sync { backend, apply } => {
+            let config = Config::load(&config_path)?;
+            let exit_code =
+                cli::commands::run_sync(&project_root, &config, backend.as_deref(), apply, json)
+                    .await?;
+            if exit_code != 0 {
+                process::exit(exit_code);
+            }
+        }
+
+        Commands::Watch {
+            agent,
+            debounce_ms,
+            conflict_window_secs,
+        } => {
+            let config = Config::load(&config_path)?;
+            cli::commands::run_watch(
+                &project_root,
+                &config,
+                agent.as_deref(),
+                debounce_ms,
+                conflict_window_secs,
+                json,
+            )?;
+        }
+
         Commands::Upgrade => {
             cli::commands::upgrade(&project_root, &config_path, json).await?;
         }
 
         Commands::Hooks(cmd) => match cmd {
-            HooksCmd::Install => {
+            HooksCmd::Install | HooksCmd::Watch => {
                 cli::commands::hooks_install(&project_root, json)?;
             }
             HooksCmd::Uninstall => {

@@ -39,12 +39,24 @@ Keep the server running; agents connect here for all tooling operations.
 
 ### Eval (Quality Guardrails)
 * `run_evaluation`: Run golden set evaluation against the codebase.
+* `run_test_suite`: Run local tests with timeout and structured pass/fail output.
+* `judge_with_local_model`: Run rubric-based local judging (`ollama` or `custom` backend).
 * `get_eval_scores`: Score history for a golden set.
+* `check_drift`: Run drift checkers and return scaffold sync score/issues.
 
 ### Context (Proactive)
 * `get_project_context`: High-level overview (index + intents + health).
 * `get_conventions`: Machine-readable project rules from `.hief/conventions.toml`.
 * `get_project_health`: Eval scores, regressions, and warnings.
+* `list_context_files`: List available `.hief/context/` documents.
+* `read_context_file`: Read a context document by name.
+* `write_context_file`: Update or create context docs during GROW.
+* `get_routing_table`: Load task routing from `.hief/router.toml`.
+
+### Patterns (Project-Specific Guides)
+* `list_patterns`: List patterns under `.hief/patterns/`.
+* `get_pattern`: Read a named pattern file.
+* `create_pattern`: Create/update a pattern and regenerate index.
 
 ### Skills (Executable Conventions)
 * `list_skills`: List all skill recipe files in `.hief/skills/`.
@@ -62,6 +74,7 @@ Call: get_project_context    → Understand project state
 Call: get_conventions        → Learn the project's rules
 Call: get_project_health     → Check for regressions
 Call: get_session_context    → Resume context from prior session (pass your session_id)
+Call: get_routing_table      → Load only context/patterns relevant to current task
 ```
 
 ### 2. Search (Find Context)
@@ -87,6 +100,8 @@ to self-check for anti-patterns before submitting.
 ### 5. Verify (After Changes)
 ```
 Call: run_evaluation         → Check golden set scores
+Call: run_test_suite         → Verify local test suite status
+Call: check_drift            → Verify scaffold/context drift is under control
 Call: get_eval_scores        → Verify no regressions
 Call: update_intent          → Set status to in_review
 ```

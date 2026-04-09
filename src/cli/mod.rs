@@ -46,6 +46,40 @@ pub enum Commands {
     #[command(subcommand)]
     Eval(EvalCmd),
 
+    /// Documentation drift detection — validate scaffold against codebase (0–100 score)
+    Check {
+        /// Only print the one-line score summary
+        #[arg(long)]
+        quiet: bool,
+    },
+
+    /// Pattern library management (project-scoped task guides)
+    #[command(subcommand)]
+    Patterns(PatternsCmd),
+
+    /// Repair scaffold drift using targeted prompts and optional fixer backend
+    Sync {
+        /// Backend to invoke: none, claude, codex, or custom
+        #[arg(long)]
+        backend: Option<String>,
+        /// Execute the selected backend after generating the prompt
+        #[arg(long)]
+        apply: bool,
+    },
+
+    /// Watch filesystem changes and emit implicit conflict warnings
+    Watch {
+        /// Agent/session identifier used for conflict attribution
+        #[arg(long)]
+        agent: Option<String>,
+        /// Debounce window for duplicate file events
+        #[arg(long)]
+        debounce_ms: Option<u64>,
+        /// Conflict window in seconds for cross-agent file contention
+        #[arg(long)]
+        conflict_window_secs: Option<u64>,
+    },
+
     /// Health checks: index staleness, graph integrity, eval drift
     Doctor {
         /// Attempt to auto-fix detected issues
@@ -205,13 +239,39 @@ pub enum GoldenCmd {
 }
 
 #[derive(Subcommand)]
+pub enum PatternsCmd {
+    /// List all project-scoped patterns in .hief/patterns/
+    List,
+    /// Show a pattern's full content
+    Show {
+        /// Pattern name (e.g. add-api-client)
+        name: String,
+    },
+    /// Create or update a pattern file (reads content from stdin or --content)
+    Create {
+        /// Pattern name (e.g. add-api-client)
+        name: String,
+        /// Pattern title (used as # heading if content is empty)
+        #[arg(short, long)]
+        title: Option<String>,
+        /// Inline markdown content (use stdin for longer content)
+        #[arg(long)]
+        content: Option<String>,
+    },
+    /// Regenerate .hief/patterns/INDEX.md from files on disk
+    Sync,
+}
+
+#[derive(Subcommand)]
 pub enum HooksCmd {
-    /// Install git hooks for auto-indexing and intent sync
+    /// Install git hooks for auto-indexing, drift checking, and eval
     Install,
     /// Remove HIEF git hooks
     Uninstall,
     /// Show current hook status
     Status,
+    /// Alias for Install (install hooks and enable watch mode)
+    Watch,
 }
 
 #[derive(Subcommand)]

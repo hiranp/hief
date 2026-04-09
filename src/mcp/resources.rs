@@ -71,7 +71,7 @@ pub struct IntentCounts {
 
 /// Project health resource content.
 ///
-/// Provides the latest evaluation scores and any regressions.
+/// Provides the latest evaluation scores, drift score, and any regressions.
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ProjectHealth {
     /// Latest eval run results, one per golden set.
@@ -80,6 +80,12 @@ pub struct ProjectHealth {
     pub has_regressions: bool,
     /// Warnings from doctor checks.
     pub warnings: Vec<String>,
+    /// Drift score 0–100 (100 = scaffold perfectly in sync).
+    /// None when drift check could not run (e.g. no conventions.toml).
+    pub drift_score: Option<u8>,
+    /// Drift issues count by severity.
+    pub drift_errors: usize,
+    pub drift_warnings: usize,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -309,10 +315,28 @@ pub async fn get_project_health(
         warnings.push("No golden sets found — evaluation cannot run".to_string());
     }
 
+    // Run drift detection (zero-token, no AI)
+    let drift_report = crate::drift::run(project_root, config).ok();
+    let drift_score = drift_report.as_ref().map(|r| r.score);
+    let drift_errors = drift_report.as_ref().map(|r| r.error_count).unwrap_or(0);
+    let drift_warnings = drift_report.as_ref().map(|r| r.warning_count).unwrap_or(0);
+
+    // Escalate critical drift issues into warnings (visible at a glance)
+    if drift_errors > 0 {
+        warnings.push(format!(
+            "Drift score {}/100 — {} error(s) detected. Run `hief check` for details.",
+            drift_score.unwrap_or(0),
+            drift_errors,
+        ));
+    }
+
     Ok(ProjectHealth {
         eval_scores,
         has_regressions,
         warnings,
+        drift_score,
+        drift_errors,
+        drift_warnings,
     })
 }
 

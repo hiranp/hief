@@ -2,6 +2,8 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::process::Stdio;
+use std::time::Duration;
 
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::{Json, Parameters};
@@ -10,6 +12,7 @@ use rmcp::schemars;
 use rmcp::{ErrorData, ServerHandler, tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use tokio::io::AsyncReadExt;
 
 use super::resources;
 use super::skills::SkillRegistry;
@@ -268,6 +271,97 @@ pub struct FindCallersParams {
     pub top_k: Option<usize>,
 }
 
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct ReadContextFileParams {
+    /// Context file name (with or without .md extension, e.g. "architecture")
+    pub name: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct WriteContextFileParams {
+    /// Context file name (without path, e.g. "architecture" or "my-notes")
+    pub name: String,
+    /// Markdown content to write
+    pub content: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct GetPatternParams {
+    /// Pattern name (without .md extension)
+    pub name: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct CreatePatternParams {
+    /// Pattern name — alphanumerics, hyphens, underscores (e.g. "add-api-client")
+    pub name: String,
+    /// One-line title describing the pattern
+    pub title: Option<String>,
+    /// Full markdown content. If omitted, a stub template is created.
+    pub content: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct RunTestSuiteParams {
+    /// Command to execute (shell string). Defaults to `cargo test --all-features`.
+    pub command: Option<String>,
+    /// Timeout in seconds. Defaults to 600.
+    pub timeout_secs: Option<u64>,
+    /// Optional working directory relative to project root.
+    pub working_dir: Option<String>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct RunTestSuiteResponse {
+    pub command: String,
+    pub working_dir: String,
+    pub timeout_secs: u64,
+    pub timed_out: bool,
+    pub passed: bool,
+    pub exit_code: Option<i32>,
+    pub summary_lines: Vec<String>,
+    pub stdout_tail: Vec<String>,
+    pub stderr_tail: Vec<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct JudgeWithLocalModelParams {
+    /// The candidate output, patch summary, or artifact to evaluate.
+    pub prompt: String,
+    /// Optional rubric to apply during evaluation.
+    pub rubric: Option<String>,
+    /// Backend to run: `ollama` or `custom`.
+    pub backend: Option<String>,
+    /// Model name for ollama backend. Defaults to `llama3.1:8b`.
+    pub model: Option<String>,
+    /// Custom shell command for backend=custom.
+    pub command: Option<String>,
+    /// Timeout in seconds. Defaults to 120.
+    pub timeout_secs: Option<u64>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct JudgeParsed {
+    pub score_0_to_100: Option<f64>,
+    pub verdict: Option<String>,
+    pub rationale: Option<String>,
+    pub risks: Vec<String>,
+    pub suggestions: Vec<String>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct JudgeWithLocalModelResponse {
+    pub backend: String,
+    pub model: Option<String>,
+    pub command: String,
+    pub timeout_secs: u64,
+    pub timed_out: bool,
+    pub exit_code: Option<i32>,
+    pub parsed: Option<JudgeParsed>,
+    pub raw_output: String,
+    pub stderr_tail: Vec<String>,
+}
+
 #[derive(Serialize, JsonSchema)]
 pub struct FindCallersResponse {
     pub function_name: String,
@@ -480,6 +574,136 @@ impl HiefServer {
         .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
         Ok(Json(ObjectResponse { result: results }))
+    }
+
+    #[tool(
+        name = "run_test_suite",
+        description = "Run a local test command with timeout and return structured pass/fail output. Defaults to 'cargo test --all-features'."
+    )]
+    async fn run_test_suite(
+        &self,
+        Parameters(params): Parameters<RunTestSuiteParams>,
+    ) -> Result<Json<ObjectResponse<RunTestSuiteResponse>>, ErrorData> {
+        let command = params
+            .command
+            .unwrap_or_else(|| "cargo test --all-features".to_string());
+        let timeout_secs = params.timeout_secs.unwrap_or(600).clamp(1, 3600);
+
+        let working_dir = match params.working_dir {
+            Some(dir) => self.validate_path(&dir)?,
+            None => self.project_root.clone(),
+        };
+
+        let outcome = run_shell_command(&command, &working_dir, timeout_secs)
+            .await
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
+        let combined = format!("{}\n{}", outcome.stdout, outcome.stderr);
+        let summary_lines = collect_summary_lines(&combined);
+        let response = RunTestSuiteResponse {
+            command,
+            working_dir: working_dir.display().to_string(),
+            timeout_secs,
+            timed_out: outcome.timed_out,
+            passed: !outcome.timed_out && outcome.exit_code == Some(0),
+            exit_code: outcome.exit_code,
+            summary_lines,
+            stdout_tail: tail_lines(&outcome.stdout, 80),
+            stderr_tail: tail_lines(&outcome.stderr, 80),
+        };
+
+        Ok(Json(ObjectResponse { result: response }))
+    }
+
+    #[tool(
+        name = "judge_with_local_model",
+        description = "Run a local judge backend (ollama or custom) and return structured rubric scoring plus raw output."
+    )]
+    async fn judge_with_local_model(
+        &self,
+        Parameters(params): Parameters<JudgeWithLocalModelParams>,
+    ) -> Result<Json<ObjectResponse<JudgeWithLocalModelResponse>>, ErrorData> {
+        if params.prompt.trim().is_empty() {
+            return Err(ErrorData::invalid_params(
+                "prompt must not be empty".to_string(),
+                None,
+            ));
+        }
+
+        let backend = params
+            .backend
+            .unwrap_or_else(|| "ollama".to_string())
+            .to_lowercase();
+        let timeout_secs = params.timeout_secs.unwrap_or(120).clamp(1, 1800);
+
+        let rubric = params.rubric.unwrap_or_else(|| {
+            "Score from 0-100. Evaluate correctness, risk, completeness, and testability."
+                .to_string()
+        });
+
+        let judge_prompt = build_judge_prompt(&rubric, &params.prompt);
+
+        let (command_label, model, outcome) = match backend.as_str() {
+            "ollama" => {
+                let model = params.model.unwrap_or_else(|| "llama3.1:8b".to_string());
+                let command_label = format!("ollama run {} <judge-prompt>", model);
+                let outcome = run_command_with_input(
+                    "ollama",
+                    &["run", &model],
+                    Some(&judge_prompt),
+                    &self.project_root,
+                    timeout_secs,
+                    &[],
+                )
+                .await
+                .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+                (command_label, Some(model), outcome)
+            }
+            "custom" => {
+                let custom = params.command.ok_or_else(|| {
+                    ErrorData::invalid_params(
+                        "command is required when backend=custom".to_string(),
+                        None,
+                    )
+                })?;
+                let outcome = run_command_with_input(
+                    "sh",
+                    &["-c", &custom],
+                    None,
+                    &self.project_root,
+                    timeout_secs,
+                    &[
+                        ("HIEF_JUDGE_PROMPT", judge_prompt.as_str()),
+                        ("HIEF_JUDGE_RUBRIC", rubric.as_str()),
+                        ("HIEF_JUDGE_INPUT", params.prompt.as_str()),
+                    ],
+                )
+                .await
+                .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+                (custom, None, outcome)
+            }
+            other => {
+                return Err(ErrorData::invalid_params(
+                    format!("unsupported backend '{}'; use ollama|custom", other),
+                    None,
+                ));
+            }
+        };
+
+        let parsed = parse_judge_output(&outcome.stdout);
+        let response = JudgeWithLocalModelResponse {
+            backend,
+            model,
+            command: command_label,
+            timeout_secs,
+            timed_out: outcome.timed_out,
+            exit_code: outcome.exit_code,
+            parsed,
+            raw_output: outcome.stdout,
+            stderr_tail: tail_lines(&outcome.stderr, 80),
+        };
+
+        Ok(Json(ObjectResponse { result: response }))
     }
 
     #[tool(
@@ -821,14 +1045,143 @@ impl HiefServer {
     }
 
     // ------------------------------------------------------------------
+    // Drift detection
+    // ------------------------------------------------------------------
+
+    #[tool(
+        name = "check_drift",
+        description = "Run all documentation drift checkers and return a 0-100 score with issues. Score 100 = perfectly in sync; deductions for missing context files (-10), stale files (-3), and missing patterns index (-1). CI-safe: no side effects."
+    )]
+    async fn check_drift(
+        &self,
+    ) -> Result<Json<ObjectResponse<crate::drift::DriftReport>>, ErrorData> {
+        let report = crate::drift::run(&self.project_root, &self.config)
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        Ok(Json(ObjectResponse { result: report }))
+    }
+
+    // ------------------------------------------------------------------
+    // Context layer (.hief/context/)
+    // ------------------------------------------------------------------
+
+    #[tool(
+        name = "list_context_files",
+        description = "List all context files in .hief/context/. Returns name, title, path, size, and last-modified timestamp. Use before read_context_file to discover available files."
+    )]
+    async fn list_context_files(
+        &self,
+    ) -> Result<Json<ObjectResponse<Vec<crate::context::ContextFile>>>, ErrorData> {
+        let files = crate::context::list_context_files(&self.project_root);
+        Ok(Json(ObjectResponse { result: files }))
+    }
+
+    #[tool(
+        name = "read_context_file",
+        description = "Read a context file from .hief/context/ by name (with or without .md). Returns full markdown content."
+    )]
+    async fn read_context_file(
+        &self,
+        Parameters(params): Parameters<ReadContextFileParams>,
+    ) -> Result<Json<ObjectResponse<String>>, ErrorData> {
+        let content = crate::context::read_context_file(&self.project_root, &params.name)
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        Ok(Json(ObjectResponse { result: content }))
+    }
+
+    #[tool(
+        name = "write_context_file",
+        description = "Write or overwrite a context file in .hief/context/. Use for the GROW step: update architecture.md or decisions.md after completing a task. Creates directory if needed."
+    )]
+    async fn write_context_file(
+        &self,
+        Parameters(params): Parameters<WriteContextFileParams>,
+    ) -> Result<Json<ObjectResponse<String>>, ErrorData> {
+        crate::context::write_context_file(&self.project_root, &params.name, &params.content)
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        Ok(Json(ObjectResponse {
+            result: format!(
+                "written: .hief/context/{}.md",
+                params.name.trim_end_matches(".md")
+            ),
+        }))
+    }
+
+    // ------------------------------------------------------------------
+    // Pattern library (.hief/patterns/)
+    // ------------------------------------------------------------------
+
+    #[tool(
+        name = "list_patterns",
+        description = "List all project patterns in .hief/patterns/. Patterns capture project-specific task guides with gotchas and verify checklists."
+    )]
+    async fn list_patterns(
+        &self,
+    ) -> Result<Json<ObjectResponse<Vec<crate::patterns::PatternSummary>>>, ErrorData> {
+        let patterns = crate::patterns::list_patterns(&self.project_root);
+        Ok(Json(ObjectResponse { result: patterns }))
+    }
+
+    #[tool(
+        name = "get_pattern",
+        description = "Read the full markdown content of a named project pattern (name without .md extension)."
+    )]
+    async fn get_pattern(
+        &self,
+        Parameters(params): Parameters<GetPatternParams>,
+    ) -> Result<Json<ObjectResponse<String>>, ErrorData> {
+        let content = crate::patterns::get_pattern(&self.project_root, &params.name)
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        Ok(Json(ObjectResponse { result: content }))
+    }
+
+    #[tool(
+        name = "create_pattern",
+        description = "Create a new project pattern in .hief/patterns/. Auto-updates INDEX.md. Supply a kebab-case name, optional title, and optional markdown content (stub template created if omitted)."
+    )]
+    async fn create_pattern(
+        &self,
+        Parameters(params): Parameters<CreatePatternParams>,
+    ) -> Result<Json<ObjectResponse<String>>, ErrorData> {
+        let title = params.title.as_deref().unwrap_or(&params.name);
+        let content = params.content.clone().unwrap_or_else(|| {
+            format!(
+                "# Pattern: {}\n\n## Steps\n\n1. <!-- TODO -->\n\n## Gotchas\n\n- <!-- TODO -->\n\n## Verify\n\n- [ ] <!-- TODO -->\n",
+                title
+            )
+        });
+        crate::patterns::create_pattern(&self.project_root, &params.name, &content)
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        Ok(Json(ObjectResponse {
+            result: format!(
+                "created: .hief/patterns/{}.md",
+                params.name.trim_end_matches(".md")
+            ),
+        }))
+    }
+
+    // ------------------------------------------------------------------
+    // Routing table (.hief/router.toml)
+    // ------------------------------------------------------------------
+
+    #[tool(
+        name = "get_routing_table",
+        description = "Get the session routing table from .hief/router.toml. Maps task types to context files and patterns to load. Returns built-in defaults if no router.toml exists."
+    )]
+    async fn get_routing_table(
+        &self,
+    ) -> Result<Json<ObjectResponse<crate::router::RoutingTable>>, ErrorData> {
+        let table = crate::router::load_routing_table(&self.project_root)
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        Ok(Json(ObjectResponse { result: table }))
+    }
+
+    // ------------------------------------------------------------------
     // Skills management
     // ------------------------------------------------------------------
 
     #[tool(
         name = "reload_skills",
-        description = "Hot-reload skill files from .hief/skills/ without restarting the server. \
-                       Content changes to existing skills are reflected immediately. \
-                       Returns the updated list of loaded skill tool-names."
+        description = "Hot-reload skill files from disk so newly added or updated skills are available without restarting the MCP server."
     )]
     async fn reload_skills(&self) -> Result<Json<ObjectResponse<ReloadSkillsResponse>>, ErrorData> {
         self.skills
@@ -872,6 +1225,194 @@ impl HiefServer {
     }
 } // end #[tool_router] impl HiefServer
 
+#[derive(Debug)]
+struct CommandOutcome {
+    stdout: String,
+    stderr: String,
+    exit_code: Option<i32>,
+    timed_out: bool,
+}
+
+async fn run_shell_command(
+    command: &str,
+    cwd: &std::path::Path,
+    timeout_secs: u64,
+) -> crate::errors::Result<CommandOutcome> {
+    run_command_with_input("sh", &["-c", command], None, cwd, timeout_secs, &[]).await
+}
+
+async fn run_command_with_input(
+    bin: &str,
+    args: &[&str],
+    stdin_input: Option<&str>,
+    cwd: &std::path::Path,
+    timeout_secs: u64,
+    envs: &[(&str, &str)],
+) -> crate::errors::Result<CommandOutcome> {
+    let mut cmd = tokio::process::Command::new(bin);
+    cmd.args(args)
+        .current_dir(cwd)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+
+    if stdin_input.is_some() {
+        cmd.stdin(Stdio::piped());
+    }
+
+    for (k, v) in envs {
+        cmd.env(k, v);
+    }
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| crate::errors::HiefError::Other(format!("spawn failed: {}", e)))?;
+
+    if let Some(input) = stdin_input
+        && let Some(mut stdin) = child.stdin.take()
+    {
+        use tokio::io::AsyncWriteExt;
+        stdin
+            .write_all(input.as_bytes())
+            .await
+            .map_err(|e| crate::errors::HiefError::Other(format!("stdin write failed: {}", e)))?;
+    }
+
+    let stdout_handle = child.stdout.take().map(|mut stdout| {
+        tokio::spawn(async move {
+            let mut buf = Vec::new();
+            stdout.read_to_end(&mut buf).await.map(|_| buf)
+        })
+    });
+
+    let stderr_handle = child.stderr.take().map(|mut stderr| {
+        tokio::spawn(async move {
+            let mut buf = Vec::new();
+            stderr.read_to_end(&mut buf).await.map(|_| buf)
+        })
+    });
+
+    let status_result = tokio::time::timeout(Duration::from_secs(timeout_secs), child.wait()).await;
+
+    let (timed_out, exit_code) = match status_result {
+        Ok(status_res) => {
+            let status = status_res
+                .map_err(|e| crate::errors::HiefError::Other(format!("wait failed: {}", e)))?;
+            (false, status.code())
+        }
+        Err(_) => {
+            let _ = child.kill().await;
+            (true, None)
+        }
+    };
+
+    let stdout = match stdout_handle {
+        Some(handle) => match handle.await {
+            Ok(Ok(bytes)) => String::from_utf8_lossy(&bytes).to_string(),
+            Ok(Err(e)) => format!("<failed to read stdout: {}>", e),
+            Err(e) => format!("<stdout task failed: {}>", e),
+        },
+        None => String::new(),
+    };
+
+    let stderr = match stderr_handle {
+        Some(handle) => match handle.await {
+            Ok(Ok(bytes)) => String::from_utf8_lossy(&bytes).to_string(),
+            Ok(Err(e)) => format!("<failed to read stderr: {}>", e),
+            Err(e) => format!("<stderr task failed: {}>", e),
+        },
+        None => String::new(),
+    };
+
+    Ok(CommandOutcome {
+        stdout,
+        stderr,
+        exit_code,
+        timed_out,
+    })
+}
+
+fn collect_summary_lines(output: &str) -> Vec<String> {
+    output
+        .lines()
+        .filter(|line| line.contains("test result:") || line.starts_with("running "))
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn tail_lines(text: &str, max_lines: usize) -> Vec<String> {
+    let lines: Vec<String> = text.lines().map(ToOwned::to_owned).collect();
+    if lines.len() <= max_lines {
+        lines
+    } else {
+        lines[lines.len() - max_lines..].to_vec()
+    }
+}
+
+fn build_judge_prompt(rubric: &str, input: &str) -> String {
+    format!(
+        "You are a strict software quality judge.\\n\\nRubric:\\n{}\\n\\nInput to judge:\\n{}\\n\\nReturn JSON only with keys: score_0_to_100 (number), verdict (string), rationale (string), risks (array of strings), suggestions (array of strings).",
+        rubric, input
+    )
+}
+
+fn parse_judge_output(raw: &str) -> Option<JudgeParsed> {
+    let value = parse_json_from_maybe_wrapped_text(raw)?;
+
+    let score = value
+        .get("score_0_to_100")
+        .and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|i| i as f64)));
+    let verdict = value
+        .get("verdict")
+        .and_then(serde_json::Value::as_str)
+        .map(ToOwned::to_owned);
+    let rationale = value
+        .get("rationale")
+        .and_then(serde_json::Value::as_str)
+        .map(ToOwned::to_owned);
+    let risks = value
+        .get("risks")
+        .and_then(serde_json::Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(ToOwned::to_owned)
+                .collect::<Vec<String>>()
+        })
+        .unwrap_or_default();
+    let suggestions = value
+        .get("suggestions")
+        .and_then(serde_json::Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(ToOwned::to_owned)
+                .collect::<Vec<String>>()
+        })
+        .unwrap_or_default();
+
+    Some(JudgeParsed {
+        score_0_to_100: score,
+        verdict,
+        rationale,
+        risks,
+        suggestions,
+    })
+}
+
+fn parse_json_from_maybe_wrapped_text(raw: &str) -> Option<serde_json::Value> {
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(raw.trim()) {
+        return Some(v);
+    }
+
+    let start = raw.find('{')?;
+    let end = raw.rfind('}')?;
+    if start >= end {
+        return None;
+    }
+    serde_json::from_str::<serde_json::Value>(&raw[start..=end]).ok()
+}
+
 /// Implement ServerHandler for the HIEF MCP server.
 #[tool_handler]
 impl ServerHandler for HiefServer {
@@ -900,6 +1441,21 @@ mod tests {
     use super::*;
     use crate::config::Config;
     use tempfile::tempdir;
+
+    #[test]
+    fn judge_parser_handles_wrapped_json() {
+        let raw = "model output... {\"score_0_to_100\": 88, \"verdict\": \"pass\", \"rationale\": \"solid\", \"risks\": [\"edge cases\"], \"suggestions\": [\"add tests\"]}";
+        let parsed = parse_judge_output(raw).expect("parse failed");
+        assert_eq!(parsed.verdict.as_deref(), Some("pass"));
+        assert_eq!(parsed.risks.len(), 1);
+    }
+
+    #[test]
+    fn summary_lines_extract_test_markers() {
+        let lines =
+            collect_summary_lines("running 2 tests\nfoo\ntest result: ok. 2 passed; 0 failed;\n");
+        assert_eq!(lines.len(), 2);
+    }
 
     #[tokio::test]
     async fn create_intent_with_skill_returns_skill_content() {

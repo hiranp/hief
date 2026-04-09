@@ -91,7 +91,202 @@ pub async fn init(project_root: &Path) -> Result<()> {
     }
 
     println!("\n🎉 HIEF initialized! Run `hief index build` to index your codebase.");
+    // Scaffold context/, patterns/, and router.toml
+    scaffold_context_dir(project_root)?;
+    scaffold_patterns_dir(project_root)?;
+    scaffold_router(project_root)?;
+
+    // Generate multi-tool config files
+    let profile = ProjectProfile::detect(project_root);
+    scaffold_multi_tool_configs(project_root, &profile)?;
+
+    println!("\n🎉 HIEF initialized! Run `hief index build` to index your codebase.");
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Context directory scaffolding
+// ---------------------------------------------------------------------------
+
+fn scaffold_context_dir(project_root: &Path) -> Result<()> {
+    use crate::context::write_context_file;
+
+    let context_dir = project_root.join(".hief").join("context");
+    if context_dir.exists() {
+        println!("⏭️  .hief/context/ already exists");
+        return Ok(());
+    }
+    std::fs::create_dir_all(&context_dir)?;
+
+    let stubs: &[(&str, &str)] = &[
+        (
+            "architecture",
+            "# Architecture\n\n<!-- Describe top-level components, their responsibilities, and how they connect. Update after each design decision. -->\n",
+        ),
+        (
+            "conventions",
+            "# Conventions\n\n<!-- Project-specific coding conventions beyond what's in conventions.toml. Human-readable rationale lives here. -->\n",
+        ),
+        (
+            "setup",
+            "# Setup\n\n<!-- Local development setup steps. Keep this current so new agents can onboard quickly. -->\n",
+        ),
+        (
+            "stack",
+            "# Stack\n\n<!-- Languages, frameworks, key libraries, and runtime requirements. -->\n",
+        ),
+        (
+            "decisions",
+            "# Decisions Log\n\n<!-- Record significant architectural and design decisions with their rationale. -->\n",
+        ),
+    ];
+
+    for (name, content) in stubs {
+        if let Err(e) = write_context_file(project_root, name, content) {
+            eprintln!("⚠️  failed to create context/{}.md: {}", name, e);
+        } else {
+            println!("✅ Created .hief/context/{}.md", name);
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Patterns directory scaffolding
+// ---------------------------------------------------------------------------
+
+fn scaffold_patterns_dir(project_root: &Path) -> Result<()> {
+    let patterns_dir = project_root.join(".hief").join("patterns");
+    if patterns_dir.exists() {
+        println!("⏭️  .hief/patterns/ already exists");
+        return Ok(());
+    }
+    std::fs::create_dir_all(&patterns_dir)?;
+    if let Err(e) = crate::patterns::sync_index(project_root) {
+        eprintln!("⚠️  failed to initialize patterns INDEX.md: {}", e);
+    } else {
+        println!("✅ Created .hief/patterns/INDEX.md");
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Router scaffolding
+// ---------------------------------------------------------------------------
+
+fn scaffold_router(project_root: &Path) -> Result<()> {
+    let router_path = project_root.join(".hief").join("router.toml");
+    if router_path.exists() {
+        println!("⏭️  .hief/router.toml already exists");
+        return Ok(());
+    }
+    if let Err(e) = crate::router::write_default(project_root) {
+        eprintln!("⚠️  failed to create .hief/router.toml: {}", e);
+    } else {
+        println!("✅ Created .hief/router.toml (default routing table)");
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Multi-tool config scaffolding (CLAUDE.md, .cursorrules, copilot-instructions.md)
+// ---------------------------------------------------------------------------
+
+fn scaffold_multi_tool_configs(project_root: &Path, profile: &ProjectProfile) -> Result<()> {
+    let hief_block = build_multi_tool_block(profile);
+
+    // CLAUDE.md
+    let claude_path = project_root.join("CLAUDE.md");
+    if !claude_path.exists() {
+        std::fs::write(&claude_path, format!("{}\n", hief_block))?;
+        println!("✅ Created CLAUDE.md (HIEF session protocol)");
+    }
+
+    // .cursorrules
+    let cursor_path = project_root.join(".cursorrules");
+    if !cursor_path.exists() {
+        std::fs::write(&cursor_path, format!("{}\n", hief_block))?;
+        println!("✅ Created .cursorrules");
+    }
+
+    // .windsurfrules
+    let windsurf_path = project_root.join(".windsurfrules");
+    if !windsurf_path.exists() {
+        std::fs::write(&windsurf_path, format!("{}\n", hief_block))?;
+        println!("✅ Created .windsurfrules");
+    }
+
+    // .github/copilot-instructions.md
+    let copilot_dir = project_root.join(".github");
+    let copilot_path = copilot_dir.join("copilot-instructions.md");
+    if !copilot_path.exists() {
+        std::fs::create_dir_all(&copilot_dir)?;
+        std::fs::write(&copilot_path, format!("{}\n", hief_block))?;
+        println!("✅ Created .github/copilot-instructions.md");
+    }
+
+    Ok(())
+}
+
+fn build_multi_tool_block(profile: &ProjectProfile) -> String {
+    let mut out = String::from(
+        "# HIEF Agent Instructions\n\n\
+         This project uses **HIEF** for persistent memory and agent coordination.\n\n\
+         ## Session Protocol\n\n\
+         Every session MUST begin with:\n\
+         1. `get_project_context` — index stats, active intents\n\
+         2. `get_conventions` — project coding rules\n\
+         3. `get_routing_table` — choose relevant context/patterns for your task type\n\
+         4. `get_session_context` — resume from prior session\n\n\
+         ## GROW Step (after every task)\n\n\
+         After completing work:\n\
+         1. `write_context_file` — update architecture.md or decisions.md if design changed\n\
+         2. `check_drift` — verify scaffold is in sync (score should be ≥ 90)\n\n\
+         ## Code Search\n\n\
+         - `search_code \"term\"` — keyword search (FTS5)\n\
+         - `structural_search \"$X.unwrap()\" rust` — AST pattern search\n\
+         - `find_callers \"function_name\" rust` — find all call sites\n\n\
+         ## Intents\n\n\
+         Every non-trivial change needs an intent:\n\
+         ```\n\
+         create_intent(kind=\"feature\", title=\"Add ...\")\n\
+         update_intent(id=..., status=\"in_progress\")\n\
+         ```\n\n",
+    );
+
+    if profile.has_rust {
+        out.push_str(
+            "## Rust Conventions\n\n\
+             - No `.unwrap()` in `src/` — use `?` or `.expect(\"context\")`\n\
+             - All public functions must have `///` doc comments\n\
+             - Error types implement `thiserror::Error`\n\
+             - Async runtime: `tokio` only\n\n",
+        );
+    }
+
+    if profile.has_typescript {
+        out.push_str(
+            "## TypeScript Conventions\n\n\
+             - No `any` type — use `unknown` or proper generics\n\
+             - No `console.log` in production — use structured logger\n\n",
+        );
+    }
+
+    if profile.has_python {
+        out.push_str(
+            "## Python Conventions\n\n\
+             - No bare `except:` — catch specific exception types\n\
+             - Type hints required on all public functions\n\n",
+        );
+    }
+
+    out.push_str(
+        "## Patterns\n\n\
+         Use `list_patterns` to discover project-specific guides stored in `.hief/patterns/`.\n\
+         Create new patterns with `create_pattern` after solving a recurring problem.\n",
+    );
+
+    out
 }
 
 // ---------------------------------------------------------------------------

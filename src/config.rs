@@ -22,6 +22,18 @@ pub struct Config {
     #[serde(default)]
     pub skills: SkillsConfig,
     #[serde(default)]
+    pub drift: DriftConfig,
+    #[serde(default)]
+    pub context: ContextConfig,
+    #[serde(default)]
+    pub patterns: PatternsConfig,
+    #[serde(default)]
+    pub router: RouterConfig,
+    #[serde(default)]
+    pub sync: SyncConfig,
+    #[serde(default)]
+    pub watcher: WatcherConfig,
+    #[serde(default)]
     pub vectors: crate::index::vectors::VectorConfig,
 }
 
@@ -199,6 +211,142 @@ pub struct SkillsConfig {
     pub skills_path: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DriftConfig {
+    /// Days without an update before a context file is flagged as stale.
+    #[serde(default = "default_staleness_days")]
+    pub staleness_days: u32,
+    #[serde(default = "default_freshness_mode")]
+    pub freshness_mode: String,
+    #[serde(default = "default_staleness_commits")]
+    pub staleness_commits: u32,
+}
+
+impl Default for DriftConfig {
+    fn default() -> Self {
+        Self {
+            staleness_days: default_staleness_days(),
+            freshness_mode: default_freshness_mode(),
+            staleness_commits: default_staleness_commits(),
+        }
+    }
+}
+
+fn default_staleness_days() -> u32 {
+    30
+}
+
+fn default_freshness_mode() -> String {
+    "time".to_string()
+}
+
+fn default_staleness_commits() -> u32 {
+    50
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextConfig {
+    /// Path to the agent-maintained context directory (relative to project root).
+    #[serde(default = "default_context_path")]
+    pub context_path: String,
+}
+
+impl Default for ContextConfig {
+    fn default() -> Self {
+        Self {
+            context_path: default_context_path(),
+        }
+    }
+}
+
+fn default_context_path() -> String {
+    ".hief/context/".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PatternsConfig {
+    /// Path to the project-scoped pattern library (relative to project root).
+    #[serde(default = "default_patterns_path")]
+    pub patterns_path: String,
+}
+
+impl Default for PatternsConfig {
+    fn default() -> Self {
+        Self {
+            patterns_path: default_patterns_path(),
+        }
+    }
+}
+
+fn default_patterns_path() -> String {
+    ".hief/patterns/".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouterConfig {
+    /// Path to the session routing table (relative to project root).
+    #[serde(default = "default_router_path")]
+    pub router_path: String,
+}
+
+impl Default for RouterConfig {
+    fn default() -> Self {
+        Self {
+            router_path: default_router_path(),
+        }
+    }
+}
+
+fn default_router_path() -> String {
+    ".hief/router.toml".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncConfig {
+    #[serde(default = "default_sync_backend")]
+    pub default_backend: String,
+    #[serde(default)]
+    pub custom_command: Option<String>,
+}
+
+impl Default for SyncConfig {
+    fn default() -> Self {
+        Self {
+            default_backend: default_sync_backend(),
+            custom_command: None,
+        }
+    }
+}
+
+fn default_sync_backend() -> String {
+    "none".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatcherConfig {
+    #[serde(default = "default_watcher_debounce_ms")]
+    pub debounce_ms: u64,
+    #[serde(default = "default_watcher_conflict_window_secs")]
+    pub conflict_window_secs: u64,
+}
+
+impl Default for WatcherConfig {
+    fn default() -> Self {
+        Self {
+            debounce_ms: default_watcher_debounce_ms(),
+            conflict_window_secs: default_watcher_conflict_window_secs(),
+        }
+    }
+}
+
+fn default_watcher_debounce_ms() -> u64 {
+    750
+}
+
+fn default_watcher_conflict_window_secs() -> u64 {
+    90
+}
+
 impl Default for SkillsConfig {
     fn default() -> Self {
         Self {
@@ -281,6 +429,12 @@ impl Default for Config {
             serve: ServeConfig::default(),
             docs: DocsConfig::default(),
             skills: SkillsConfig::default(),
+            drift: DriftConfig::default(),
+            context: ContextConfig::default(),
+            patterns: PatternsConfig::default(),
+            router: RouterConfig::default(),
+            sync: SyncConfig::default(),
+            watcher: WatcherConfig::default(),
             vectors: crate::index::vectors::VectorConfig::default(),
         }
     }

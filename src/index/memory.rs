@@ -73,6 +73,17 @@ pub struct SessionContext {
     pub suggested_files: Vec<RelatedFile>,
     /// Total access count this session.
     pub total_accesses: i64,
+    /// Context/pattern files that may need updating based on what changed this session.
+    pub pending_grows: Vec<PendingGrow>,
+}
+
+/// A context or pattern file that the agent should consider updating after this session.
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct PendingGrow {
+    /// Relative path to the context or pattern file that may be stale.
+    pub file: String,
+    /// Human-readable reason why the agent should review this file.
+    pub reason: String,
 }
 
 /// A file access entry within a session.
@@ -475,7 +486,91 @@ pub async fn get_session_context(
         accessed_files,
         suggested_files,
         total_accesses,
+        pending_grows: compute_pending_grows(&accessed_paths),
     })
+}
+
+/// Compute which .hief/context/ or .hief/patterns/ files might need updating
+/// based on what source files were accessed this session.
+///
+/// Uses simple path-prefix heuristics — no AI, no git I/O.
+fn compute_pending_grows(accessed_paths: &[String]) -> Vec<PendingGrow> {
+    if accessed_paths.is_empty() {
+        return Vec::new();
+    }
+
+    let mut grows: Vec<PendingGrow> = Vec::new();
+    let mut suggest_architecture = false;
+    let mut suggest_conventions = false;
+    let mut suggest_setup = false;
+
+    for path in accessed_paths {
+        let p = path.to_lowercase();
+
+        // Architecture-related source files
+        if p.contains("mod.rs")
+            || p.contains("lib.rs")
+            || p.contains("main.rs")
+            || p.contains("router")
+            || p.contains("server")
+            || p.contains("handler")
+            || p.contains("service")
+            || p.contains("middleware")
+            || p.contains("api")
+        {
+            suggest_architecture = true;
+        }
+
+        // Convention-sensitive areas
+        if p.contains("error")
+            || p.contains("types")
+            || p.contains("schema")
+            || p.contains("model")
+            || p.contains("config")
+            || p.contains("util")
+            || p.contains("helper")
+        {
+            suggest_conventions = true;
+        }
+
+        // Setup-related files
+        if p.contains("docker")
+            || p.contains("makefile")
+            || p.contains("justfile")
+            || p.contains("cargo.toml")
+            || p.contains("package.json")
+            || p.contains(".env")
+            || p.contains("setup")
+            || p.contains("Dockerfile")
+            || p.contains("compose")
+        {
+            suggest_setup = true;
+        }
+    }
+
+    if suggest_architecture {
+        grows.push(PendingGrow {
+            file: ".hief/context/architecture.md".to_string(),
+            reason:
+                "Core source files were accessed — verify architecture context is still accurate"
+                    .to_string(),
+        });
+    }
+    if suggest_conventions {
+        grows.push(PendingGrow {
+            file: ".hief/context/conventions.md".to_string(),
+            reason: "Type/error/config files were accessed — check that conventions still match current patterns".to_string(),
+        });
+    }
+    if suggest_setup {
+        grows.push(PendingGrow {
+            file: ".hief/context/setup.md".to_string(),
+            reason: "Build/config files were accessed — verify setup instructions are up to date"
+                .to_string(),
+        });
+    }
+
+    grows
 }
 
 /// Get access statistics for all files (used by the health/overview resources).
