@@ -1,6 +1,6 @@
 # The HIEF (Hybrid Intent-Evaluation Framework) Manifesto
 
-> HIEF (Hybrid Intent-Evaluation Framework) is a persistent memory layer for AI coding agents.
+> HIEF (Hybrid Intent-Evaluation Framework) is an agentic task coordination platform & persistent memory layer for AI coding agents.
 
 ## Why
 

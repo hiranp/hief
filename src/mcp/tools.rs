@@ -1987,7 +1987,7 @@ impl ServerHandler for HiefServer {
             capabilities: ServerCapabilities::builder().enable_tools().build(),
             server_info: Implementation::from_build_env(),
             instructions: Some(
-                "HIEF is your local persistent memory layer for AI coding agents.\n\
+                "HIEF is your local agentic task coordination platform & persistent memory layer.\n\
                  • Search code with precision: keyword, structural (AST), or semantic vectors.\n\
                  • Coordinate work using a lightweight intent graph (create, list, update, recover).\n\
                  • Enforce quality with golden-set evaluation before sharing or merging changes.\n\

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-**Project:** HIEF — Persistent Memory Layer for AI Coding Agents
+**Project:** HIEF — Agentic Task Coordination Platform & Persistent Memory Layer
 
 HIEF is a local-first MCP server that provides persistent codebase context,
 lightweight task coordination, and automated quality evaluation. It is a

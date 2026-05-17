@@ -2,7 +2,7 @@
 
 # HIEF (Hybrid Intent-Evaluation Framework)
 
-**Persistent Memory Layer for AI Coding Agents**
+**Agentic Task Coordination Platform & Persistent Memory Layer**
 
 [![CI](https://github.com/hiranp/hief/actions/workflows/ci.yml/badge.svg)](https://github.com/hiranp/hief/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/hief.svg)](https://crates.io/crates/hief)
@@ -69,6 +69,8 @@ HIEF Server
 - **Provenance records** which agent made each change and when
 - **Multi-Tenant / Worktree Isolation** — partitions session telemetry and cognitive memory dynamically by git worktree ID
 - **Intent Soft-Locks** — lease-based soft locks preventing competing worktree ownership on concurrent transitions
+- **Task Tracking Web UI** — HITL controls and review panels for active asynchronous worktrees
+- **SQL-Native Observability** — built-in session telemetry and active evaluation loop
 - Lightweight by design — not a project manager, just enough coordination
 
 ### ✅ Quality Evaluation — *"Is the output good enough?"*
