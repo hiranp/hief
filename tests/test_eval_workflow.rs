@@ -88,6 +88,23 @@ async fn insert_eval(db: &Database, passed: bool, created_at: i64) {
         .expect("insert eval row");
 }
 
+async fn insert_groundedness_series(db: &Database, values: &[f64]) {
+    for value in values {
+        db.record_tool_event_scoped(
+            "health-learning",
+            "semantic_search",
+            "learning-query",
+            Some("strategy=semantic"),
+            Some(1),
+            Some(1),
+            Some(*value),
+            Some("project-root"),
+        )
+        .await
+        .expect("insert groundedness event");
+    }
+}
+
 #[test]
 fn test_eval_run_persists_history_and_config_loads() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -327,4 +344,40 @@ async fn test_project_health_wave_gate_blocked_when_no_eval_history() {
 
     assert!(!health.wave_gate_open);
     assert_eq!(health.gate_reason.as_deref(), Some("no_eval_history"));
+}
+
+#[tokio::test]
+async fn test_project_health_reports_improving_learning_state() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let db = open_health_db(tmp.path()).await;
+    insert_eval(&db, true, 10).await;
+    insert_groundedness_series(&db, &vec![0.9; 12]).await;
+
+    let config = Config::default();
+    let health = resources::get_project_health(&db, tmp.path(), &config)
+        .await
+        .expect("project health");
+
+    assert!(health.wave_gate_open);
+    assert_eq!(health.learning_state, "improving");
+    assert_eq!(health.last_learning_outcome, "promoted");
+    assert!(health.candidate_delta >= 0.0);
+}
+
+#[tokio::test]
+async fn test_project_health_reports_regressing_learning_state_with_rollback() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let db = open_health_db(tmp.path()).await;
+    insert_eval(&db, false, 10).await;
+    insert_groundedness_series(&db, &vec![0.1; 12]).await;
+
+    let config = Config::default();
+    let health = resources::get_project_health(&db, tmp.path(), &config)
+        .await
+        .expect("project health");
+
+    assert!(!health.wave_gate_open);
+    assert_eq!(health.learning_state, "regressing");
+    assert_eq!(health.last_learning_outcome, "rolled_back");
+    assert!(health.candidate_delta >= 0.0);
 }
