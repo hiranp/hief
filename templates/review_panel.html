@@ -1,13 +1,55 @@
 <section id="review-state" class="card">
+  <style>
+    .review-kpis {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin: 10px 0 14px;
+    }
+    .review-kpi {
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: rgba(255, 255, 255, 0.03);
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .review-kpi strong {
+      color: var(--text-main);
+      display: block;
+      margin-top: 4px;
+      font-size: 14px;
+    }
+    .review-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .review-actions form { margin: 0; }
+    #review-message {
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      color: var(--success);
+      background: rgba(16, 185, 129, 0.08);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
+  </style>
   <h3>Review Panel</h3>
   <p>Intent status: <strong>{{ intent_status }}</strong></p>
-  <p>Gate: <strong>{{ gate_state }}</strong> ({{ gate_reason }})</p>
-  <p>Workspace telemetry (ui-task-detail): calls={{ total_calls }}, avg groundedness={{ avg_groundedness }}</p>
+  <div class="review-kpis">
+    <div class="review-kpi">Gate state<strong>{{ gate_state }}</strong><span class="muted">{{ gate_reason }}</span></div>
+    <div class="review-kpi">Avg groundedness<strong>{{ avg_groundedness }}</strong><span class="muted">calls={{ total_calls }}</span></div>
+  </div>
+  <p class="muted">Workspace telemetry (ui-task-detail) is aggregate for this worktree.</p>
   {% match message %}
     {% when Some with (text) %}
       <div id="review-message" data-result="ok">{{ text }}</div>
     {% when None %}
   {% endmatch %}
+  <div class="review-actions">
   {% if can_block %}
     <form method="post" action="/ui/review/{{ intent_id }}/block">
       <button class="action" type="submit">Block</button>
@@ -15,12 +57,13 @@
   {% endif %}
   {% if can_unblock %}
     <form method="post" action="/ui/review/{{ intent_id }}/unblock">
-      <button class="action" type="submit">Unblock</button>
+      <button class="action action-primary" type="submit">Unblock</button>
     </form>
   {% endif %}
   {% if can_move_to_review %}
     <form method="post" action="/ui/review/{{ intent_id }}/to-review">
-      <button class="action" type="submit">Move to review</button>
+      <button class="action action-primary" type="submit">Move to review</button>
     </form>
   {% endif %}
+  </div>
 </section>

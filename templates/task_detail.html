@@ -1,26 +1,266 @@
 {% extends "base.html" %}
 {% block title %}{% if found %}{{ title }} - HIEF{% else %}Task Not Found - HIEF{% endif %}{% endblock %}
+{% block nav_intents %}active{% endblock %}
+{% block page_title %}{% if found %}{{ title }}{% else %}Task Not Found{% endif %}{% endblock %}
 {% block content %}
+<style>
+  .breadcrumbs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+  .breadcrumbs a {
+    color: var(--text-muted);
+    text-decoration: none;
+  }
+  .breadcrumbs a:hover { color: var(--text-main); }
+  .detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 18px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .hitl-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 11px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border: 1px solid rgba(245, 158, 11, 0.32);
+    background: rgba(245, 158, 11, 0.12);
+    color: var(--warning);
+    white-space: nowrap;
+  }
+  .hitl-badge.open {
+    color: var(--success);
+    border-color: rgba(16, 185, 129, 0.28);
+    background: rgba(16, 185, 129, 0.1);
+  }
+  .hitl-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: currentColor;
+    animation: pulse-badge 2s infinite;
+  }
+  @keyframes pulse-badge {
+    0% { box-shadow: 0 0 0 0 currentColor; opacity: 0.6; }
+    70% { box-shadow: 0 0 0 7px transparent; opacity: 1; }
+    100% { box-shadow: 0 0 0 0 transparent; opacity: 0.6; }
+  }
+  .detail-meta {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+  .detail-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 16px;
+  }
+  .pavl-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .pavl-step {
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 12px;
+    text-align: center;
+    background: rgba(255, 255, 255, 0.03);
+  }
+  .pavl-step.success {
+    border-color: rgba(16, 185, 129, 0.32);
+    background: rgba(16, 185, 129, 0.08);
+  }
+  .pavl-step.warning {
+    border-color: rgba(245, 158, 11, 0.35);
+    background: rgba(245, 158, 11, 0.1);
+  }
+  .pavl-step.pending {
+    border-color: var(--border-color);
+    background: rgba(255, 255, 255, 0.02);
+  }
+  .pavl-icon {
+    margin: 0 auto 8px;
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    color: #0b1220;
+    background: #94a3b8;
+  }
+  .pavl-step.success .pavl-icon { background: var(--success); color: #052e16; }
+  .pavl-step.warning .pavl-icon { background: var(--warning); color: #422006; }
+  .pavl-label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+  }
+  .pavl-sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+  .kv {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 8px;
+    margin: 8px 0;
+  }
+  .actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+  }
+  .timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    position: relative;
+    padding-left: 20px;
+  }
+  .timeline::before {
+    content: "";
+    position: absolute;
+    left: 5px;
+    top: 4px;
+    bottom: 4px;
+    width: 2px;
+    background: var(--border-color);
+  }
+  .timeline-item { position: relative; }
+  .timeline-item::before {
+    content: "";
+    position: absolute;
+    left: -19px;
+    top: 5px;
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--text-muted);
+  }
+  .timeline-time { color: var(--text-muted); font-size: 12px; }
+  .timeline-text { font-size: 13px; line-height: 1.45; margin-top: 3px; }
+  @media (max-width: 1040px) {
+    .detail-grid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 720px) {
+    .pavl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+</style>
+
 <section id="task-detail" class="card">
   {% if found %}
-    <h2>Task {{ intent_id }}</h2>
-    <p><strong>{{ title }}</strong></p>
-    <p>Status: <span class="status-pill">{{ status }}</span> | Priority: {{ priority }} | Assigned: {{ assigned_to }}</p>
-    <p>PAVL Gate: <strong>{% if gate_open %}open{% else %}blocked{% endif %}</strong> ({{ gate_reason }})</p>
-    <p>Workspace telemetry (ui-task-detail): calls={{ total_calls }}, latency_ms={{ total_latency_ms }}, groundedness={{ groundedness }}</p>
-    <h3>Dependencies</h3>
-    {% if dependencies.is_empty() %}
-      <p class="muted">No dependencies.</p>
-    {% else %}
-      <ul>
-        {% for dep in dependencies %}
-          <li>{{ dep }}</li>
-        {% endfor %}
-      </ul>
-    {% endif %}
-    <p>Recent activity points: {{ activity_count }}</p>
-    <div hx-get="/ui/review/{{ intent_id }}" hx-trigger="load" hx-target="#review-panel" hx-swap="innerHTML"></div>
-    <div id="review-panel"></div>
+    <div class="breadcrumbs">
+      <a href="/ui">Dashboard</a>
+      <span>&rsaquo;</span>
+      <span class="mono">{{ intent_id }}</span>
+    </div>
+    <div class="detail-header">
+      <div>
+        <h2>{{ title }}</h2>
+        <div class="detail-meta">
+          <span>Status: <span class="status-pill status-{{ status }}">{{ status }}</span></span>
+          <span>Priority: {{ priority }}</span>
+          <span>Assigned: {{ assigned_to }}</span>
+        </div>
+      </div>
+      <div class="hitl-badge {% if gate_open %}open{% endif %}">
+        <span class="hitl-dot" aria-hidden="true"></span>
+        HITL {% if gate_open %}Ready{% else %}Blocked{% endif %}
+      </div>
+    </div>
+
+    <div class="detail-grid">
+      <div>
+        <section class="card">
+          <h3>PAVL Surface</h3>
+          <div class="pavl-grid">
+            <div class="pavl-step success">
+              <div class="pavl-icon">✓</div>
+              <div class="pavl-label">Plan</div>
+              <div class="pavl-sub">Intent captured</div>
+            </div>
+            <div class="pavl-step success">
+              <div class="pavl-icon">✓</div>
+              <div class="pavl-label">Act</div>
+              <div class="pavl-sub">Execution active</div>
+            </div>
+            <div class="pavl-step {% if gate_open %}success{% else %}warning{% endif %}">
+              <div class="pavl-icon">{% if gate_open %}✓{% else %}!{% endif %}</div>
+              <div class="pavl-label">Verify</div>
+              <div class="pavl-sub">PAVL Gate: {% if gate_open %}open{% else %}blocked{% endif %}</div>
+            </div>
+            <div class="pavl-step pending">
+              <div class="pavl-icon">…</div>
+              <div class="pavl-label">Learn</div>
+              <div class="pavl-sub">Awaiting review</div>
+            </div>
+          </div>
+          <p class="muted" style="margin-top: 12px;">PAVL Gate reason: {{ gate_reason }}</p>
+        </section>
+
+        <section class="card">
+          <h3>Worktree Binding</h3>
+          <div class="kv"><strong>Intent:</strong> {{ intent_id }}</div>
+          <div class="kv"><strong>Dependencies:</strong>
+            {% if dependencies.is_empty() %}
+              none
+            {% else %}
+              {% for dep in dependencies %}{% if loop.index > 1 %}, {% endif %}{{ dep }}{% endfor %}
+            {% endif %}
+          </div>
+          <div class="kv"><strong>Workspace telemetry (ui-task-detail):</strong> calls={{ total_calls }}, latency_ms={{ total_latency_ms }}, groundedness={{ groundedness }}</div>
+          <div class="actions">
+            <button class="btn btn-primary" type="button">Approve &amp; Merge</button>
+            <button class="btn" type="button">Reject &amp; Re-plan</button>
+            <button class="btn" type="button">Open in VS Code</button>
+          </div>
+        </section>
+      </div>
+
+      <aside>
+        <section class="card">
+          <h3>Activity Timeline</h3>
+          <div class="timeline">
+            <div class="timeline-item">
+              <div class="timeline-time">Current</div>
+              <div class="timeline-text">Recent activity points: {{ activity_count }}</div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-time">Telemetry</div>
+              <div class="timeline-text">Workspace telemetry is scoped to this worktree.</div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-time">Status</div>
+              <div class="timeline-text">PAVL Gate is {% if gate_open %}open{% else %}blocked{% endif %}.</div>
+            </div>
+          </div>
+        </section>
+
+        <div hx-get="/ui/review/{{ intent_id }}" hx-trigger="load" hx-target="#review-panel" hx-swap="innerHTML"></div>
+        <div id="review-panel"></div>
+      </aside>
+    </div>
   {% else %}
     <h2>Task not found</h2>
     <p id="task-not-found" class="muted">Intent {{ intent_id }} does not exist.</p>

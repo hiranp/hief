@@ -4,6 +4,10 @@ use serde::Serialize;
 pub struct DashboardView {
     pub intents: Vec<IntentRow>,
     pub worktrees: Vec<WorktreeRow>,
+    pub total_intents: usize,
+    pub active_intents: usize,
+    pub blocked_intents: usize,
+    pub unassigned_intents: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]

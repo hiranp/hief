@@ -7,24 +7,100 @@
      hx-trigger="sse:open from:body"
      hx-target="#activity-feed"
      hx-swap="innerHTML">
+  <style>
+    .activity-meta {
+      color: var(--text-muted);
+      font-size: 12px;
+      margin-bottom: 12px;
+    }
+    .activity-timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      position: relative;
+      padding-left: 18px;
+    }
+    .activity-timeline::before {
+      content: "";
+      position: absolute;
+      left: 4px;
+      top: 4px;
+      bottom: 4px;
+      width: 2px;
+      background: var(--border-color);
+    }
+    .activity-item {
+      position: relative;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .activity-item::before {
+      content: "";
+      position: absolute;
+      left: -17px;
+      top: 12px;
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--warning);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+    }
+    .activity-item-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 5px;
+      font-size: 12px;
+    }
+    .activity-item-time {
+      color: var(--text-muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+    .activity-tool {
+      border-radius: 999px;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      background: rgba(59, 130, 246, 0.1);
+      color: #93c5fd;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .activity-intent {
+      margin-top: 4px;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+    .activity-stats {
+      margin-top: 7px;
+      font-size: 12px;
+      display: flex;
+      gap: 10px;
+      color: var(--text-muted);
+    }
+  </style>
   <h3>Recent Activity</h3>
   {% if rows.is_empty() %}
     <p class="muted">No activity events captured for this worktree.</p>
   {% else %}
-    <table>
-      <thead><tr><th>Tool</th><th>Intent</th><th>Timestamp</th><th>Latency (ms)</th><th>Quality</th></tr></thead>
-      <tbody>
+    <p class="activity-meta">Live telemetry stream scoped to this worktree.</p>
+    <div class="activity-timeline">
       {% for row in rows %}
-        <tr>
-          <td>{{ row.tool }}</td>
-          <td>{% match row.intent_id %}{% when Some with (id) %}{{ id }}{% when None %}<span class="muted">n/a</span>{% endmatch %}</td>
-          <td>{{ row.created_at }}</td>
-          <td>{% match row.latency_ms %}{% when Some with (ms) %}{{ ms }}{% when None %}<span class="muted">n/a</span>{% endmatch %}</td>
-          <td>{% match row.groundedness %}{% when Some with (score) %}{{ "{:.3}"|format(score) }}{% when None %}<span class="muted">n/a</span>{% endmatch %}</td>
-        </tr>
+        <article class="activity-item">
+          <div class="activity-item-head">
+            <span class="activity-tool">{{ row.tool }}</span>
+            <span class="activity-item-time">{{ row.created_at }}</span>
+          </div>
+          <div class="activity-intent">Intent: {% match row.intent_id %}{% when Some with (id) %}<span class="mono">{{ id }}</span>{% when None %}<span class="muted">n/a</span>{% endmatch %}</div>
+          <div class="activity-stats">
+            <span>latency={% match row.latency_ms %}{% when Some with (ms) %}{{ ms }}{% when None %}n/a{% endmatch %}ms</span>
+            <span>groundedness={% match row.groundedness %}{% when Some with (score) %}{{ "{:.3}"|format(score) }}{% when None %}n/a{% endmatch %}</span>
+          </div>
+        </article>
       {% endfor %}
-      </tbody>
-    </table>
+    </div>
   {% endif %}
   {% if reconnect_refresh %}
     <p class="muted">On reconnect, this fragment performs a soft refresh to recover missed events.</p>

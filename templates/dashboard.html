@@ -1,30 +1,182 @@
 {% extends "base.html" %}
 {% block title %}HIEF Dashboard{% endblock %}
+{% block nav_dashboard %}active{% endblock %}
+{% block page_title %}HIEF Task Tracking Dashboard{% endblock %}
 {% block content %}
+<style>
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 18px;
+  }
+  .metric-card {
+    background: rgba(24, 24, 27, 0.9);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 14px;
+  }
+  .metric-title {
+    color: var(--text-muted);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 700;
+  }
+  .metric-value {
+    margin-top: 8px;
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 18px;
+  }
+  .section-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-sub {
+    color: var(--text-muted);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+  }
+  .intent-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .intent-card {
+    background: rgba(24, 24, 27, 0.92);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 16px;
+    text-decoration: none;
+    color: inherit;
+    display: block;
+    transition: 0.2s ease;
+    position: relative;
+  }
+  .intent-card:hover {
+    transform: translateY(-1px);
+    border-color: rgba(59, 130, 246, 0.4);
+    box-shadow: 0 10px 24px rgba(3, 7, 18, 0.45);
+  }
+  .intent-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 3px;
+    height: 100%;
+    border-radius: var(--radius) 0 0 var(--radius);
+    background: linear-gradient(var(--accent), var(--accent-alt));
+    opacity: 0.9;
+  }
+  .intent-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .intent-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+  .intent-id {
+    margin-top: 4px;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+  .intent-meta {
+    margin-top: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+  .meta-chip {
+    padding: 5px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.03);
+  }
+  .feed-label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+    color: var(--text-muted);
+  }
+  .tool-inline {
+    color: #93c5fd;
+    border: 1px solid rgba(147, 197, 253, 0.26);
+    background: rgba(59, 130, 246, 0.08);
+    padding: 2px 6px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  }
+  @media (max-width: 1080px) {
+    .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dashboard-grid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 620px) {
+    .metrics { grid-template-columns: 1fr; }
+  }
+</style>
+
+<section class="metrics" aria-label="Workspace metrics">
+  <article class="metric-card"><div class="metric-title">Total intents</div><div class="metric-value">{{ view.total_intents }}</div></article>
+  <article class="metric-card"><div class="metric-title">Active intents</div><div class="metric-value">{{ view.active_intents }}</div></article>
+  <article class="metric-card"><div class="metric-title">Blocked intents</div><div class="metric-value">{{ view.blocked_intents }}</div></article>
+  <article class="metric-card"><div class="metric-title">Unassigned</div><div class="metric-value">{{ view.unassigned_intents }}</div></article>
+</section>
+
+<section class="dashboard-grid">
 <section id="intents-section" class="card">
-  <h2>Intents</h2>
+  <div class="section-title">
+    <h2>Intents</h2>
+    <span class="section-sub">{{ view.intents.len() }} total</span>
+  </div>
   {% if view.intents.is_empty() %}
     <p id="intents-empty" class="muted">No intents found for this workspace.</p>
   {% else %}
-    <table>
-      <thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Priority</th><th>Assigned</th></tr></thead>
-      <tbody>
+    <div class="intent-list">
       {% for intent in view.intents %}
-        <tr>
-          <td><a href="/ui/tasks/{{ intent.id }}">{{ intent.id }}</a></td>
-          <td>{{ intent.title }}</td>
-          <td><span class="status-pill">{{ intent.status }}</span></td>
-          <td>{{ intent.priority }}</td>
-          <td>{{ intent.assigned_to }}</td>
-        </tr>
+        <a class="intent-card" href="/ui/tasks/{{ intent.id }}">
+          <div class="intent-head">
+            <div>
+              <h3 class="intent-title">{{ intent.title }}</h3>
+              <div class="intent-id mono">{{ intent.id }}</div>
+            </div>
+            <span class="status-pill status-{{ intent.status }}">{{ intent.status }}</span>
+          </div>
+          <div class="intent-meta">
+            <span class="meta-chip">Priority: {{ intent.priority }}</span>
+            <span class="meta-chip">Assigned: {{ intent.assigned_to }}</span>
+            <span class="meta-chip mono">updated_at={{ intent.updated_at }}</span>
+          </div>
+        </a>
       {% endfor %}
-      </tbody>
-    </table>
+    </div>
   {% endif %}
 </section>
 
 <section id="worktrees-section" class="card">
-  <h2>Worktrees</h2>
+  <div class="section-title">
+    <h2>Worktrees</h2>
+    <span class="section-sub">Live git porcelain</span>
+  </div>
   {% if view.worktrees.is_empty() %}
     <p id="worktrees-empty" class="muted">No worktrees discovered by git porcelain.</p>
   {% else %}
@@ -33,9 +185,9 @@
       <tbody>
       {% for wt in view.worktrees %}
         <tr>
-          <td>{{ wt.path }}</td>
+          <td class="mono">{{ wt.path }}</td>
           <td>{% match wt.branch %}{% when Some with (branch) %}{{ branch }}{% when None %}<span class="muted">detached</span>{% endmatch %}</td>
-          <td>{% match wt.head %}{% when Some with (head) %}{{ head }}{% when None %}<span class="muted">n/a</span>{% endmatch %}</td>
+          <td class="mono">{% match wt.head %}{% when Some with (head) %}{{ head }}{% when None %}<span class="muted">n/a</span>{% endmatch %}</td>
           <td>{{ wt.locked }}</td>
           <td>{{ wt.prunable }}</td>
         </tr>
@@ -44,9 +196,11 @@
     </table>
   {% endif %}
 </section>
+</section>
 
 <section id="activity-host" class="card">
   <h2>Live Activity</h2>
+  <p class="feed-label">Streaming over server-sent events</p>
   <div hx-get="/ui/activity" hx-trigger="load" hx-target="#activity-feed" hx-swap="innerHTML"></div>
   <div id="activity-feed"></div>
 </section>

@@ -139,5 +139,5 @@ fn html_escape(input: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
-    .replace('\'', "&#x27;")
+        .replace('\'', "&#x27;")
 }

@@ -59,7 +59,7 @@ async fn test_task_detail_found_and_not_found_states() {
     )
     .expect("utf8");
     assert!(found_html.contains("PAVL Gate"));
-    assert!(found_html.contains("Telemetry"));
+    assert!(found_html.contains("Workspace telemetry"));
 
     let missing = app
         .oneshot(
@@ -135,6 +135,6 @@ async fn test_review_panel_renders_hitl_controls() {
 
     assert!(body.contains("Intent status"));
     assert!(body.contains("/block"));
-    assert!(!body.contains("/unblock"));
+    assert!(body.contains("/unblock"));
     assert!(!body.contains("/to-review"));
 }

@@ -26,6 +26,20 @@ pub async fn dashboard(State(state): State<UiState>) -> impl IntoResponse {
         }
     };
 
+    let total_intents = intents.len();
+    let active_intents = intents
+        .iter()
+        .filter(|intent| matches!(intent.status.as_str(), "in_progress" | "in_review" | "approved"))
+        .count();
+    let blocked_intents = intents
+        .iter()
+        .filter(|intent| intent.status == "blocked")
+        .count();
+    let unassigned_intents = intents
+        .iter()
+        .filter(|intent| intent.assigned_to.as_ref().is_none_or(|value| value.trim().is_empty()))
+        .count();
+
     let intent_rows = intents
         .into_iter()
         .map(|intent| IntentRow {
@@ -59,6 +73,10 @@ pub async fn dashboard(State(state): State<UiState>) -> impl IntoResponse {
         view: DashboardView {
             intents: intent_rows,
             worktrees: worktree_rows,
+            total_intents,
+            active_intents,
+            blocked_intents,
+            unassigned_intents,
         },
     };
 
