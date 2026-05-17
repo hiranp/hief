@@ -4,6 +4,7 @@
 //! VS Code, Cursor, Windsurf, Gemini CLI, and other MCP-compatible tools.
 
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use serde_json::{Value, json};
 
@@ -57,20 +58,6 @@ impl McpClient {
         }
     }
 
-    /// Parse from CLI string.
-    pub fn from_str(s: &str) -> Option<McpClient> {
-        match s {
-            "claude-cli" | "claude" | "claude-code" => Some(McpClient::ClaudeCli),
-            "claude-desktop" => Some(McpClient::ClaudeDesktop),
-            "vscode" | "vs-code" | "code" => Some(McpClient::VsCode),
-            "cursor" => Some(McpClient::Cursor),
-            "windsurf" => Some(McpClient::Windsurf),
-            "gemini-cli" | "gemini" => Some(McpClient::GeminiCli),
-            "all" => None, // handled separately
-            _ => None,
-        }
-    }
-
     /// Config file path for this client (global or project-level).
     fn config_path(&self, project_root: &Path, scope: ConfigScope) -> Option<PathBuf> {
         let home = dirs::home_dir()?;
@@ -119,6 +106,22 @@ impl McpClient {
                 Some(home.join(".gemini").join("settings.json"))
             }
             (McpClient::GeminiCli, ConfigScope::Project) => None,
+        }
+    }
+}
+
+impl FromStr for McpClient {
+    type Err = ();
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "claude-cli" | "claude" | "claude-code" => Ok(McpClient::ClaudeCli),
+            "claude-desktop" => Ok(McpClient::ClaudeDesktop),
+            "vscode" | "vs-code" | "code" => Ok(McpClient::VsCode),
+            "cursor" => Ok(McpClient::Cursor),
+            "windsurf" => Ok(McpClient::Windsurf),
+            "gemini-cli" | "gemini" => Ok(McpClient::GeminiCli),
+            _ => Err(()),
         }
     }
 }
@@ -416,9 +419,9 @@ pub fn mcp_install(
             // For "all" or default, install in appropriate scope for each
             McpClient::all().to_vec()
         }
-        Some(name) => match McpClient::from_str(name) {
-            Some(client) => vec![client],
-            None => {
+        Some(name) => match name.parse::<McpClient>() {
+            Ok(client) => vec![client],
+            Err(()) => {
                 eprintln!("Unknown client '{}'. Available clients:", name);
                 for c in McpClient::all() {
                     eprintln!("  {} ({})", c.id(), c.name());
@@ -465,9 +468,9 @@ pub fn mcp_uninstall(
 
     let clients: Vec<McpClient> = match target {
         Some("all") | None => McpClient::all().to_vec(),
-        Some(name) => match McpClient::from_str(name) {
-            Some(client) => vec![client],
-            None => {
+        Some(name) => match name.parse::<McpClient>() {
+            Ok(client) => vec![client],
+            Err(()) => {
                 eprintln!("Unknown client '{}'", name);
                 return Ok(());
             }
@@ -577,25 +580,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_client_from_str() {
+    fn test_client_parse() {
         assert_eq!(
-            McpClient::from_str("claude-cli"),
+            "claude-cli".parse::<McpClient>().ok(),
             Some(McpClient::ClaudeCli)
         );
-        assert_eq!(McpClient::from_str("claude"), Some(McpClient::ClaudeCli));
+        assert_eq!("claude".parse::<McpClient>().ok(), Some(McpClient::ClaudeCli));
         assert_eq!(
-            McpClient::from_str("claude-code"),
+            "claude-code".parse::<McpClient>().ok(),
             Some(McpClient::ClaudeCli)
         );
-        assert_eq!(McpClient::from_str("vscode"), Some(McpClient::VsCode));
-        assert_eq!(McpClient::from_str("cursor"), Some(McpClient::Cursor));
-        assert_eq!(McpClient::from_str("windsurf"), Some(McpClient::Windsurf));
+        assert_eq!("vscode".parse::<McpClient>().ok(), Some(McpClient::VsCode));
+        assert_eq!("cursor".parse::<McpClient>().ok(), Some(McpClient::Cursor));
+        assert_eq!("windsurf".parse::<McpClient>().ok(), Some(McpClient::Windsurf));
         assert_eq!(
-            McpClient::from_str("gemini-cli"),
+            "gemini-cli".parse::<McpClient>().ok(),
             Some(McpClient::GeminiCli)
         );
-        assert_eq!(McpClient::from_str("gemini"), Some(McpClient::GeminiCli));
-        assert_eq!(McpClient::from_str("unknown"), None);
+        assert_eq!("gemini".parse::<McpClient>().ok(), Some(McpClient::GeminiCli));
+        assert!("unknown".parse::<McpClient>().is_err());
     }
 
     #[test]

@@ -70,7 +70,7 @@ async fn test_soft_lock_conflict_release_and_expiry_reclaim() {
             holder,
             worktree_id,
         } => {
-            assert_eq!(intent_id.len() > 0, true);
+            assert!(!intent_id.is_empty());
             assert_eq!(holder, "agent-a");
             assert_eq!(worktree_id, "wt-a");
         }

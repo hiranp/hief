@@ -47,7 +47,7 @@ async fn test_no_history_yields_noop_learning_state() {
 #[tokio::test]
 async fn test_candidate_update_is_bounded() {
     let (_dir, db) = open_test_db().await;
-    seed_groundedness(&db, &vec![0.95; 20]).await;
+    seed_groundedness(&db, &[0.95; 20]).await;
 
     let learning = router::learn_retrieval_weights(&db, true)
         .await

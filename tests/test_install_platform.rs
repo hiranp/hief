@@ -6,8 +6,6 @@
 //!    platform config file (idempotent, project-scope).
 //! 3. Invalid platform names return a typed constraint error.
 
-use std::path::Path;
-
 use hief::cli::commands::{build_install_preview, install_platform, InstallPlatform};
 use hief::config::Config;
 
