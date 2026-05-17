@@ -60,5 +60,6 @@ pub async fn stream_events(
         events.push(Ok(Event::default().event("activity-update").data("{}")));
     }
 
-    Sse::new(stream::iter(events)).keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
+    Sse::new(stream::iter(events))
+        .keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
 }

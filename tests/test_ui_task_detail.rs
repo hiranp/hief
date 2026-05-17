@@ -133,7 +133,8 @@ async fn test_review_panel_renders_hitl_controls() {
     )
     .expect("utf8");
 
+    assert!(body.contains("Intent status"));
     assert!(body.contains("/block"));
-    assert!(body.contains("/unblock"));
-    assert!(body.contains("/to-review"));
+    assert!(!body.contains("/unblock"));
+    assert!(!body.contains("/to-review"));
 }

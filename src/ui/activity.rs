@@ -16,7 +16,8 @@ struct ActivityFeedTemplate {
 
 pub async fn load_recent_activity(state: &UiState, limit: usize) -> Result<Vec<ActivityRow>> {
     let worktree_id = scope::derive_worktree_id(&state.project_root);
-    let sql = "SELECT query, tool, created_at, latency_ms, groundedness_score FROM tool_events WHERE worktree_id = ?1 ORDER BY created_at DESC, id DESC LIMIT ?2";
+    let sql = "SELECT query, tool, created_at, latency_ms, groundedness_score FROM \
+               tool_events WHERE worktree_id = ?1 ORDER BY created_at DESC, id DESC LIMIT ?2";
 
     let mut rows = state
         .db

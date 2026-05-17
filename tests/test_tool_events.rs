@@ -66,7 +66,10 @@ async fn test_migration_order_is_valid() {
         names.push(name);
     }
 
-    assert!(names.contains(&"006_tool_events".to_string()), "006_tool_events migration should be applied");
+    assert!(
+        names.contains(&"006_tool_events".to_string()),
+        "006_tool_events migration should be applied"
+    );
     
     // Verify 006 comes after 005
     let pos_005 = names.iter().position(|n| n == "005_semantic_cache");
@@ -98,7 +101,11 @@ async fn test_record_tool_event_with_all_fields() {
     // Verify event was inserted
     let mut rows = db
         .conn()
-        .query("SELECT session_id, tool, query, strategy, result_count, latency_ms, groundedness_score FROM tool_events WHERE id = ?1", [event_id.to_string()])
+        .query(
+            "SELECT session_id, tool, query, strategy, result_count, latency_ms, \
+             groundedness_score FROM tool_events WHERE id = ?1",
+            [event_id.to_string()],
+        )
         .await
         .expect("query event");
 
@@ -149,7 +156,8 @@ async fn test_record_tool_event_with_optional_fields_none() {
     let mut rows = db
         .conn()
         .query(
-            "SELECT session_id, tool, query, strategy, result_count, latency_ms, groundedness_score FROM tool_events WHERE id = ?1",
+            "SELECT session_id, tool, query, strategy, result_count, latency_ms, \
+             groundedness_score FROM tool_events WHERE id = ?1",
             [event_id.to_string()],
         )
         .await
@@ -179,17 +187,44 @@ async fn test_session_summary_aggregation() {
     let session_id = "session-agg-test";
 
     // Insert multiple events for the same session
-    db.record_tool_event_scoped(session_id, "search_code", "auth", Some("deterministic"), Some(10), Some(50), Some(0.90), None)
-        .await
-        .expect("record event 1");
+    db.record_tool_event_scoped(
+        session_id,
+        "search_code",
+        "auth",
+        Some("deterministic"),
+        Some(10),
+        Some(50),
+        Some(0.90),
+        None,
+    )
+    .await
+    .expect("record event 1");
 
-    db.record_tool_event_scoped(session_id, "search_semantic", "database", Some("semantic"), Some(15), Some(100), Some(0.85), None)
-        .await
-        .expect("record event 2");
+    db.record_tool_event_scoped(
+        session_id,
+        "search_semantic",
+        "database",
+        Some("semantic"),
+        Some(15),
+        Some(100),
+        Some(0.85),
+        None,
+    )
+    .await
+    .expect("record event 2");
 
-    db.record_tool_event_scoped(session_id, "search_code", "routing", Some("deterministic"), Some(20), Some(75), Some(0.92), None)
-        .await
-        .expect("record event 3");
+    db.record_tool_event_scoped(
+        session_id,
+        "search_code",
+        "routing",
+        Some("deterministic"),
+        Some(20),
+        Some(75),
+        Some(0.92),
+        None,
+    )
+    .await
+    .expect("record event 3");
 
     // Query session summary
     let summary = db
@@ -206,7 +241,10 @@ async fn test_session_summary_aggregation() {
 
     let avg_groundedness = summary.avg_groundedness.expect("avg groundedness");
     let expected_groundedness = (0.90 + 0.85 + 0.92) / 3.0;
-    assert!((avg_groundedness - expected_groundedness).abs() < 0.01, "groundedness should match within 0.01");
+    assert!(
+        (avg_groundedness - expected_groundedness).abs() < 0.01,
+        "groundedness should match within 0.01"
+    );
 
     assert!(summary.session_start > 0);
     assert!(summary.session_end >= summary.session_start);
@@ -230,17 +268,44 @@ async fn test_tool_events_roundtrip_with_multiple_sessions() {
     let db = open_test_db().await;
 
     // Insert events for multiple sessions
-    db.record_tool_event_scoped("session-1", "search_code", "query1", Some("deterministic"), Some(5), Some(10), Some(0.80), None)
-        .await
-        .expect("record 1");
+    db.record_tool_event_scoped(
+        "session-1",
+        "search_code",
+        "query1",
+        Some("deterministic"),
+        Some(5),
+        Some(10),
+        Some(0.80),
+        None,
+    )
+    .await
+    .expect("record 1");
 
-    db.record_tool_event_scoped("session-1", "search_code", "query2", Some("deterministic"), Some(8), Some(15), Some(0.85), None)
-        .await
-        .expect("record 2");
+    db.record_tool_event_scoped(
+        "session-1",
+        "search_code",
+        "query2",
+        Some("deterministic"),
+        Some(8),
+        Some(15),
+        Some(0.85),
+        None,
+    )
+    .await
+.expect("record 2");
 
-    db.record_tool_event_scoped("session-2", "search_semantic", "query3", Some("semantic"), Some(12), Some(50), Some(0.90), None)
-        .await
-        .expect("record 3");
+    db.record_tool_event_scoped(
+        "session-2",
+        "search_semantic",
+        "query3",
+        Some("semantic"),
+        Some(12),
+        Some(50),
+        Some(0.90),
+        None,
+    )
+    .await
+    .expect("record 3");
 
     // Verify session-1 summary
     let summary1 = db

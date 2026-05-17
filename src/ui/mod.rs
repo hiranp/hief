@@ -33,6 +33,8 @@ pub fn build_router(state: UiState) -> Router {
         .route("/ui/events", get(events::stream_events))
         .route("/ui/activity", get(activity::activity_fragment))
         .route("/ui/worktrees", get(worktrees::list_worktrees))
+        .route("/ui/worktrees/remove", post(worktrees::remove_worktree))
+        .route("/ui/worktrees/{path}/lock", post(worktrees::lock_worktree))
         .route("/ui/tasks/{id}", get(detail::task_detail))
         .route("/ui/review/{id}", get(review::review_panel))
         .route("/ui/review/{id}/block", post(review::block_intent))

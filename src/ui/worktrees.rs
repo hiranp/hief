@@ -65,7 +65,16 @@ pub async fn remove_worktree(
     State(state): State<UiState>,
     Json(req): Json<RemoveRequest>,
 ) -> impl IntoResponse {
-    let path = worktree_git::join_worktree_path(&state.project_root, &req.path);
+    let path = match worktree_git::join_worktree_path(&state.project_root, &req.path) {
+        Ok(path) => path,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"ok": false, "reason": err.to_string()})),
+            )
+                .into_response();
+        }
+    };
 
     match worktree_git::remove_worktree(&state.project_root, &path, req.force).await {
         Ok(()) => Json(serde_json::json!({"ok": true, "path": path})).into_response(),
@@ -81,7 +90,16 @@ pub async fn lock_worktree(
     State(state): State<UiState>,
     Path(path): Path<String>,
 ) -> impl IntoResponse {
-    let target = worktree_git::join_worktree_path(&state.project_root, &path);
+    let target = match worktree_git::join_worktree_path(&state.project_root, &path) {
+        Ok(path) => path,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"ok": false, "reason": err.to_string()})),
+            )
+                .into_response();
+        }
+    };
     match worktree_git::lock_worktree(&state.project_root, &target, "locked from ui").await {
         Ok(()) => Json(serde_json::json!({"ok": true})).into_response(),
         Err(err) => (
@@ -92,21 +110,29 @@ pub async fn lock_worktree(
     }
 }
 
-async fn load_lock_index(state: &UiState) -> Result<HashMap<String, (String, String)>, libsql::Error> {
+async fn load_lock_index(
+    state: &UiState,
+) -> crate::errors::Result<HashMap<String, (String, String)>> {
     let mut rows = state
         .db
         .conn()
         .query(
-            "SELECT intent_id, holder, worktree_id FROM intent_locks WHERE expires_at > unixepoch()",
+            "SELECT intent_id, holder, worktree_id FROM intent_locks \
+             WHERE expires_at > unixepoch()",
             (),
         )
-        .await?;
+        .await
+        .map_err(crate::errors::HiefError::Database)?;
 
     let mut out = HashMap::new();
-    while let Some(row) = rows.next().await? {
-        let intent_id: String = row.get(0)?;
-        let holder: String = row.get(1)?;
-        let worktree_id: String = row.get(2)?;
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(crate::errors::HiefError::Database)?
+    {
+        let intent_id: String = row.get(0).map_err(crate::errors::HiefError::Database)?;
+        let holder: String = row.get(1).map_err(crate::errors::HiefError::Database)?;
+        let worktree_id: String = row.get(2).map_err(crate::errors::HiefError::Database)?;
         out.insert(worktree_id, (intent_id, holder));
     }
     Ok(out)

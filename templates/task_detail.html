@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Task Detail{% endblock %}
+{% block title %}{% if found %}{{ title }} - HIEF{% else %}Task Not Found - HIEF{% endif %}{% endblock %}
 {% block content %}
 <section id="task-detail" class="card">
   {% if found %}
@@ -7,7 +7,7 @@
     <p><strong>{{ title }}</strong></p>
     <p>Status: <span class="status-pill">{{ status }}</span> | Priority: {{ priority }} | Assigned: {{ assigned_to }}</p>
     <p>PAVL Gate: <strong>{% if gate_open %}open{% else %}blocked{% endif %}</strong> ({{ gate_reason }})</p>
-    <p>Telemetry: calls={{ total_calls }}, latency_ms={{ total_latency_ms }}, groundedness={{ groundedness }}</p>
+    <p>Workspace telemetry (ui-task-detail): calls={{ total_calls }}, latency_ms={{ total_latency_ms }}, groundedness={{ groundedness }}</p>
     <h3>Dependencies</h3>
     {% if dependencies.is_empty() %}
       <p class="muted">No dependencies.</p>

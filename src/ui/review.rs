@@ -10,15 +10,20 @@ use crate::ui::UiState;
 #[template(path = "review_panel.html")]
 struct ReviewPanelTemplate {
     intent_id: String,
+    intent_status: String,
     gate_state: String,
     gate_reason: String,
     total_calls: i64,
     avg_groundedness: String,
     message: Option<String>,
+    can_block: bool,
+    can_unblock: bool,
+    can_move_to_review: bool,
 }
 
 pub async fn review_panel(Path(id): Path<String>, State(state): State<UiState>) -> Response {
-    render_panel(&state, &id, None).await
+    let worktree_id = scope::derive_worktree_id(&state.project_root);
+    render_panel(&state, &id, &worktree_id, None).await
 }
 
 pub async fn block_intent(Path(id): Path<String>, State(state): State<UiState>) -> Response {
@@ -45,23 +50,47 @@ async fn transition(state: &UiState, id: &str, to: &str, success_message: &str) 
     )
     .await
     {
-        Ok(()) => render_panel(state, id, Some(success_message.to_string())).await,
+        Ok(()) => render_panel(state, id, &worktree_id, Some(success_message.to_string())).await,
         Err(err) => (
             StatusCode::BAD_REQUEST,
             Html(format!(
-                "<div data-result='error' data-reason='{}'>transition rejected: {}</div>",
-                err,
-                err
+                "<div data-result=\"error\" data-reason=\"{}\">transition rejected: {}</div>",
+                html_escape(&err.to_string()),
+                html_escape(&err.to_string())
             )),
         )
             .into_response(),
     }
 }
 
-async fn render_panel(state: &UiState, id: &str, message: Option<String>) -> Response {
-    let health = crate::mcp::resources::get_project_health(&state.db, &state.project_root, &state.config)
-        .await
-        .ok();
+async fn render_panel(
+    state: &UiState,
+    id: &str,
+    worktree_id: &str,
+    message: Option<String>,
+) -> Response {
+    let intent = match crate::graph::get_intent(&state.db, id).await {
+        Ok(intent) => intent,
+        Err(err) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Html(format!(
+                    "<div data-result=\"error\" data-reason=\"{}\">intent not found: {}</div>",
+                    html_escape(&err.to_string()),
+                    html_escape(id)
+                )),
+            )
+                .into_response();
+        }
+    };
+
+    let health = crate::mcp::resources::get_project_health(
+        &state.db,
+        &state.project_root,
+        &state.config,
+    )
+    .await
+    .ok();
     let gate_state = if health.as_ref().is_some_and(|h| h.wave_gate_open) {
         "open".to_string()
     } else {
@@ -72,15 +101,16 @@ async fn render_panel(state: &UiState, id: &str, message: Option<String>) -> Res
         .and_then(|h| h.gate_reason.clone())
         .unwrap_or_else(|| "pass".to_string());
 
-    let worktree_id = scope::derive_worktree_id(&state.project_root);
+    const UI_TASK_DETAIL_SESSION: &str = "ui-task-detail";
     let summary = state
         .db
-        .get_session_cost_summary_scoped("ui-task-detail", Some(&worktree_id))
+        .get_session_cost_summary_scoped(UI_TASK_DETAIL_SESSION, Some(worktree_id))
         .await
         .ok();
 
     let tpl = ReviewPanelTemplate {
         intent_id: id.to_string(),
+        intent_status: intent.status.clone(),
         gate_state,
         gate_reason,
         total_calls: summary.as_ref().map_or(0, |s| s.total_calls),
@@ -89,7 +119,25 @@ async fn render_panel(state: &UiState, id: &str, message: Option<String>) -> Res
             .map(|v| format!("{:.3}", v))
             .unwrap_or_else(|| "n/a".to_string()),
         message,
+        can_block: crate::graph::validate_transition(&intent.status, "blocked"),
+        can_unblock: crate::graph::validate_transition(&intent.status, "approved"),
+        can_move_to_review: crate::graph::validate_transition(&intent.status, "in_review"),
     };
 
-    Html(tpl.render().unwrap_or_default()).into_response()
+    match tpl.render() {
+        Ok(html) => Html(html).into_response(),
+        Err(err) => {
+            tracing::error!("review panel render failed: {}", err);
+            (StatusCode::INTERNAL_SERVER_ERROR, "render error").into_response()
+        }
+    }
+}
+
+fn html_escape(input: &str) -> String {
+    input
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+    .replace('\'', "&#x27;")
 }

@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use serde::Serialize;
 use tokio::process::Command;
@@ -93,7 +93,9 @@ pub fn parse_porcelain(stdout: &str) -> Result<Vec<GitWorktreeRow>> {
         }
 
         let Some(entry) = current.as_mut() else {
-            return Err(HiefError::Other("invalid porcelain output: missing worktree header".to_string()));
+            return Err(HiefError::Other(
+                "invalid porcelain output: missing worktree header".to_string(),
+            ));
         };
 
         if let Some(head) = line.strip_prefix("HEAD ") {
@@ -114,13 +116,45 @@ pub fn parse_porcelain(stdout: &str) -> Result<Vec<GitWorktreeRow>> {
     Ok(rows)
 }
 
-pub fn join_worktree_path(project_root: &Path, input: &str) -> PathBuf {
+pub fn join_worktree_path(project_root: &Path, input: &str) -> Result<PathBuf> {
     let candidate = PathBuf::from(input);
-    if candidate.is_absolute() {
+    let joined = if candidate.is_absolute() {
         candidate
     } else {
         project_root.join(candidate)
+    };
+
+    let canonical_root = std::fs::canonicalize(project_root).map_err(|e| {
+        HiefError::Other(format!(
+            "cannot resolve project root {}: {}",
+            project_root.display(),
+            e
+        ))
+    })?;
+
+    let normalized_joined = normalize_path_lexically(&joined);
+    if !normalized_joined.starts_with(&canonical_root) {
+        return Err(HiefError::PathTraversal(format!(
+            "path escapes project root: {}",
+            joined.display()
+        )));
     }
+
+    Ok(normalized_joined)
+}
+
+fn normalize_path_lexically(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            _ => normalized.push(component.as_os_str()),
+        }
+    }
+    normalized
 }
 
 async fn is_dirty(path: &Path) -> Result<bool> {

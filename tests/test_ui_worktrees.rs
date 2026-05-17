@@ -1,7 +1,8 @@
 use std::fs;
+use std::path::PathBuf;
 
 use axum::body::{to_bytes, Body};
-use axum::http::{Request, StatusCode};
+use axum::http::{Method, Request, StatusCode};
 use hief::config::Config;
 use hief::db::Database;
 use hief::ui::{self, UiState};
@@ -33,7 +34,8 @@ async fn test_state() -> (tempfile::TempDir, UiState) {
 
 #[test]
 fn test_porcelain_parser_extracts_fields() {
-    let sample = "worktree /tmp/repo\nHEAD 1234\nbranch refs/heads/main\nlocked\n\nworktree /tmp/repo2\nHEAD 5678\nprunable\n";
+    let sample = "worktree /tmp/repo\nHEAD 1234\nbranch refs/heads/main\nlocked\n\n\
+                  worktree /tmp/repo2\nHEAD 5678\nprunable\n";
     let parsed = worktree_git::parse_porcelain(sample).expect("parse");
     assert_eq!(parsed.len(), 2);
     assert_eq!(parsed[0].path, "/tmp/repo");
@@ -81,4 +83,64 @@ async fn test_remove_worktree_rejects_dirty_tree_without_force() {
         .await
         .expect_err("dirty tree should fail");
     assert!(err.to_string().contains("dirty worktree"));
+}
+
+#[test]
+fn test_join_worktree_path_rejects_absolute_path_outside_project() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let outside = if cfg!(windows) {
+        PathBuf::from("C:/outside")
+    } else {
+        PathBuf::from("/tmp")
+    };
+
+    let err = worktree_git::join_worktree_path(
+        dir.path(),
+        outside.to_str().expect("outside path utf8"),
+    )
+    .expect_err("absolute outside path should fail");
+
+    assert!(err.to_string().contains("path traversal"));
+}
+
+#[test]
+fn test_join_worktree_path_rejects_parent_traversal() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let err = worktree_git::join_worktree_path(dir.path(), "../../etc")
+        .expect_err("parent traversal should fail");
+    assert!(err.to_string().contains("path traversal"));
+}
+
+#[tokio::test]
+async fn test_mutating_worktree_routes_are_registered() {
+    let (_dir, state) = test_state().await;
+    let app = ui::build_router(state);
+
+    let remove_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/ui/worktrees/remove")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"path":"/tmp","force":false}"#))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_ne!(remove_response.status(), StatusCode::NOT_FOUND);
+
+    let lock_response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/ui/worktrees/example/lock")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_ne!(lock_response.status(), StatusCode::NOT_FOUND);
 }

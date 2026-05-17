@@ -1,5 +1,6 @@
 use askama::Template;
 use axum::extract::{Path, State};
+use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse};
 
 use crate::mcp::resources;
@@ -25,7 +26,10 @@ struct TaskDetailTemplate {
     activity_count: usize,
 }
 
-pub async fn task_detail(Path(id): Path<String>, State(state): State<UiState>) -> impl IntoResponse {
+pub async fn task_detail(
+    Path(id): Path<String>,
+    State(state): State<UiState>,
+) -> impl IntoResponse {
     let intent = match crate::graph::get_intent_with_deps(&state.db, &id).await {
         Ok(found) => found,
         Err(_) => {
@@ -44,7 +48,13 @@ pub async fn task_detail(Path(id): Path<String>, State(state): State<UiState>) -
                 groundedness: "n/a".to_string(),
                 activity_count: 0,
             };
-            return Html(tpl.render().unwrap_or_default()).into_response();
+            return match tpl.render() {
+                Ok(html) => Html(html).into_response(),
+                Err(err) => {
+                    tracing::error!("task detail render failed (not found view): {}", err);
+                    (StatusCode::INTERNAL_SERVER_ERROR, "render error").into_response()
+                }
+            };
         }
     };
 
@@ -58,9 +68,10 @@ pub async fn task_detail(Path(id): Path<String>, State(state): State<UiState>) -
         .unwrap_or_else(|| "pass".to_string());
 
     let worktree_id = scope::derive_worktree_id(&state.project_root);
+    const UI_TASK_DETAIL_SESSION: &str = "ui-task-detail";
     let session_summary = state
         .db
-        .get_session_cost_summary_scoped("ui-task-detail", Some(&worktree_id))
+        .get_session_cost_summary_scoped(UI_TASK_DETAIL_SESSION, Some(&worktree_id))
         .await
         .ok();
     let recent_activity = activity::load_recent_activity(&state, 20)
@@ -90,5 +101,11 @@ pub async fn task_detail(Path(id): Path<String>, State(state): State<UiState>) -
         activity_count: recent_activity.len(),
     };
 
-    Html(tpl.render().unwrap_or_default()).into_response()
+    match tpl.render() {
+        Ok(html) => Html(html).into_response(),
+        Err(err) => {
+            tracing::error!("task detail render failed: {}", err);
+            (StatusCode::INTERNAL_SERVER_ERROR, "render error").into_response()
+        }
+    }
 }
