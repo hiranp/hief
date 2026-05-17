@@ -135,7 +135,7 @@ Project rules live in `.hief/conventions.toml` (machine-readable) and
 
 ## Key Documentation
 
-* [Architecture Summary](dev-docs/architecture-summary.md) — Quick overview (start here)
+* [Architecture Summary](docs/architecture-summary.md) — Quick overview (start here)
 * [Architecture](dev-docs/architecture.md) — Full technical architecture
 * [Agent Protocol](dev-docs/agent-protocol.md) — Full interaction protocol
 * [Constitution](docs/specs/constitution.md) — Inviolable rules

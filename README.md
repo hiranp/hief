@@ -82,6 +82,12 @@ HIEF Server
 - **Score history** with regression detection
 - **Fail-Closed Wave Gates** — programmatically blocks intent pipeline promotion unless the latest evaluation run passes successfully
 
+### 🌐 MCP Server & Protocol — *"Connect to any agent"*
+
+- **Adaptive Protocol Routing** — dynamically routes workloads across `mcp`, `progressive-mcp`, and `cli` lanes based on token pressure and capabilities
+- **Robust Validation & Security** — strict parameter validation with typed error shapes and path traversal rejection
+- **Dry-Run Installation** — `hief install` scaffolds and previews agent registration payloads safely
+
 ### 📝 Documentation Scaffolding — *"How do we start?"*
 
 - **Spec-Driven Development (SDD)**: Scaffold new feature specs from embedded or custom templates.
@@ -234,10 +240,12 @@ hief patterns list                           # List project patterns
 hief patterns create fix-api --title "Fix API"  # Create/update a pattern
 hief eval run                                # Run golden set evaluation
 hief eval report                             # Show eval score history
+hief session-cost --session-id <id>          # Print human-readable session summary and telemetry
 hief doctor --fix                            # Health check + auto-fix
 hief hooks install                           # Install git hooks for auto-indexing
 hief hooks watch                             # Alias for hooks install
 hief install                                 # Scaffolds installation with validated dry-run preview
+hief ui --port 3190                          # Start the local task-tracking web UI
 hief docs init                               # Initialize standard docs structure
 hief docs generate spec --name "feature"     # Scaffold a new feature spec
 hief docs generate harness --name "feature"  # Scaffold a new test harness
@@ -307,6 +315,7 @@ templates/               # Doc scaffolding templates
 | Document | Description |
 |----------|-------------|
 | [Manifesto](MANIFESTO.md) | Core beliefs and design philosophy |
+| [Task Tracking UI](dev-docs/task-tracking-ui.md) | Local-first task and worktree web UI architecture |
 | [Constitution](docs/specs/constitution.md) | Inviolable project rules |
 | [Scaffolding Guide](docs/SCAFFOLDING.md) | How the `docs` engine works |
 | [CHANGELOG](CHANGELOG.md) | Release history |
