@@ -38,7 +38,7 @@ pub fn groundedness_score(query: &str, contents: &[&str]) -> f64 {
     raw.clamp(0.0, 1.0)
 }
 
-fn normalized_tokens(text: &str) -> std::collections::BTreeSet<String> {
+fn normalized_tokens(text: &str) -> std::collections::HashSet<String> {
     text.split(|ch: char| !ch.is_alphanumeric() && ch != '_')
         .map(|token| token.trim().to_ascii_lowercase())
         .filter(|token| token.len() >= 2)

@@ -340,6 +340,18 @@ fn estimate_tokens(text: &str) -> usize {
     text.chars().count().div_ceil(4).max(1)
 }
 
+/// Return the caller-supplied session ID, or generate a per-request UUID.
+///
+/// Using a unique ID instead of a sentinel string prevents all unannotated
+/// callers from colliding into a single `"unknown"` aggregate bucket in
+/// `get_session_summary`, which would make session metrics meaningless.
+fn session_id_or_anonymous(session_id: Option<&str>) -> std::borrow::Cow<'_, str> {
+    match session_id {
+        Some(id) if !id.trim().is_empty() => std::borrow::Cow::Borrowed(id),
+        _ => std::borrow::Cow::Owned(format!("anon-{}", uuid::Uuid::new_v4().as_simple())),
+    }
+}
+
 fn validation_error(message: String, payload: ToolValidationPayload) -> ErrorData {
     let data = serde_json::to_value(payload).ok();
     ErrorData::invalid_params(message, data)
@@ -736,7 +748,7 @@ impl HiefServer {
                 let latency_ms = started_at.elapsed().as_millis().min(i32::MAX as u128) as i32;
                 let strategy = lane_strategy_label(base_strategy, &lane, "error");
                 self.record_tool_event_best_effort(
-                    params.session_id.as_deref().unwrap_or("unknown"),
+                    session_id_or_anonymous(params.session_id.as_deref()).as_ref(),
                     "search_code",
                     &query,
                     Some(&strategy),
@@ -794,7 +806,7 @@ impl HiefServer {
         let latency_ms = started_at.elapsed().as_millis().min(i32::MAX as u128) as i32;
         let strategy = lane_strategy_label(base_strategy, &lane, "ok");
         self.record_tool_event_best_effort(
-            params.session_id.as_deref().unwrap_or("unknown"),
+            session_id_or_anonymous(params.session_id.as_deref()).as_ref(),
             "search_code",
             &query,
             Some(&strategy),
@@ -1169,7 +1181,7 @@ impl HiefServer {
                 let latency_ms = started_at.elapsed().as_millis().min(i32::MAX as u128) as i32;
                 let strategy = lane_strategy_label("structural", &lane, "error");
                 self.record_tool_event_best_effort(
-                    params.session_id.as_deref().unwrap_or("unknown"),
+                    session_id_or_anonymous(params.session_id.as_deref()).as_ref(),
                     "structural_search",
                     &params.pattern,
                     Some(&strategy),
@@ -1203,7 +1215,7 @@ impl HiefServer {
         let latency_ms = started_at.elapsed().as_millis().min(i32::MAX as u128) as i32;
         let strategy = lane_strategy_label("structural", &lane, "ok");
         self.record_tool_event_best_effort(
-            params.session_id.as_deref().unwrap_or("unknown"),
+            session_id_or_anonymous(params.session_id.as_deref()).as_ref(),
             "structural_search",
             &params.pattern,
             Some(&strategy),
@@ -1317,7 +1329,7 @@ impl HiefServer {
         let session_id = params.session_id.clone();
         if !self.config.vectors.enabled {
             self.record_tool_event_best_effort(
-                session_id.as_deref().unwrap_or("unknown"),
+                session_id_or_anonymous(session_id.as_deref()).as_ref(),
                 "semantic_search",
                 params.query.as_deref().unwrap_or(""),
                 Some("strategy=semantic;lane=mcp;reason=vectors_disabled;outcome=error"),
@@ -1351,7 +1363,7 @@ impl HiefServer {
             Err(err) => {
                 let strategy = lane_strategy_label(base_strategy, &lane, "error");
                 self.record_tool_event_best_effort(
-                    session_id.as_deref().unwrap_or("unknown"),
+                    session_id_or_anonymous(session_id.as_deref()).as_ref(),
                     "semantic_search",
                     &query_text,
                     Some(&strategy),
@@ -1380,7 +1392,7 @@ impl HiefServer {
             Err(err) => {
                 let strategy = lane_strategy_label(base_strategy, &lane, "error");
                 self.record_tool_event_best_effort(
-                    session_id.as_deref().unwrap_or("unknown"),
+                    session_id_or_anonymous(session_id.as_deref()).as_ref(),
                     "semantic_search",
                     &query_text,
                     Some(&strategy),
@@ -1420,7 +1432,7 @@ impl HiefServer {
 
         let strategy = lane_strategy_label(base_strategy, &lane, "ok");
         self.record_tool_event_best_effort(
-            session_id.as_deref().unwrap_or("unknown"),
+            session_id_or_anonymous(session_id.as_deref()).as_ref(),
             "semantic_search",
             &query_for_telemetry,
             Some(&strategy),

@@ -126,37 +126,16 @@ pub async fn search(db: &Database, query: &SearchQuery) -> Result<Vec<SearchResu
 
     debug!("Search SQL: {} | params: {:?}", sql, params);
 
-    // Execute with dynamic params
-    let mut rows = match params.len() {
-        1 => conn
-            .query(&sql, [params[0].as_str()])
-            .await
-            .map_err(HiefError::Database)?,
-        2 => conn
-            .query(&sql, [params[0].as_str(), params[1].as_str()])
-            .await
-            .map_err(HiefError::Database)?,
-        3 => conn
-            .query(
-                &sql,
-                [params[0].as_str(), params[1].as_str(), params[2].as_str()],
-            )
-            .await
-            .map_err(HiefError::Database)?,
-        4 => conn
-            .query(
-                &sql,
-                [
-                    params[0].as_str(),
-                    params[1].as_str(),
-                    params[2].as_str(),
-                    params[3].as_str(),
-                ],
-            )
-            .await
-            .map_err(HiefError::Database)?,
-        _ => unreachable!(),
-    };
+    // Execute with dynamic params via Vec<libsql::Value> to handle any
+    // number of filter parameters without a brittle match-on-count branch.
+    let libsql_params: Vec<libsql::Value> = params
+        .iter()
+        .map(|s| libsql::Value::from(s.as_str()))
+        .collect();
+    let mut rows = conn
+        .query(&sql, libsql_params)
+        .await
+        .map_err(HiefError::Database)?;
 
     let mut results = Vec::new();
 
@@ -187,14 +166,14 @@ pub async fn search(db: &Database, query: &SearchQuery) -> Result<Vec<SearchResu
         });
     }
 
-    let groundedness = if results.is_empty() {
-        0.0
-    } else {
-        let contexts: Vec<&str> = results.iter().map(|r| r.content.as_str()).collect();
-        crate::eval::scorer::groundedness_score(&query.text, &contexts)
-    };
+    // Compute groundedness per-result so downstream callers (PAVL, ranking
+    // boosts) can distinguish high-overlap from low-overlap results rather
+    // than receiving an identical aggregate score stamped on every item.
     for result in &mut results {
-        result.groundedness_score = Some(groundedness);
+        result.groundedness_score = Some(crate::eval::scorer::groundedness_score(
+            &query.text,
+            &[result.content.as_str()],
+        ));
     }
 
     debug!(
