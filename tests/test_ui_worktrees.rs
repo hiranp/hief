@@ -1,12 +1,12 @@
 use std::fs;
 use std::path::PathBuf;
 
-use axum::body::{to_bytes, Body};
+use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};
 use hief::config::Config;
 use hief::db::Database;
-use hief::ui::{self, UiState};
 use hief::ui::worktree_git;
+use hief::ui::{self, UiState};
 use tower::util::ServiceExt;
 
 async fn test_state() -> (tempfile::TempDir, UiState) {
@@ -94,11 +94,9 @@ fn test_join_worktree_path_rejects_absolute_path_outside_project() {
         PathBuf::from("/tmp")
     };
 
-    let err = worktree_git::join_worktree_path(
-        dir.path(),
-        outside.to_str().expect("outside path utf8"),
-    )
-    .expect_err("absolute outside path should fail");
+    let err =
+        worktree_git::join_worktree_path(dir.path(), outside.to_str().expect("outside path utf8"))
+            .expect_err("absolute outside path should fail");
 
     assert!(err.to_string().contains("path traversal"));
 }
@@ -116,6 +114,23 @@ async fn test_mutating_worktree_routes_are_registered() {
     let (_dir, state) = test_state().await;
     let app = ui::build_router(state);
 
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/ui/worktrees/create")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"path":"/tmp/example","branch":"feature/demo"}"#,
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_ne!(create_response.status(), StatusCode::NOT_FOUND);
+
     let remove_response = app
         .clone()
         .oneshot(
@@ -132,6 +147,7 @@ async fn test_mutating_worktree_routes_are_registered() {
     assert_ne!(remove_response.status(), StatusCode::NOT_FOUND);
 
     let lock_response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -143,4 +159,31 @@ async fn test_mutating_worktree_routes_are_registered() {
         .expect("response");
 
     assert_ne!(lock_response.status(), StatusCode::NOT_FOUND);
+
+    let prune_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/ui/worktrees/prune")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_ne!(prune_response.status(), StatusCode::NOT_FOUND);
+
+    let repair_response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/ui/worktrees/repair")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_ne!(repair_response.status(), StatusCode::NOT_FOUND);
 }

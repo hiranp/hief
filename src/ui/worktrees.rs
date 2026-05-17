@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 
+use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::Json;
 use serde::{Deserialize, Serialize};
 
 use crate::scope;
-use crate::ui::worktree_git;
 use crate::ui::UiState;
+use crate::ui::worktree_git;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct WorktreeBindingRow {
@@ -26,6 +26,12 @@ pub struct RemoveRequest {
     pub path: String,
     #[serde(default)]
     pub force: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateRequest {
+    pub path: String,
+    pub branch: String,
 }
 
 pub async fn list_worktrees(State(state): State<UiState>) -> impl IntoResponse {
@@ -59,6 +65,40 @@ pub async fn list_worktrees(State(state): State<UiState>) -> impl IntoResponse {
         .collect::<Vec<_>>();
 
     Json(rows).into_response()
+}
+
+pub async fn create_worktree(
+    State(state): State<UiState>,
+    Json(req): Json<CreateRequest>,
+) -> impl IntoResponse {
+    if req.branch.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"ok": false, "reason": "branch is required"})),
+        )
+            .into_response();
+    }
+
+    let path = match worktree_git::join_worktree_path(&state.project_root, &req.path) {
+        Ok(path) => path,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"ok": false, "reason": err.to_string()})),
+            )
+                .into_response();
+        }
+    };
+
+    match worktree_git::create_worktree(&state.project_root, &path, req.branch.trim()).await {
+        Ok(()) => Json(serde_json::json!({"ok": true, "path": path, "branch": req.branch}))
+            .into_response(),
+        Err(err) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"ok": false, "reason": err.to_string()})),
+        )
+            .into_response(),
+    }
 }
 
 pub async fn remove_worktree(
@@ -101,6 +141,28 @@ pub async fn lock_worktree(
         }
     };
     match worktree_git::lock_worktree(&state.project_root, &target, "locked from ui").await {
+        Ok(()) => Json(serde_json::json!({"ok": true})).into_response(),
+        Err(err) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"ok": false, "reason": err.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn prune_worktrees(State(state): State<UiState>) -> impl IntoResponse {
+    match worktree_git::prune_worktrees(&state.project_root).await {
+        Ok(()) => Json(serde_json::json!({"ok": true})).into_response(),
+        Err(err) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"ok": false, "reason": err.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn repair_worktrees(State(state): State<UiState>) -> impl IntoResponse {
+    match worktree_git::repair_worktrees(&state.project_root).await {
         Ok(()) => Json(serde_json::json!({"ok": true})).into_response(),
         Err(err) => (
             StatusCode::BAD_REQUEST,

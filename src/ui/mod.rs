@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
+use axum::Router;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
-use axum::Router;
 use tower_http::trace::TraceLayer;
 
 use crate::config::Config;
@@ -33,8 +33,11 @@ pub fn build_router(state: UiState) -> Router {
         .route("/ui/events", get(events::stream_events))
         .route("/ui/activity", get(activity::activity_fragment))
         .route("/ui/worktrees", get(worktrees::list_worktrees))
+        .route("/ui/worktrees/create", post(worktrees::create_worktree))
         .route("/ui/worktrees/remove", post(worktrees::remove_worktree))
         .route("/ui/worktrees/{path}/lock", post(worktrees::lock_worktree))
+        .route("/ui/worktrees/prune", post(worktrees::prune_worktrees))
+        .route("/ui/worktrees/repair", post(worktrees::repair_worktrees))
         .route("/ui/tasks/{id}", get(detail::task_detail))
         .route("/ui/review/{id}", get(review::review_panel))
         .route("/ui/review/{id}/block", post(review::block_intent))
