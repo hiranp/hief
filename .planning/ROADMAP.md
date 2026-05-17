@@ -73,9 +73,9 @@ Plans:
 
 Plans:
 
-- [ ] 04-01-PLAN.md - wave-level eval gate enforcement and fail-closed verification in intent state machine
-- [ ] 04-02-PLAN.md - worktree-scoped session state and intent soft locks
-- [ ] 04-03-PLAN.md - retrieval-weight adjustment from trajectory history (PAVL LEARN phase, closes EVAL-02)
+- [x] 04-01-PLAN.md - wave-level eval gate enforcement and fail-closed verification in intent state machine
+- [x] 04-02-PLAN.md - worktree-scoped session state and intent soft locks
+- [x] 04-03-PLAN.md - retrieval-weight adjustment from trajectory history (PAVL LEARN phase, closes EVAL-02)
 
 ---
 

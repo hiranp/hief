@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 1
+current_plan: 2
 status: in_progress
-stopped_at: Completed 03-03-PLAN.md
-last_updated: "2026-05-16T23:59:00.000Z"
+stopped_at: Drafted 04-01-PLAN.md, 04-02-PLAN.md, and 04-03-PLAN.md
+last_updated: "2026-05-17T04:24:26.321Z"
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 10
-  completed_plans: 7
-  percent: 70
+  completed_plans: 8
+  percent: 60
 ---
 
 # STATE
 
 ## Phase 04: Orchestration Hardening
 
-Current Plan: 1
+Current Plan: 2
 Total Plans in Phase: 3
-Progress: [███████░░░] 70%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
@@ -33,6 +33,7 @@ Progress: [███████░░░] 70%
 | Phase 03 P01 | 35m | 2 tasks | 2 files |
 | Phase 03 P02 | 40m | 2 tasks | 5 files |
 | Phase 03 P03 | 30m | 2 tasks | 5 files |
+| Phase 04 P01 | 2m | 2 tasks | 6 files |
 
 ## Decisions Made
 
@@ -52,10 +53,14 @@ Progress: [███████░░░] 70%
 - [Phase 03]: Session summary surfaced through both MCP and CLI (`session-cost`) using aggregate-only output — Avoids raw query leakage by default while keeping telemetry operationally useful.
 - [Phase 03]: Deterministic lexical-overlap groundedness scoring normalized to [0,1] and wired into lexical + semantic retrieval metadata — Enables low-confidence detection without external judge dependencies.
 - [Phase 03]: Reuse tool_events as trajectory store with strategy/lane/outcome encoding — Keeps EVAL-02 additive and backward-compatible with existing telemetry schema.
+- [Cross-phase]: Approved adapter-first context-firewall direction — hooks are optional accelerators, MCP-only fallback remains first-class.
+- [Cross-phase]: Approved `execute_code` under deny-by-default policy with explicit allowlist and auditable enforcement.
+- [Phase 04]: Fail-closed eval gate blocks in_review->verified and verified->merged promotions unless the latest eval run is passing.
+- [Phase 04]: Project health now reports wave_gate_open and gate_reason from the shared latest-eval gate helper.
 
 ## Session Info
 
-Last session: 2026-05-16T23:59:00.000Z
-Last Date: 2026-05-16T23:59:00.000Z
-Stopped At: Completed 03-03-PLAN.md
+Last session: 2026-05-17T04:23:26.899Z
+Last Date: 2026-05-17T04:23:26.899Z
+Stopped At: Drafted 04-01-PLAN.md, 04-02-PLAN.md, and 04-03-PLAN.md
 Resume File: None
