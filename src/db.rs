@@ -1,6 +1,7 @@
 //! Database connection and migrations for libsql.
 
 use libsql::{Builder, Connection};
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tracing::{debug, info};
 
@@ -102,6 +103,7 @@ impl Database {
             ("006_tool_events", MIGRATION_006_TOOL_EVENTS),
             ("007_worktree_scope", MIGRATION_007_WORKTREE_SCOPE),
             ("008_intent_locks", MIGRATION_008_INTENT_LOCKS),
+            ("009_retrieval_weights", MIGRATION_009_RETRIEVAL_WEIGHTS),
         ];
 
         for (name, sql) in migrations {
@@ -333,6 +335,98 @@ impl Database {
             per_tool,
         })
     }
+
+    /// Load latest retrieval weight snapshot row.
+    pub async fn latest_retrieval_weight_snapshot(
+        &self,
+    ) -> Result<Option<RetrievalWeightSnapshotRow>> {
+        let mut rows = self
+            .conn
+            .query(
+                "SELECT id, current_json, candidate_json, applied, sample_size,
+                        outcome_label, candidate_delta, learning_state,
+                        last_learning_outcome, created_at
+                 FROM retrieval_weight_snapshots
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 1",
+                (),
+            )
+            .await
+            .map_err(HiefError::Database)?;
+
+        if let Some(row) = rows.next().await.map_err(HiefError::Database)? {
+            Ok(Some(RetrievalWeightSnapshotRow {
+                id: row.get(0).map_err(HiefError::Database)?,
+                current_json: row.get(1).map_err(HiefError::Database)?,
+                candidate_json: row.get::<String>(2).ok().filter(|v| !v.is_empty()),
+                applied: row.get::<i64>(3).map_err(HiefError::Database)? != 0,
+                sample_size: row.get(4).map_err(HiefError::Database)?,
+                outcome_label: row.get(5).map_err(HiefError::Database)?,
+                candidate_delta: row.get(6).ok(),
+                learning_state: row.get(7).map_err(HiefError::Database)?,
+                last_learning_outcome: row.get::<String>(8).ok().filter(|v| !v.is_empty()),
+                created_at: row.get(9).map_err(HiefError::Database)?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Persist retrieval weight snapshot metadata.
+    pub async fn insert_retrieval_weight_snapshot(
+        &self,
+        snapshot: &RetrievalWeightSnapshotWrite,
+    ) -> Result<i64> {
+        let affected = self
+            .conn
+            .execute(
+                "INSERT INTO retrieval_weight_snapshots
+                 (current_json, candidate_json, applied, sample_size, outcome_label,
+                  candidate_delta, learning_state, last_learning_outcome)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                libsql::params![
+                    snapshot.current_json.as_str(),
+                    snapshot.candidate_json.as_deref().unwrap_or(""),
+                    if snapshot.applied { 1 } else { 0 },
+                    snapshot.sample_size,
+                    snapshot.outcome_label.as_str(),
+                    snapshot.candidate_delta,
+                    snapshot.learning_state.as_str(),
+                    snapshot.last_learning_outcome.as_deref().unwrap_or(""),
+                ],
+            )
+            .await
+            .map_err(HiefError::Database)?;
+
+        Ok(affected as i64)
+    }
+
+    /// Aggregate recent groundedness telemetry for bounded learning updates.
+    pub async fn recent_groundedness_window(&self, limit: usize) -> Result<(i64, Option<f64>)> {
+        let mut rows = self
+            .conn
+            .query(
+                "WITH recent AS (
+                    SELECT groundedness_score
+                    FROM tool_events
+                    WHERE groundedness_score IS NOT NULL
+                    ORDER BY created_at DESC
+                    LIMIT ?1
+                 )
+                 SELECT COUNT(*), AVG(groundedness_score) FROM recent",
+                [limit as i64],
+            )
+            .await
+            .map_err(HiefError::Database)?;
+
+        if let Some(row) = rows.next().await.map_err(HiefError::Database)? {
+            let count: i64 = row.get(0).map_err(HiefError::Database)?;
+            let avg: Option<f64> = row.get(1).ok();
+            Ok((count, avg))
+        } else {
+            Ok((0, None))
+        }
+    }
 }
 
 /// Session summary metrics aggregated from tool events.
@@ -367,6 +461,32 @@ pub struct ToolBreakdown {
     pub total_calls: i64,
     pub total_latency_ms: i64,
     pub avg_groundedness: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetrievalWeightSnapshotRow {
+    pub id: i64,
+    pub current_json: String,
+    pub candidate_json: Option<String>,
+    pub applied: bool,
+    pub sample_size: i64,
+    pub outcome_label: String,
+    pub candidate_delta: Option<f64>,
+    pub learning_state: String,
+    pub last_learning_outcome: Option<String>,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetrievalWeightSnapshotWrite {
+    pub current_json: String,
+    pub candidate_json: Option<String>,
+    pub applied: bool,
+    pub sample_size: i64,
+    pub outcome_label: String,
+    pub candidate_delta: Option<f64>,
+    pub learning_state: String,
+    pub last_learning_outcome: Option<String>,
 }
 
 fn bounded_text(input: &str, max_chars: usize) -> String {
@@ -590,6 +710,24 @@ CREATE INDEX IF NOT EXISTS idx_intent_locks_expires ON intent_locks(expires_at);
 CREATE INDEX IF NOT EXISTS idx_intent_locks_worktree ON intent_locks(worktree_id);
 "#;
 
+const MIGRATION_009_RETRIEVAL_WEIGHTS: &str = r#"
+CREATE TABLE IF NOT EXISTS retrieval_weight_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    current_json TEXT NOT NULL,
+    candidate_json TEXT,
+    applied INTEGER NOT NULL DEFAULT 0,
+    sample_size INTEGER NOT NULL DEFAULT 0,
+    outcome_label TEXT NOT NULL DEFAULT 'neutral',
+    candidate_delta REAL,
+    learning_state TEXT NOT NULL DEFAULT 'neutral',
+    last_learning_outcome TEXT,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_retrieval_weight_snapshots_created
+    ON retrieval_weight_snapshots(created_at DESC);
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -627,7 +765,8 @@ mod tests {
                 "005_semantic_cache",
                 "006_tool_events",
                 "007_worktree_scope",
-                "008_intent_locks"
+                "008_intent_locks",
+                "009_retrieval_weights"
             ]
         );
     }
@@ -785,7 +924,7 @@ mod tests {
                 .unwrap();
             let row = rows.next().await.unwrap().unwrap();
             let count: i64 = row.get(0).unwrap();
-            assert_eq!(count, 8, "Expected 8 migrations (001_chunks, 002_intents, 003_eval_runs, 004_cognitive_memory, 005_semantic_cache, 006_tool_events, 007_worktree_scope, 008_intent_locks)");
+            assert_eq!(count, 9, "Expected 9 migrations (001_chunks, 002_intents, 003_eval_runs, 004_cognitive_memory, 005_semantic_cache, 006_tool_events, 007_worktree_scope, 008_intent_locks, 009_retrieval_weights)");
         }
     }
 
