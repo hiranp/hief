@@ -280,7 +280,6 @@ src/
 
 hief.toml                # Project-level configuration
 templates/               # Doc scaffolding templates
-vscode-hief/             # VS Code extension (Kanban, search, dashboard)
 ```
 
 ## What Makes HIEF Different
@@ -305,15 +304,6 @@ vscode-hief/             # VS Code extension (Kanban, search, dashboard)
 | [Constitution](docs/specs/constitution.md) | Inviolable project rules |
 | [Scaffolding Guide](docs/SCAFFOLDING.md) | How the `docs` engine works |
 | [CHANGELOG](CHANGELOG.md) | Release history |
-
-## VS Code Extension
-
-A companion VS Code extension provides a Kanban board, intent list, dashboard,
-and code search view. See [`vscode-hief/`](vscode-hief/) for details.
-
-```sh
-cd vscode-hief && npm install && npm run build
-```
 
 ## Building from Source
 

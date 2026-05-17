@@ -32,6 +32,3 @@ pnpm-lock.yaml
 *.swp
 *.swo
 
-# VSCode extension
-vscode-hief/node_modules/
-vscode-hief/dist/
