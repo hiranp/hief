@@ -728,7 +728,8 @@ impl HiefServer {
         Parameters(params): Parameters<SearchCodeParams>,
     ) -> Result<Json<ObjectResponse<Vec<SearchResult>>>, ErrorData> {
         let started_at = Instant::now();
-        let query = self.validate_required_string("search_code", "query", params.query.as_deref())?;
+        let query =
+            self.validate_required_string("search_code", "query", params.query.as_deref())?;
         let route = crate::index::route_query(&query);
         debug!(?route, "search_code route selected");
 
@@ -773,8 +774,8 @@ impl HiefServer {
                 &file_paths,
                 Some(&self.worktree_id),
             )
-                .await
-                .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+            .await
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
             for result in &mut results {
                 if let Some(&boost) = boosts.get(&result.file_path) {
@@ -931,8 +932,8 @@ impl HiefServer {
                 Some(&self.worktree_id),
                 self.config.graph.stale_timeout_hours,
             )
-                .await
-                .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+            .await
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         }
 
         if let Some(assignee) = &params.assigned_to {
@@ -1255,7 +1256,8 @@ impl HiefServer {
         &self,
         Parameters(params): Parameters<RelatedFilesParams>,
     ) -> Result<Json<ObjectResponse<Vec<crate::index::memory::RelatedFile>>>, ErrorData> {
-        let file = self.validate_required_string("related_files", "file", params.file.as_deref())?;
+        let file =
+            self.validate_required_string("related_files", "file", params.file.as_deref())?;
         let _ = self.validate_path("related_files", "file", Some(&file))?;
         let top_k = self.validate_top_k("related_files", "top_k", params.top_k, 10)?;
 
@@ -1335,8 +1337,8 @@ impl HiefServer {
             limit,
             Some(&self.worktree_id),
         )
-            .await
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        .await
+        .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
         Ok(Json(ObjectResponse { result: ctx }))
     }
@@ -1382,23 +1384,24 @@ impl HiefServer {
         );
         let base_strategy = retrieval_strategy_name(&route);
 
-        let query_vector = match crate::index::vectors::embed_text(&query_text, self.config.vectors.dimensions) {
-            Ok(vec) => vec,
-            Err(err) => {
-                let strategy = lane_strategy_label(base_strategy, &lane, "error");
-                self.record_tool_event_best_effort(
-                    session_id_or_anonymous(session_id.as_deref()).as_ref(),
-                    "semantic_search",
-                    &query_text,
-                    Some(&strategy),
-                    None,
-                    Some(started_at.elapsed().as_millis().min(i32::MAX as u128) as i32),
-                    None,
-                )
-                .await;
-                return Err(ErrorData::internal_error(err.to_string(), None));
-            }
-        };
+        let query_vector =
+            match crate::index::vectors::embed_text(&query_text, self.config.vectors.dimensions) {
+                Ok(vec) => vec,
+                Err(err) => {
+                    let strategy = lane_strategy_label(base_strategy, &lane, "error");
+                    self.record_tool_event_best_effort(
+                        session_id_or_anonymous(session_id.as_deref()).as_ref(),
+                        "semantic_search",
+                        &query_text,
+                        Some(&strategy),
+                        None,
+                        Some(started_at.elapsed().as_millis().min(i32::MAX as u128) as i32),
+                        None,
+                    )
+                    .await;
+                    return Err(ErrorData::internal_error(err.to_string(), None));
+                }
+            };
         let query = crate::index::vectors::SemanticQuery {
             query: query_text.clone(),
             top_k: self.validate_top_k("semantic_search", "top_k", params.top_k, 10)?,
@@ -1411,7 +1414,8 @@ impl HiefServer {
             &query,
             &self.config.vectors,
         )
-        .await {
+        .await
+        {
             Ok(outcome) => outcome,
             Err(err) => {
                 let strategy = lane_strategy_label(base_strategy, &lane, "error");
@@ -1482,13 +1486,10 @@ impl HiefServer {
             "session_id",
             params.session_id.as_deref(),
         )?;
-        let result = resources::get_session_summary_resource(
-            &self.db,
-            &session_id,
-            Some(&self.worktree_id),
-        )
-            .await
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        let result =
+            resources::get_session_summary_resource(&self.db, &session_id, Some(&self.worktree_id))
+                .await
+                .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         Ok(Json(ObjectResponse { result }))
     }
 
@@ -2006,7 +2007,9 @@ mod tests {
     use crate::index::search::SearchResult;
 
     fn long_text(prefix: &str, count: usize) -> String {
-        std::iter::repeat_n(prefix, count).collect::<Vec<_>>().join(" ")
+        std::iter::repeat_n(prefix, count)
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 
     #[test]
@@ -2032,18 +2035,17 @@ mod tests {
         assert_eq!(compressed[0].symbol_kind, results[0].symbol_kind);
         assert_eq!(compressed[0].parent_scope, results[0].parent_scope);
         assert_eq!(compressed[0].snippet, results[0].snippet);
-        assert!(estimated_serialized_tokens(&ObjectResponse {
-            result: compressed,
-        }) <= SEARCH_RESPONSE_TOKEN_BUDGET);
+        assert!(
+            estimated_serialized_tokens(&ObjectResponse { result: compressed })
+                <= SEARCH_RESPONSE_TOKEN_BUDGET
+        );
     }
 
     #[test]
     fn search_budget_compression_keeps_empty_results_valid() {
         let compressed = compress_search_results(&[]);
         assert!(compressed.is_empty());
-        assert!(estimated_serialized_tokens(&ObjectResponse {
-            result: compressed,
-        }) > 0);
+        assert!(estimated_serialized_tokens(&ObjectResponse { result: compressed }) > 0);
     }
 
     #[test]
@@ -2194,9 +2196,7 @@ mod tests {
     async fn test_record_tool_event_best_effort_never_panics_on_edge_cases() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let db_path = tmp.path().join("test.db");
-        let db = crate::db::Database::open(&db_path)
-            .await
-            .expect("open db");
+        let db = crate::db::Database::open(&db_path).await.expect("open db");
         let server = HiefServer::new(db, tmp.path().to_path_buf());
 
         // Edge case: empty session_id, empty query, zero-length strategy
@@ -2235,9 +2235,7 @@ mod tests {
     async fn test_record_tool_event_best_effort_absorbs_and_does_not_propagate() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let db_path = tmp.path().join("test.db");
-        let db = crate::db::Database::open(&db_path)
-            .await
-            .expect("open db");
+        let db = crate::db::Database::open(&db_path).await.expect("open db");
         let server = HiefServer::new(db, tmp.path().to_path_buf());
 
         // NaN is not storable as a meaningful groundedness score. Even if

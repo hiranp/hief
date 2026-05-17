@@ -138,14 +138,8 @@ pub async fn update_status_scoped(
     let lease_secs = std::cmp::max(stale_timeout_hours, 1) * 3600;
 
     if current.status != "in_progress" && new_status == "in_progress" {
-        intent::acquire_soft_lock(
-            db,
-            id,
-            normalized_holder,
-            normalized_worktree,
-            lease_secs,
-        )
-        .await?;
+        intent::acquire_soft_lock(db, id, normalized_holder, normalized_worktree, lease_secs)
+            .await?;
     }
 
     intent::update_status(db, id, new_status).await?;

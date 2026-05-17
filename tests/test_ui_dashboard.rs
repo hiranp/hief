@@ -1,4 +1,4 @@
-use axum::body::{to_bytes, Body};
+use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use hief::config::Config;
 use hief::db::Database;
@@ -36,7 +36,12 @@ async fn test_dashboard_route_200_with_empty_states() {
     let app = ui::build_router(state);
 
     let response = app
-        .oneshot(Request::builder().uri("/ui").body(Body::empty()).expect("request"))
+        .oneshot(
+            Request::builder()
+                .uri("/ui")
+                .body(Body::empty())
+                .expect("request"),
+        )
         .await
         .expect("response");
     assert_eq!(response.status(), StatusCode::OK);
@@ -55,11 +60,18 @@ async fn test_dashboard_renders_intent_rows() {
     let (_dir, state) = test_state().await;
     let intent = Intent::new("feature", "UI dashboard entry", None, None);
     let intent_id = intent.id.clone();
-    graph::create_intent(&state.db, &intent).await.expect("create intent");
+    graph::create_intent(&state.db, &intent)
+        .await
+        .expect("create intent");
 
     let app = ui::build_router(state);
     let response = app
-        .oneshot(Request::builder().uri("/ui").body(Body::empty()).expect("request"))
+        .oneshot(
+            Request::builder()
+                .uri("/ui")
+                .body(Body::empty())
+                .expect("request"),
+        )
         .await
         .expect("response");
     assert_eq!(response.status(), StatusCode::OK);

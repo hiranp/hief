@@ -1,8 +1,8 @@
 use clap::Parser;
-use hief::cli::{Cli, Commands, InstallArgs};
 use hief::cli::commands::build_install_preview;
+use hief::cli::{Cli, Commands, InstallArgs};
 use hief::config::{Config, RouterConfig};
-use hief::router::{select_lane, OperationRequest, ProtocolLane};
+use hief::router::{OperationRequest, ProtocolLane, select_lane};
 use tempfile::TempDir;
 
 fn test_config() -> Config {
@@ -28,19 +28,32 @@ fn test_local_deterministic_operations_route_to_cli_lane() {
 #[test]
 fn test_remote_operations_route_to_mcp_lane() {
     let config = test_config();
-    let decision = select_lane(&OperationRequest::remote("mcp-install", 128), &config.router);
+    let decision = select_lane(
+        &OperationRequest::remote("mcp-install", 128),
+        &config.router,
+    );
 
     assert_eq!(decision.lane, ProtocolLane::Mcp);
-    assert_eq!(decision.reason, "operation requires remote or authenticated execution");
+    assert_eq!(
+        decision.reason,
+        "operation requires remote or authenticated execution"
+    );
 }
 
 #[test]
 fn test_token_pressure_operations_route_to_progressive_mcp_lane() {
     let config = test_config();
-    let decision = select_lane(&OperationRequest::local("large-search", 1024), &config.router);
+    let decision = select_lane(
+        &OperationRequest::local("large-search", 1024),
+        &config.router,
+    );
 
     assert_eq!(decision.lane, ProtocolLane::ProgressiveMcp);
-    assert!(decision.reason.contains("estimated token pressure 1024 exceeds threshold 512"));
+    assert!(
+        decision
+            .reason
+            .contains("estimated token pressure 1024 exceeds threshold 512")
+    );
 }
 
 #[test]
@@ -66,7 +79,11 @@ fn test_install_preview_for_claude_desktop_is_deterministic() {
     assert!(preview.dry_run);
     assert_eq!(preview.lane, "mcp");
     assert!(preview.config_block.contains("[mcp_servers.hief]"));
-    assert!(preview.config_block.contains("platform = \"claude-desktop\""));
+    assert!(
+        preview
+            .config_block
+            .contains("platform = \"claude-desktop\"")
+    );
 }
 
 #[test]
@@ -97,8 +114,8 @@ fn test_install_command_accepts_dry_run_false_but_marks_execution_deferred() {
     };
 
     let tempdir = TempDir::new().expect("tempdir");
-    let preview = build_install_preview(&test_config(), tempdir.path(), &platform, dry_run)
-        .expect("preview");
+    let preview =
+        build_install_preview(&test_config(), tempdir.path(), &platform, dry_run).expect("preview");
 
     assert!(!preview.dry_run);
     assert!(preview.deferred);

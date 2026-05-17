@@ -94,11 +94,7 @@ async fn test_trajectory_row_persists_query_strategy_score_and_session() {
         .await
         .expect("query tool events");
 
-    let row = rows
-        .next()
-        .await
-        .expect("row result")
-        .expect("event row");
+    let row = rows.next().await.expect("row result").expect("event row");
 
     let session_id: String = row.get(0).expect("session_id");
     let tool: String = row.get(1).expect("tool");

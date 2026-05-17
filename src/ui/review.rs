@@ -84,13 +84,10 @@ async fn render_panel(
         }
     };
 
-    let health = crate::mcp::resources::get_project_health(
-        &state.db,
-        &state.project_root,
-        &state.config,
-    )
-    .await
-    .ok();
+    let health =
+        crate::mcp::resources::get_project_health(&state.db, &state.project_root, &state.config)
+            .await
+            .ok();
     let gate_state = if health.as_ref().is_some_and(|h| h.wave_gate_open) {
         "open".to_string()
     } else {

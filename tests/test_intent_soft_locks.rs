@@ -13,7 +13,9 @@ async fn open_test_db() -> (tempfile::TempDir, Database) {
 async fn create_approved_intent(db: &Database, title: &str) -> String {
     let intent = Intent::new("feature", title, None, None);
     let id = intent.id.clone();
-    graph::create_intent(db, &intent).await.expect("create intent");
+    graph::create_intent(db, &intent)
+        .await
+        .expect("create intent");
     graph::update_status(db, &id, "approved")
         .await
         .expect("approve intent");

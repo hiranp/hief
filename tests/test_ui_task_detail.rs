@@ -1,4 +1,4 @@
-use axum::body::{to_bytes, Body};
+use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};
 use hief::config::Config;
 use hief::db::Database;
@@ -22,7 +22,9 @@ async fn test_state() -> (tempfile::TempDir, UiState, String) {
         .expect("open db");
     let intent = Intent::new("feature", "Detail page", None, None);
     let id = intent.id.clone();
-    graph::create_intent(&db, &intent).await.expect("create intent");
+    graph::create_intent(&db, &intent)
+        .await
+        .expect("create intent");
 
     (
         dir,

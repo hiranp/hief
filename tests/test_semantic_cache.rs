@@ -1,6 +1,6 @@
 use hief::config::Config;
 use hief::db::Database;
-use hief::index::vectors::{search, SemanticQuery, VectorConfig};
+use hief::index::vectors::{SemanticQuery, VectorConfig, search};
 use tempfile::TempDir;
 
 fn write_file(path: &std::path::Path, content: &str) {
@@ -65,20 +65,31 @@ async fn test_semantic_cache_hit_miss_and_expiry() {
         metric: "cosine".to_string(),
     };
 
-    let query_vector = hief::index::vectors::embed_text("alpha function", config.dimensions)
-        .expect("embed query");
+    let query_vector =
+        hief::index::vectors::embed_text("alpha function", config.dimensions).expect("embed query");
     let query = SemanticQuery {
         query: "alpha function".to_string(),
         top_k: 5,
         language: Some("rust".to_string()),
     };
 
-    let first = search(&db, root, &query_vector, &query, &config).await.expect("first search");
-    assert!(!first.results.is_empty(), "expected at least one semantic result");
+    let first = search(&db, root, &query_vector, &query, &config)
+        .await
+        .expect("first search");
+    assert!(
+        !first.results.is_empty(),
+        "expected at least one semantic result"
+    );
     assert!(!first.cache_used, "first lookup should miss cache");
 
-    let second = search(&db, root, &query_vector, &query, &config).await.expect("second search");
-    assert_eq!(first.results.len(), second.results.len(), "cache hit should preserve result count");
+    let second = search(&db, root, &query_vector, &query, &config)
+        .await
+        .expect("second search");
+    assert_eq!(
+        first.results.len(),
+        second.results.len(),
+        "cache hit should preserve result count"
+    );
     assert!(second.cache_used, "second lookup should hit cache");
 
     let mut rows = db
@@ -98,16 +109,22 @@ async fn test_semantic_cache_hit_miss_and_expiry() {
     assert!(expires_at > 0);
 
     db.conn()
-        .execute(
-            "UPDATE semantic_cache SET expires_at = unixepoch() - 1",
-            (),
-        )
+        .execute("UPDATE semantic_cache SET expires_at = unixepoch() - 1", ())
         .await
         .expect("expire cache row");
 
-    let third = search(&db, root, &query_vector, &query, &config).await.expect("third search");
-    assert_eq!(first.results.len(), third.results.len(), "expired cache should recompute deterministically");
-    assert!(!third.cache_used, "expired cache should fall back to recomputation");
+    let third = search(&db, root, &query_vector, &query, &config)
+        .await
+        .expect("third search");
+    assert_eq!(
+        first.results.len(),
+        third.results.len(),
+        "expired cache should recompute deterministically"
+    );
+    assert!(
+        !third.cache_used,
+        "expired cache should fall back to recomputation"
+    );
 }
 
 #[tokio::test]
@@ -122,8 +139,8 @@ async fn test_semantic_cache_separates_language_scope() {
         metric: "cosine".to_string(),
     };
 
-    let query_vector = hief::index::vectors::embed_text("alpha function", config.dimensions)
-        .expect("embed query");
+    let query_vector =
+        hief::index::vectors::embed_text("alpha function", config.dimensions).expect("embed query");
 
     let rust_query = SemanticQuery {
         query: "alpha function".to_string(),
@@ -136,20 +153,24 @@ async fn test_semantic_cache_separates_language_scope() {
         language: Some("python".to_string()),
     };
 
-    let rust_outcome = search(&db, root, &query_vector, &rust_query, &config).await.expect("rust search");
-    let python_outcome = search(&db, root, &query_vector, &python_query, &config).await.expect("python search");
+    let rust_outcome = search(&db, root, &query_vector, &rust_query, &config)
+        .await
+        .expect("rust search");
+    let python_outcome = search(&db, root, &query_vector, &python_query, &config)
+        .await
+        .expect("python search");
     assert!(!rust_outcome.cache_used);
     assert!(!python_outcome.cache_used);
 
     let mut rows = db
         .conn()
-        .query(
-            "SELECT COUNT(*) FROM semantic_cache",
-            (),
-        )
+        .query("SELECT COUNT(*) FROM semantic_cache", ())
         .await
         .expect("count rows");
     let row = rows.next().await.expect("row result").expect("row");
     let count: i64 = row.get(0).expect("count");
-    assert!(count >= 2, "language scopes should map to separate cache rows");
+    assert!(
+        count >= 2,
+        "language scopes should map to separate cache rows"
+    );
 }

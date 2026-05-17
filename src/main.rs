@@ -30,8 +30,8 @@ use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
 use cli::{
-    Cli, Commands, DocsCmd, EvalCmd, GoldenCmd, GraphCmd, HooksCmd, IndexCmd, InstallArgs,
-    McpCmd, PatternsCmd, SessionCostArgs, SkillsCmd, UiArgs,
+    Cli, Commands, DocsCmd, EvalCmd, GoldenCmd, GraphCmd, HooksCmd, IndexCmd, InstallArgs, McpCmd,
+    PatternsCmd, SessionCostArgs, SkillsCmd, UiArgs,
 };
 use config::Config;
 use db::Database;

@@ -1,4 +1,4 @@
-use axum::body::{to_bytes, Body};
+use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use hief::config::Config;
 use hief::db::Database;
@@ -48,7 +48,12 @@ async fn test_sse_endpoint_content_type_and_events() {
     let app = ui::build_router(state);
 
     let response = app
-        .oneshot(Request::builder().uri("/ui/events").body(Body::empty()).expect("request"))
+        .oneshot(
+            Request::builder()
+                .uri("/ui/events")
+                .body(Body::empty())
+                .expect("request"),
+        )
         .await
         .expect("response");
 
@@ -76,7 +81,12 @@ async fn test_activity_fragment_has_reconnect_refresh_hook() {
     let app = ui::build_router(state);
 
     let response = app
-        .oneshot(Request::builder().uri("/ui/activity").body(Body::empty()).expect("request"))
+        .oneshot(
+            Request::builder()
+                .uri("/ui/activity")
+                .body(Body::empty())
+                .expect("request"),
+        )
         .await
         .expect("response");
 

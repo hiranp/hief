@@ -221,8 +221,12 @@ impl Database {
                 .as_deref()
                 .map(Value::from)
                 .unwrap_or(Value::Null),
-            result_count.map(|v| Value::from(v as i64)).unwrap_or(Value::Null),
-            latency_ms.map(|v| Value::from(v as i64)).unwrap_or(Value::Null),
+            result_count
+                .map(|v| Value::from(v as i64))
+                .unwrap_or(Value::Null),
+            latency_ms
+                .map(|v| Value::from(v as i64))
+                .unwrap_or(Value::Null),
             groundedness_score.map(Value::from).unwrap_or(Value::Null),
             Value::from(normalized_worktree_id),
         ];
@@ -331,7 +335,7 @@ impl Database {
                          WHERE session_id = ?1 AND worktree_id = ?2
                    GROUP BY tool
                    ORDER BY calls DESC, tool ASC"#,
-                    libsql::params![session_id, normalized_worktree_id.as_str()],
+                libsql::params![session_id, normalized_worktree_id.as_str()],
             )
             .await
             .map_err(HiefError::Database)?;
@@ -929,7 +933,10 @@ mod tests {
                 .unwrap();
             let row = rows.next().await.unwrap().unwrap();
             let count: i64 = row.get(0).unwrap();
-            assert_eq!(count, 9, "Expected 9 migrations (001_chunks, 002_intents, 003_eval_runs, 004_cognitive_memory, 005_semantic_cache, 006_tool_events, 007_worktree_scope, 008_intent_locks, 009_retrieval_weights)");
+            assert_eq!(
+                count, 9,
+                "Expected 9 migrations (001_chunks, 002_intents, 003_eval_runs, 004_cognitive_memory, 005_semantic_cache, 006_tool_events, 007_worktree_scope, 008_intent_locks, 009_retrieval_weights)"
+            );
         }
     }
 

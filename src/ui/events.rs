@@ -6,8 +6,8 @@ use futures::stream;
 use serde::Serialize;
 
 use crate::scope;
-use crate::ui::activity;
 use crate::ui::UiState;
+use crate::ui::activity;
 
 #[derive(Debug, Clone, Serialize)]
 struct ActivityPayload {

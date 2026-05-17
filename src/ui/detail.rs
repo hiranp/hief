@@ -5,8 +5,8 @@ use axum::response::{Html, IntoResponse};
 
 use crate::mcp::resources;
 use crate::scope;
-use crate::ui::activity;
 use crate::ui::UiState;
+use crate::ui::activity;
 
 #[derive(Template)]
 #[template(path = "task_detail.html")]

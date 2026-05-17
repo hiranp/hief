@@ -323,7 +323,7 @@ pub async fn search(
                 results: Vec::new(),
                 cache_used: false,
                 groundedness_score: Some(0.0),
-            })
+            });
         }
     };
 
@@ -738,7 +738,8 @@ async fn read_semantic_cache(
     query_vector: &[f32],
     query: &SemanticQuery,
 ) -> Result<Option<Vec<SemanticResult>>> {
-    let (query_fingerprint, embedding_hash, language_scope) = semantic_cache_key(query_vector, query);
+    let (query_fingerprint, embedding_hash, language_scope) =
+        semantic_cache_key(query_vector, query);
     let now = unix_now();
 
     let mut rows = db
@@ -772,8 +773,9 @@ async fn read_semantic_cache(
         if computed_hash != payload_hash {
             return Ok(None);
         }
-        let results: Vec<SemanticResult> = serde_json::from_str(&json)
-            .map_err(|e| HiefError::Other(format!("failed to parse semantic cache payload: {e}")))?;
+        let results: Vec<SemanticResult> = serde_json::from_str(&json).map_err(|e| {
+            HiefError::Other(format!("failed to parse semantic cache payload: {e}"))
+        })?;
         return Ok(Some(results));
     }
 
@@ -790,9 +792,11 @@ async fn write_semantic_cache(
         return Ok(());
     }
 
-    let (query_fingerprint, embedding_hash, language_scope) = semantic_cache_key(query_vector, query);
-    let result_json = serde_json::to_string(results)
-        .map_err(|e| HiefError::Other(format!("failed to serialize semantic cache payload: {e}")))?;
+    let (query_fingerprint, embedding_hash, language_scope) =
+        semantic_cache_key(query_vector, query);
+    let result_json = serde_json::to_string(results).map_err(|e| {
+        HiefError::Other(format!("failed to serialize semantic cache payload: {e}"))
+    })?;
     let result_payload_hash = blake3::hash(result_json.as_bytes()).to_hex().to_string();
     let expires_at = unix_now() + SEMANTIC_CACHE_TTL_SECS;
 
@@ -955,7 +959,10 @@ mod tests {
 
         assert_eq!(outcome.results.len(), 1);
         assert_eq!(outcome.results[0].file_path, "src/auth.rs");
-        assert_eq!(outcome.results[0].symbol_name.as_deref(), Some("authenticate_user"));
+        assert_eq!(
+            outcome.results[0].symbol_name.as_deref(),
+            Some("authenticate_user")
+        );
         assert!(outcome.results[0].score > 0.0);
         assert!(!outcome.cache_used);
     }

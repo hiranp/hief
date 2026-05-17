@@ -281,8 +281,8 @@ fn looks_like_identifier(token: &str) -> bool {
     }
 
     let has_identifier_separators = token.contains('_') || token.contains("::");
-    let has_camel_case = token.chars().any(|ch| ch.is_uppercase())
-        && token.chars().any(|ch| ch.is_lowercase());
+    let has_camel_case =
+        token.chars().any(|ch| ch.is_uppercase()) && token.chars().any(|ch| ch.is_lowercase());
     let has_digits = token.chars().any(|ch| ch.is_ascii_digit());
     let short_enough = token.len() <= 32;
 

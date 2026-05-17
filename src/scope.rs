@@ -25,8 +25,8 @@ pub fn normalize_with_default(value: &str, default: &str) -> String {
 
 /// Derive a stable worktree fingerprint from canonical project root path.
 pub fn derive_worktree_id(project_root: &Path) -> String {
-    let canonical = std::fs::canonicalize(project_root)
-        .unwrap_or_else(|_| project_root.to_path_buf());
+    let canonical =
+        std::fs::canonicalize(project_root).unwrap_or_else(|_| project_root.to_path_buf());
     let fingerprint = blake3::hash(canonical.to_string_lossy().as_bytes());
     format!("wt-{}", &fingerprint.to_hex()[..12])
 }

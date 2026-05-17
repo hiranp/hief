@@ -1,4 +1,4 @@
-use hief::router::{route_query, RetrievalStrategy};
+use hief::router::{RetrievalStrategy, route_query};
 
 #[test]
 fn test_search_routing_symbol_queries_are_deterministic() {

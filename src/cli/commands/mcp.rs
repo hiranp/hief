@@ -585,19 +585,28 @@ mod tests {
             "claude-cli".parse::<McpClient>().ok(),
             Some(McpClient::ClaudeCli)
         );
-        assert_eq!("claude".parse::<McpClient>().ok(), Some(McpClient::ClaudeCli));
+        assert_eq!(
+            "claude".parse::<McpClient>().ok(),
+            Some(McpClient::ClaudeCli)
+        );
         assert_eq!(
             "claude-code".parse::<McpClient>().ok(),
             Some(McpClient::ClaudeCli)
         );
         assert_eq!("vscode".parse::<McpClient>().ok(), Some(McpClient::VsCode));
         assert_eq!("cursor".parse::<McpClient>().ok(), Some(McpClient::Cursor));
-        assert_eq!("windsurf".parse::<McpClient>().ok(), Some(McpClient::Windsurf));
+        assert_eq!(
+            "windsurf".parse::<McpClient>().ok(),
+            Some(McpClient::Windsurf)
+        );
         assert_eq!(
             "gemini-cli".parse::<McpClient>().ok(),
             Some(McpClient::GeminiCli)
         );
-        assert_eq!("gemini".parse::<McpClient>().ok(), Some(McpClient::GeminiCli));
+        assert_eq!(
+            "gemini".parse::<McpClient>().ok(),
+            Some(McpClient::GeminiCli)
+        );
         assert!("unknown".parse::<McpClient>().is_err());
     }
 

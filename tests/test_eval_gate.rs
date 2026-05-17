@@ -29,7 +29,9 @@ async fn create_intent_in_review(db: &Database, title: &str) -> String {
     let intent = Intent::new("feature", title, None, None);
     let id = intent.id.clone();
 
-    graph::create_intent(db, &intent).await.expect("create intent");
+    graph::create_intent(db, &intent)
+        .await
+        .expect("create intent");
     graph::update_status(db, &id, "approved")
         .await
         .expect("to approved");
@@ -115,6 +117,8 @@ async fn test_passing_eval_allows_verified_and_merged_promotions() {
         .await
         .expect("passing eval should allow merged");
 
-    let updated = graph::get_intent(&db, &intent_id).await.expect("fetch intent");
+    let updated = graph::get_intent(&db, &intent_id)
+        .await
+        .expect("fetch intent");
     assert_eq!(updated.status, "merged");
 }

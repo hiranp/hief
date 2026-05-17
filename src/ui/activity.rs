@@ -4,8 +4,8 @@ use axum::response::{Html, IntoResponse};
 
 use crate::errors::{HiefError, Result};
 use crate::scope;
-use crate::ui::view_models::ActivityRow;
 use crate::ui::UiState;
+use crate::ui::view_models::ActivityRow;
 
 #[derive(Template)]
 #[template(path = "activity_feed.html")]

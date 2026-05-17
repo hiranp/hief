@@ -6,7 +6,7 @@
 //!    platform config file (idempotent, project-scope).
 //! 3. Invalid platform names return a typed constraint error.
 
-use hief::cli::commands::{build_install_preview, install_platform, InstallPlatform};
+use hief::cli::commands::{InstallPlatform, build_install_preview, install_platform};
 use hief::config::Config;
 
 fn default_config() -> Config {
@@ -63,8 +63,8 @@ fn test_build_install_preview_dry_run_returns_preview_not_deferred() {
     let dir = tempfile::tempdir().expect("tempdir");
     let config = default_config();
 
-    let preview = build_install_preview(&config, dir.path(), "cursor", true)
-        .expect("build preview");
+    let preview =
+        build_install_preview(&config, dir.path(), "cursor", true).expect("build preview");
 
     assert_eq!(preview.platform, "cursor");
     assert!(preview.dry_run);
@@ -85,8 +85,8 @@ fn test_build_install_preview_non_dry_run_is_deferred_in_preview() {
     let dir = tempfile::tempdir().expect("tempdir");
     let config = default_config();
 
-    let preview = build_install_preview(&config, dir.path(), "cursor", false)
-        .expect("build preview");
+    let preview =
+        build_install_preview(&config, dir.path(), "cursor", false).expect("build preview");
 
     assert!(!preview.dry_run);
     assert!(
@@ -100,8 +100,7 @@ fn test_install_platform_dry_run_writes_no_files() {
     let dir = tempfile::tempdir().expect("tempdir");
     let config = default_config();
 
-    install_platform(&config, dir.path(), "cursor", true, false)
-        .expect("dry run should succeed");
+    install_platform(&config, dir.path(), "cursor", true, false).expect("dry run should succeed");
 
     // No config files should have been written
     let cursor_config = dir.path().join(".cursor").join("mcp.json");
@@ -131,8 +130,7 @@ fn test_install_platform_real_write_creates_cursor_config() {
     );
 
     let content = std::fs::read_to_string(&cursor_config).expect("read config");
-    let json: serde_json::Value =
-        serde_json::from_str(&content).expect("valid JSON config");
+    let json: serde_json::Value = serde_json::from_str(&content).expect("valid JSON config");
 
     // Verify HIEF is registered in the mcpServers object
     assert!(
@@ -140,8 +138,7 @@ fn test_install_platform_real_write_creates_cursor_config() {
         "hief entry should be present in mcpServers: {json}"
     );
     assert_eq!(
-        json["mcpServers"]["hief"]["args"][0],
-        "serve",
+        json["mcpServers"]["hief"]["args"][0], "serve",
         "args should start with 'serve'"
     );
 }
@@ -152,8 +149,7 @@ fn test_install_platform_real_write_is_idempotent() {
     let config = default_config();
 
     // First install
-    install_platform(&config, dir.path(), "cursor", false, false)
-        .expect("first install");
+    install_platform(&config, dir.path(), "cursor", false, false).expect("first install");
 
     // Second install — must not fail and must not duplicate the entry
     install_platform(&config, dir.path(), "cursor", false, false)

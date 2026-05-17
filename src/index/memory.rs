@@ -214,7 +214,7 @@ async fn update_co_access_from_session(
                              AND accessed_at >= (unixepoch() - 300)
              ORDER BY accessed_at DESC
              LIMIT 20",
-                        libsql::params![session_id, normalized_worktree_id],
+            libsql::params![session_id, normalized_worktree_id],
         )
         .await
         .map_err(HiefError::Database)?;
@@ -677,9 +677,16 @@ mod tests {
             "src/config.rs".to_string(),
         ];
 
-        record_search_accesses_scoped(&db, &files, Some("database"), "search_code", Some("s1"), None)
-            .await
-            .unwrap();
+        record_search_accesses_scoped(
+            &db,
+            &files,
+            Some("database"),
+            "search_code",
+            Some("s1"),
+            None,
+        )
+        .await
+        .unwrap();
 
         // Check co-access edges were created
         let mut rows = db
@@ -821,9 +828,17 @@ mod tests {
 
         // Record some accesses
         for _ in 0..5 {
-            record_access_scoped(&db, "src/hot.rs", None, Some("test"), "search_code", None, None)
-                .await
-                .unwrap();
+            record_access_scoped(
+                &db,
+                "src/hot.rs",
+                None,
+                Some("test"),
+                "search_code",
+                None,
+                None,
+            )
+            .await
+            .unwrap();
         }
 
         let boost = compute_access_boost(&db, "src/hot.rs").await.unwrap();

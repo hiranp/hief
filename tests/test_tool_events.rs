@@ -16,7 +16,10 @@ async fn test_tool_events_migration_creates_table() {
     // Verify tool_events table exists
     let mut rows = db
         .conn()
-        .query("SELECT name FROM sqlite_master WHERE type='table' AND name='tool_events'", ())
+        .query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='tool_events'",
+            (),
+        )
         .await
         .expect("query schema");
 
@@ -36,7 +39,10 @@ async fn test_tool_events_migration_creates_session_summary_view() {
     // Verify session_summary view exists
     let mut rows = db
         .conn()
-        .query("SELECT name FROM sqlite_master WHERE type='view' AND name='session_summary'", ())
+        .query(
+            "SELECT name FROM sqlite_master WHERE type='view' AND name='session_summary'",
+            (),
+        )
         .await
         .expect("query schema");
 
@@ -70,12 +76,15 @@ async fn test_migration_order_is_valid() {
         names.contains(&"006_tool_events".to_string()),
         "006_tool_events migration should be applied"
     );
-    
+
     // Verify 006 comes after 005
     let pos_005 = names.iter().position(|n| n == "005_semantic_cache");
     let pos_006 = names.iter().position(|n| n == "006_tool_events");
     assert!(pos_005.is_some() && pos_006.is_some());
-    assert!(pos_005.unwrap() < pos_006.unwrap(), "005 should come before 006");
+    assert!(
+        pos_005.unwrap() < pos_006.unwrap(),
+        "005 should come before 006"
+    );
 }
 
 #[tokio::test]
@@ -176,7 +185,7 @@ async fn test_record_tool_event_with_optional_fields_none() {
     assert_eq!(session_id, "session-456");
     assert_eq!(tool, "search_semantic");
     assert_eq!(query, "database connection");
-    
+
     // NULL values should not panic when not cast
 }
 
@@ -292,7 +301,7 @@ async fn test_tool_events_roundtrip_with_multiple_sessions() {
         None,
     )
     .await
-.expect("record 2");
+    .expect("record 2");
 
     db.record_tool_event_scoped(
         "session-2",
@@ -313,7 +322,7 @@ async fn test_tool_events_roundtrip_with_multiple_sessions() {
         .await
         .expect("get summary 1")
         .expect("summary 1 should exist");
-    
+
     assert_eq!(summary1.total_events, 2);
     assert_eq!(summary1.unique_tools, 1);
 

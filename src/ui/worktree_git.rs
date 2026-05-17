@@ -2,7 +2,7 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::Serialize;
 use tokio::process::Command;
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 
 use crate::errors::{HiefError, Result};
 
