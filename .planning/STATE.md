@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 2
+current_plan: 3
 status: in_progress
 stopped_at: Drafted 04-01-PLAN.md, 04-02-PLAN.md, and 04-03-PLAN.md
-last_updated: "2026-05-17T04:24:26.321Z"
+last_updated: "2026-05-17T04:32:59.478Z"
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 10
-  completed_plans: 8
+  completed_plans: 9
   percent: 60
 ---
 
@@ -18,9 +18,9 @@ progress:
 
 ## Phase 04: Orchestration Hardening
 
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 3
-Progress: [████████░░] 80%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -34,6 +34,7 @@ Progress: [████████░░] 80%
 | Phase 03 P02 | 40m | 2 tasks | 5 files |
 | Phase 03 P03 | 30m | 2 tasks | 5 files |
 | Phase 04 P01 | 2m | 2 tasks | 6 files |
+| Phase 04 P02 | 5m | 2 tasks | 9 files |
 
 ## Decisions Made
 
@@ -57,10 +58,12 @@ Progress: [████████░░] 80%
 - [Cross-phase]: Approved `execute_code` under deny-by-default policy with explicit allowlist and auditable enforcement.
 - [Phase 04]: Fail-closed eval gate blocks in_review->verified and verified->merged promotions unless the latest eval run is passing.
 - [Phase 04]: Project health now reports wave_gate_open and gate_reason from the shared latest-eval gate helper.
+- [Phase 04]: Session telemetry and cognitive memory are now partitioned by worktree_id with project-root fallback for legacy callers.
+- [Phase 04]: Intent transitions to in_progress now acquire lease-based soft locks and reject competing worktree ownership via typed conflict errors.
 
 ## Session Info
 
-Last session: 2026-05-17T04:23:26.899Z
-Last Date: 2026-05-17T04:23:26.899Z
+Last session: 2026-05-17T04:32:59.469Z
+Last Date: 2026-05-17T04:32:59.469Z
 Stopped At: Drafted 04-01-PLAN.md, 04-02-PLAN.md, and 04-03-PLAN.md
 Resume File: None
