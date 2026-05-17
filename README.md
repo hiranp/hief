@@ -56,16 +56,19 @@ HIEF Server
 - **AST-aware chunking** via tree-sitter (Rust, Python, TypeScript/JavaScript)
 - **Keyword search** via FTS5 full-text search
 - **Structural search** via [ast-grep](https://ast-grep.github.io/) pattern matching (e.g., find every `$X.unwrap()`)
-- **Semantic search** via LanceDB vector embeddings with TTL-bounded caching *(in development)*
+- **Semantic search** via LanceDB vector embeddings with TTL-bounded caching
 - **Incremental updates** via blake3 content hashing — only re-indexes what changed
 - **Response Budgeting** — automatically truncates oversized search responses while preserving metadata and snippets
 - **Query Routing** — deterministic routing across lexical, semantic, and hybrid lanes
+- **Retrieval Weight Learning** — dynamically optimizes query retrieval weights from historical groundedness feedback in shadow mode
 
 ### 📋 Intent Graph — *"Who's doing what?"*
 
 - **DAG-based task graph** with status workflow (`draft → in_progress → in_review → approved → done`)
 - **Dependency tracking** prevents conflicting concurrent work
 - **Provenance records** which agent made each change and when
+- **Multi-Tenant / Worktree Isolation** — partitions session telemetry and cognitive memory dynamically by git worktree ID
+- **Intent Soft-Locks** — lease-based soft locks preventing competing worktree ownership on concurrent transitions
 - Lightweight by design — not a project manager, just enough coordination
 
 ### ✅ Quality Evaluation — *"Is the output good enough?"*
@@ -74,7 +77,8 @@ HIEF Server
 - **Literal checks** — `must_contain` / `must_not_contain` via substring matching
 - **Structural checks** — `structural_must_not_contain` via ast-grep patterns
 - **Differential eval** — `diff_only = true` checks only changed files
-- **Score history** with regression detection that can block merge
+- **Score history** with regression detection
+- **Fail-Closed Wave Gates** — programmatically blocks intent pipeline promotion unless the latest evaluation run passes successfully
 
 ### 📝 Documentation Scaffolding — *"How do we start?"*
 

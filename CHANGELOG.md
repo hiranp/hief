@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-05-17
+
+### Added
+
+- **Query Routing & Budgeting**: Smart query routing API separating lexical, semantic, and hybrid search lanes. Search response budgeting with schema-preserving truncation for large fields (keeping file path, symbol metadata, and snippet while bounding token size).
+- **Vector Search Cache**: TTL-bounded, schema-validated semantic caching keyed by query fingerprint, embedding hash, and language scope to avoid redundant vector similarity search computations.
+- **Observability Subsystem**: Scoped telemetry and event tracking storing search execution metadata (lane, strategy, query metrics) in SQL-native observability tables. Telemetry query integration via SQL VIEWs.
+- **Fail-Closed Evaluation Gates**: Robust eval-gate promotion checks. Transitions (`in_review` -> `verified` -> `merged`) are programmatically blocked in the intent pipeline unless the latest evaluation run passes successfully.
+- **Multi-Tenant / Multi-Worktree Isolation**: Automatic session partitioning and cognitive memory mapping by Git worktree ID, falling back cleanly to the project-root database for legacy callers.
+- **Intent Soft-Locks**: Lease-based exclusive soft locks when intents transition to `in_progress`, rejecting competing worktree ownership via structured, typed conflict errors.
+- **Retrieval Weight Learning**: Self-improving retrieval parameters that learn from bounded groundedness windows with shadow-mode scoring, candidate generation, and validation checks.
+- **Lexical Overlap Groundedness Scoring**: Deterministic overlap scoring normalized to `[0, 1]` for hybrid retrieval evaluation, removing the dependency on external heavy LLM judges.
+
+### Removed
+
+- **VS Code Extension**: Cleaned up and removed the `vscode-hief` extension subdirectory, files, and companion implementation to fully consolidate HIEF as a fast, language-agnostic headless CLI sidecar and MCP server.
+
+- - -
+
 ## [0.2.8] - 2026-04-08
 
 ### Added
