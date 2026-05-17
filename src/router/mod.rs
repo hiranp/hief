@@ -28,6 +28,21 @@ use crate::errors::{HiefError, Result};
 
 const ROUTER_FILE: &str = ".hief/router.toml";
 
+/// Retrieval strategy chosen for code search queries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum RetrievalStrategy {
+    /// Fast lexical-only path for exact symbol lookups.
+    Deterministic { top_k: usize },
+    /// Hybrid lexical + semantic path for mixed or ambiguous queries.
+    Hybrid {
+        lexical_k: usize,
+        semantic_k: usize,
+        rrf_k: u32,
+    },
+    /// Full semantic path for conceptual queries.
+    Semantic { top_k: usize, rerank: bool },
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -103,6 +118,94 @@ pub fn write_default(project_root: &Path) -> Result<()> {
 
 fn router_path(project_root: &Path) -> PathBuf {
     project_root.join(ROUTER_FILE)
+}
+
+// ---------------------------------------------------------------------------
+// Retrieval routing
+// ---------------------------------------------------------------------------
+
+/// Route a search query to a retrieval strategy based on query shape.
+pub fn route_query(query: &str) -> RetrievalStrategy {
+    let normalized = query.trim();
+
+    if normalized.is_empty() {
+        return default_hybrid();
+    }
+
+    let token_count = normalized.split_whitespace().count();
+    let has_symbol_markers = has_symbol_markers(normalized);
+    let exact_identifier = is_exact_identifier_query(normalized, token_count);
+    let conceptual = is_conceptual_query(normalized, token_count);
+
+    match (exact_identifier || has_symbol_markers, conceptual) {
+        (true, true) => default_hybrid(),
+        (true, false) => RetrievalStrategy::Deterministic { top_k: 10 },
+        (false, true) => RetrievalStrategy::Semantic {
+            top_k: 15,
+            rerank: true,
+        },
+        (false, false) => default_hybrid(),
+    }
+}
+
+fn default_hybrid() -> RetrievalStrategy {
+    RetrievalStrategy::Hybrid {
+        lexical_k: 10,
+        semantic_k: 10,
+        rrf_k: 60,
+    }
+}
+
+fn has_symbol_markers(query: &str) -> bool {
+    query.contains("::") || query.contains("->") || query.contains('.') || query.contains('#')
+}
+
+fn is_exact_identifier_query(query: &str, token_count: usize) -> bool {
+    if token_count == 1 {
+        return looks_like_identifier(query);
+    }
+
+    token_count <= 3 && query.split_whitespace().all(looks_like_identifier)
+}
+
+fn looks_like_identifier(token: &str) -> bool {
+    let token = token.trim_matches(|ch: char| !ch.is_alphanumeric() && ch != '_' && ch != ':');
+
+    if token.is_empty() {
+        return false;
+    }
+
+    let has_identifier_separators = token.contains('_') || token.contains("::");
+    let has_camel_case = token.chars().any(|ch| ch.is_uppercase())
+        && token.chars().any(|ch| ch.is_lowercase());
+    let has_digits = token.chars().any(|ch| ch.is_ascii_digit());
+    let short_enough = token.len() <= 32;
+
+    short_enough && (has_identifier_separators || has_camel_case || has_digits)
+}
+
+fn is_conceptual_query(query: &str, token_count: usize) -> bool {
+    let lowered = query.to_ascii_lowercase();
+
+    if [
+        "how ",
+        "why ",
+        "what ",
+        "when ",
+        "where ",
+        "which ",
+        "who ",
+        "explain ",
+        "describe ",
+        "compare ",
+    ]
+    .iter()
+    .any(|prefix| lowered.starts_with(prefix))
+    {
+        return true;
+    }
+
+    token_count >= 5
 }
 
 // ---------------------------------------------------------------------------
@@ -303,5 +406,48 @@ mod tests {
         assert_eq!(table.routes[0].load.len(), 0);
         assert_eq!(table.routes[0].load_patterns.len(), 0);
         assert!(table.routes[0].description.is_empty());
+    }
+
+    #[test]
+    fn route_query_symbol_queries_are_deterministic() {
+        assert_eq!(
+            route_query("src::router::route_query"),
+            RetrievalStrategy::Deterministic { top_k: 10 }
+        );
+    }
+
+    #[test]
+    fn route_query_conceptual_queries_are_semantic() {
+        assert_eq!(
+            route_query("how does adaptive retrieval routing work"),
+            RetrievalStrategy::Semantic {
+                top_k: 15,
+                rerank: true,
+            }
+        );
+    }
+
+    #[test]
+    fn route_query_mixed_queries_are_hybrid() {
+        assert_eq!(
+            route_query("how does src::router::route_query work"),
+            RetrievalStrategy::Hybrid {
+                lexical_k: 10,
+                semantic_k: 10,
+                rrf_k: 60,
+            }
+        );
+    }
+
+    #[test]
+    fn route_query_default_fallback_is_hybrid() {
+        assert_eq!(
+            route_query("   "),
+            RetrievalStrategy::Hybrid {
+                lexical_k: 10,
+                semantic_k: 10,
+                rrf_k: 60,
+            }
+        );
     }
 }

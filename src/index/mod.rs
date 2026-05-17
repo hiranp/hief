@@ -7,6 +7,8 @@ pub mod structural;
 pub mod vectors;
 pub mod walker;
 
+pub use crate::router::{route_query, RetrievalStrategy};
+
 use std::collections::HashMap;
 use std::path::Path;
 use tracing::{info, warn};
