@@ -24,7 +24,7 @@ Each phase includes explicit requirement IDs to enforce traceability.
 Plans:
 
 - [x] 01-01-PLAN.md - adaptive retrieval routing and response budget enforcement
-- [ ] 01-02-PLAN.md - semantic cache and retrieval quality instrumentation (depends on 01-01; activates LanceDB)
+- [x] 01-02-PLAN.md - semantic cache and retrieval quality instrumentation (depends on 01-01; activates LanceDB)
 
 ---
 
