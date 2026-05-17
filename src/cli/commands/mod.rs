@@ -127,7 +127,11 @@ pub fn build_install_preview(
 	})
 }
 
-/// Runs the Phase 02 installer command and prints a deterministic preview.
+/// Runs the Phase 02 installer command.
+///
+/// When `dry_run` is true, prints a deterministic preview without writing any files.
+/// When `dry_run` is false, delegates to [`super::mcp::mcp_install`] which performs
+/// the real JSON config write for the requested platform (PRO-04).
 pub fn install_platform(
 	config: &crate::config::Config,
 	project_root: &Path,
@@ -137,25 +141,42 @@ pub fn install_platform(
 ) -> crate::errors::Result<()> {
 	let preview = build_install_preview(config, project_root, platform, dry_run)?;
 
-	if json {
-		println!(
-			"{}",
-			serde_json::to_string_pretty(&preview)
-				.map_err(|e| crate::errors::HiefError::Other(e.to_string()))?
-		);
-	} else {
-		println!("Platform: {}", preview.platform);
-		println!("Lane: {}", preview.lane);
-		println!("Reason: {}", preview.reason);
-		println!("Dry run: {}", preview.dry_run);
-		println!("Deferred: {}", preview.deferred);
-		println!("{}", preview.message);
-		println!();
-		println!("{}", preview.config_block);
+	if dry_run {
+		// Dry-run: print the preview and return without touching any file.
+		if json {
+			println!(
+				"{}",
+				serde_json::to_string_pretty(&preview)
+					.map_err(|e| crate::errors::HiefError::Other(e.to_string()))?
+			);
+		} else {
+			println!("Platform: {}", preview.platform);
+			println!("Lane: {}", preview.lane);
+			println!("Reason: {}", preview.reason);
+			println!("Dry run: {}", preview.dry_run);
+			println!("Deferred: {}", preview.deferred);
+			println!("{}", preview.message);
+			println!();
+			println!("{}", preview.config_block);
+		}
+		return Ok(());
 	}
 
-	// TODO(PRO-04): implement real registration write path.
-	Ok(())
+	// Real write path (PRO-04): delegate to mcp_install which already has the
+	// full per-platform JSON config write logic, idempotency checks, and
+	// platform-specific scope rules.
+	//
+	// `InstallPlatform::Custom` maps to the "all" target so users get
+	// coverage across all known clients when they haven't specified a single one.
+	let mcp_target = match preview.platform.as_str() {
+		"claude-desktop" => "claude-desktop",
+		"cursor" => "cursor",
+		"zed" => "all", // Zed not yet in McpClient; fall through to all for best-effort
+		"custom" => "all",
+		other => other,
+	};
+
+	mcp::mcp_install(project_root, Some(mcp_target), false, json)
 }
 
 /// Human-facing session telemetry summary for CLI.

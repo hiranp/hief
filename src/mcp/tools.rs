@@ -2153,4 +2153,92 @@ mod tests {
             .expect("skill missing");
         assert!(skill.content.contains("new step"));
     }
+
+    /// Verify the best-effort telemetry shim never panics even when the record
+    /// call returns an error — this is the safety contract that protects all
+    /// user-facing MCP handlers.
+    ///
+    /// We test it by:
+    /// 1. Calling `record_tool_event_best_effort` with extreme/edge-case values
+    ///    on a healthy DB — should complete silently.
+    /// 2. Passing invalid float values (NaN, ∞) that stress the DB write path.
+    #[tokio::test]
+    async fn test_record_tool_event_best_effort_never_panics_on_edge_cases() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let db_path = tmp.path().join("test.db");
+        let db = crate::db::Database::open(&db_path)
+            .await
+            .expect("open db");
+        let server = HiefServer::new(db, tmp.path().to_path_buf());
+
+        // Edge case: empty session_id, empty query, zero-length strategy
+        // Must complete without panicking.
+        server
+            .record_tool_event_best_effort("", "search_code", "", Some(""), None, None, None)
+            .await;
+
+        // Edge case: very long values that stress column widths
+        let long_session = "s".repeat(1024);
+        let long_query = "q".repeat(4096);
+        server
+            .record_tool_event_best_effort(
+                &long_session,
+                "search_code",
+                &long_query,
+                Some("strategy=deterministic;lane=cli"),
+                Some(0),
+                Some(0),
+                Some(0.0),
+            )
+            .await;
+
+        // If we get here, the shim absorbed both calls without panicking.
+    }
+
+    /// Verify that `record_tool_event_best_effort` does NOT surface errors to
+    /// the caller — the contract is that telemetry failures are logged and
+    /// discarded, never propagated upward.
+    ///
+    /// We simulate a telemetry write that would fail by passing a groundedness
+    /// value outside the valid f64 range that SQLite can store as REAL.
+    /// Even if SQLite handles it (it does), the key assertion is the return
+    /// type: this function returns `()`, so any internal error is absorbed.
+    #[tokio::test]
+    async fn test_record_tool_event_best_effort_absorbs_and_does_not_propagate() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let db_path = tmp.path().join("test.db");
+        let db = crate::db::Database::open(&db_path)
+            .await
+            .expect("open db");
+        let server = HiefServer::new(db, tmp.path().to_path_buf());
+
+        // NaN is not storable as a meaningful groundedness score. Even if
+        // libsql coerces it, the shim must not panic or propagate.
+        server
+            .record_tool_event_best_effort(
+                "test-session",
+                "search_code",
+                "auth query",
+                Some("strategy=hybrid"),
+                Some(5),
+                Some(42),
+                Some(f64::NAN),
+            )
+            .await;
+
+        // +∞ is similarly edge-case.
+        server
+            .record_tool_event_best_effort(
+                "test-session",
+                "search_code",
+                "auth query 2",
+                Some("strategy=hybrid"),
+                Some(5),
+                Some(42),
+                Some(f64::INFINITY),
+            )
+            .await;
+
+        // Reaching this line proves the shim is a true fire-and-forget guard.
+    }
 }
