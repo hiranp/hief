@@ -56,8 +56,10 @@ HIEF Server
 - **AST-aware chunking** via tree-sitter (Rust, Python, TypeScript/JavaScript)
 - **Keyword search** via FTS5 full-text search
 - **Structural search** via [ast-grep](https://ast-grep.github.io/) pattern matching (e.g., find every `$X.unwrap()`)
-- **Semantic search** via LanceDB vector embeddings *(in development)*
+- **Semantic search** via LanceDB vector embeddings with TTL-bounded caching *(in development)*
 - **Incremental updates** via blake3 content hashing — only re-indexes what changed
+- **Response Budgeting** — automatically truncates oversized search responses while preserving metadata and snippets
+- **Query Routing** — deterministic routing across lexical, semantic, and hybrid lanes
 
 ### 📋 Intent Graph — *"Who's doing what?"*
 
@@ -229,6 +231,7 @@ hief eval report                             # Show eval score history
 hief doctor --fix                            # Health check + auto-fix
 hief hooks install                           # Install git hooks for auto-indexing
 hief hooks watch                             # Alias for hooks install
+hief install                                 # Scaffolds installation with validated dry-run preview
 hief docs init                               # Initialize standard docs structure
 hief docs generate spec --name "feature"     # Scaffold a new feature spec
 hief docs generate harness --name "feature"  # Scaffold a new test harness
