@@ -40,8 +40,8 @@ Plans:
 
 Plans:
 
-- [ ] 02-01-PLAN.md - strict MCP validation and retry-hint responses
-- [ ] 02-02-PLAN.md - protocol lane router and platform installer scaffolding
+- [x] 02-01-PLAN.md - strict MCP validation and retry-hint responses
+- [x] 02-02-PLAN.md - protocol lane router and platform installer scaffolding
 
 ---
 
