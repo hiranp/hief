@@ -1,6 +1,9 @@
 use std::path::Path;
 use std::process::Command;
 
+use hief::config::Config;
+use hief::db::Database;
+use hief::mcp::resources;
 use serde_json::Value;
 
 fn write_file(path: &Path, content: &str) {
@@ -63,6 +66,26 @@ fn git_commit_all(root: &Path, message: &str) {
         "git commit failed: {}",
         String::from_utf8_lossy(&out_commit.stderr)
     );
+}
+
+async fn open_health_db(project_root: &Path) -> Database {
+    let db_path = project_root.join(".hief").join("hief.db");
+    Database::open(&db_path).await.expect("open health db")
+}
+
+async fn insert_eval(db: &Database, passed: bool, created_at: i64) {
+    let id = uuid::Uuid::new_v4().to_string();
+    let score = if passed { 1.0 } else { 0.0 };
+    let passed_int: i64 = if passed { 1 } else { 0 };
+
+    db.conn()
+        .execute(
+            "INSERT INTO eval_runs (id, golden_set, overall_score, passed, details, git_commit, created_at)\
+             VALUES (?1, 'workflow', ?2, ?3, '{}', '', ?4)",
+            libsql::params![id.as_str(), score, passed_int, created_at],
+        )
+        .await
+        .expect("insert eval row");
 }
 
 #[test]
@@ -259,4 +282,49 @@ diff_only = true
         second["passed"], true,
         "unchanged forbidden file should be ignored in diff mode"
     );
+}
+
+#[tokio::test]
+async fn test_project_health_wave_gate_open_on_latest_passing_eval() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let db = open_health_db(tmp.path()).await;
+    insert_eval(&db, true, 10).await;
+
+    let config = Config::default();
+    let health = resources::get_project_health(&db, tmp.path(), &config)
+        .await
+        .expect("project health");
+
+    assert!(health.wave_gate_open);
+    assert_eq!(health.gate_reason, None);
+}
+
+#[tokio::test]
+async fn test_project_health_wave_gate_blocked_on_latest_failed_eval() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let db = open_health_db(tmp.path()).await;
+    insert_eval(&db, true, 10).await;
+    insert_eval(&db, false, 11).await;
+
+    let config = Config::default();
+    let health = resources::get_project_health(&db, tmp.path(), &config)
+        .await
+        .expect("project health");
+
+    assert!(!health.wave_gate_open);
+    assert_eq!(health.gate_reason.as_deref(), Some("failed_eval"));
+}
+
+#[tokio::test]
+async fn test_project_health_wave_gate_blocked_when_no_eval_history() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let db = open_health_db(tmp.path()).await;
+
+    let config = Config::default();
+    let health = resources::get_project_health(&db, tmp.path(), &config)
+        .await
+        .expect("project health");
+
+    assert!(!health.wave_gate_open);
+    assert_eq!(health.gate_reason.as_deref(), Some("no_eval_history"));
 }

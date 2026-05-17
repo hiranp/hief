@@ -86,6 +86,10 @@ pub struct ProjectHealth {
     /// Drift issues count by severity.
     pub drift_errors: usize,
     pub drift_warnings: usize,
+    /// Whether eval gate currently allows verified/merged promotions.
+    pub wave_gate_open: bool,
+    /// Machine-readable reason when gate is blocked.
+    pub gate_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -263,6 +267,14 @@ pub async fn get_project_health(
     project_root: &Path,
     config: &Config,
 ) -> Result<ProjectHealth> {
+    let gate_state = crate::graph::query::latest_eval_gate(db).await?;
+    let wave_gate_open = gate_state == crate::graph::query::EvalGateState::Pass;
+    let gate_reason = if wave_gate_open {
+        None
+    } else {
+        Some(gate_state.rejection_reason().to_string())
+    };
+
     let mut eval_scores = Vec::new();
     let mut has_regressions = false;
 
@@ -356,6 +368,8 @@ pub async fn get_project_health(
         drift_score,
         drift_errors,
         drift_warnings,
+        wave_gate_open,
+        gate_reason,
     })
 }
 
