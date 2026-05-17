@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 3
 status: in_progress
-stopped_at: Drafted 04-01-PLAN.md, 04-02-PLAN.md, and 04-03-PLAN.md
-last_updated: "2026-05-17T04:37:41.175Z"
+stopped_at: Completed 05-04-PLAN.md
+last_updated: "2026-05-17T18:36:33.603Z"
 progress:
-  total_phases: 5
-  completed_phases: 4
-  total_plans: 10
-  completed_plans: 10
-  percent: 80
+  total_phases: 6
+  completed_phases: 5
+  total_plans: 14
+  completed_plans: 14
+  percent: 83
 ---
 
 # STATE
@@ -36,6 +36,7 @@ Progress: [██████████] 100%
 | Phase 04 P01 | 2m | 2 tasks | 6 files |
 | Phase 04 P02 | 5m | 2 tasks | 9 files |
 | Phase 04 P03 | 1m | 2 tasks | 7 files |
+| Phase 05 P04 | 1h40m | 2 tasks | 24 files |
 
 ## Decisions Made
 
@@ -63,10 +64,12 @@ Progress: [██████████] 100%
 - [Phase 04]: Intent transitions to in_progress now acquire lease-based soft locks and reject competing worktree ownership via typed conflict errors.
 - [Phase 04]: Retrieval weights now learn from bounded groundedness windows with deterministic candidate generation and normalization.
 - [Phase 04]: Shadow-mode scoring signals are emitted for lexical and semantic lanes while promotion remains gate-aware and fail-closed.
+- [Phase 05]: UI review controls use graph::update_status_scoped for validated server-side HITL transitions. — Enforces canonical transition/eval-gate/lock semantics from one path.
+- [Phase 05]: Added reusable UI validation artifacts (seed script + harness doc) to make Block/Unblock verification deterministic from empty dashboards. — Prevents manual verification dead-ends when dashboards start with zero intents.
 
 ## Session Info
 
-Last session: 2026-05-17T04:37:41.167Z
-Last Date: 2026-05-17T04:37:41.167Z
-Stopped At: Drafted 04-01-PLAN.md, 04-02-PLAN.md, and 04-03-PLAN.md
+Last session: 2026-05-17T18:36:33.599Z
+Last Date: 2026-05-17T18:36:33.599Z
+Stopped At: Completed 05-04-PLAN.md
 Resume File: None

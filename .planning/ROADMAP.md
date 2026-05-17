@@ -79,7 +79,24 @@ Plans:
 
 ---
 
-### Phase 05: Memory Versioning
+### Phase 05: Task Tracking Web UI
+
+**Goal:** Provide a local-first, read-mostly web dashboard for tracking intents, agent activity, and worktree states using Axum, Askama, HTMX, and vanilla CSS.
+
+**Requirements:** [UI-01, UI-02, UI-03, UI-04]
+
+**Research basis:** TASK-TRACKING-ARCHITECTURE.md, TASK-TRACKING-SUMMARY.md, and `task_tracking_variant_1_dashboard.html` sketches.
+
+Plans:
+
+- [x] 05-01-PLAN.md - Axum router, Askama templates, and read-only intents/worktree dashboard
+- [x] 05-02-PLAN.md - Live Activity Surface via SSE for tool events and task status
+- [x] 05-03-PLAN.md - Async Worktree operations and Intent-to-Worktree explicit binding
+- [x] 05-04-PLAN.md - Intent detail view, PAVL gates, and human review surface
+
+---
+
+### Phase 06: Memory Versioning
 
 **Goal:** Add write provenance, per-intent rollback, and TTL-bounded decay so memory drift and stale context contamination become detectable and recoverable.
 
@@ -89,9 +106,9 @@ Plans:
 
 Plans:
 
-- [ ] 05-01-PLAN.md - write provenance metadata schema and per-intent rollback surface
-- [ ] 05-02-PLAN.md - memory tier manager and TTL decay policy enforcement
-- [ ] 05-03-PLAN.md - background consolidation worker (short-term → long-term tier promotion)
+- [ ] 06-01-PLAN.md - write provenance metadata schema and per-intent rollback surface
+- [ ] 06-02-PLAN.md - memory tier manager and TTL decay policy enforcement
+- [ ] 06-03-PLAN.md - background consolidation worker (short-term → long-term tier promotion)
 
 ---
 
@@ -133,3 +150,9 @@ Plans:
 - MEM-02: Support per-intent and per-session memory rollback.
 - MEM-03: Enforce TTL decay policies per memory tier (working / short-term / long-term / archival).
 - MEM-04: Background consolidation of short-term session patterns into long-term project memory.
+
+### UI
+- UI-01: Expose a read-only Axum/Askama dashboard showing active intents and worktree projections.
+- UI-02: Stream live agent activity and telemetry updates using Server-Sent Events (SSE).
+- UI-03: Manage Git worktree lifecycle using async `tokio::process::Command` without blocking the HTTP server.
+- UI-04: Present a detailed task view including PAVL state, token costs, and HITL block controls.

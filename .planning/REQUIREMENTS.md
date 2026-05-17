@@ -24,6 +24,19 @@
 - [x] **EVAL-01** Compute deterministic L0 groundedness scores for retrieval responses.
 - [x] **EVAL-02** Persist retrieval trajectories linking query, strategy, score, and outcomes.
 
+## Orchestration
+
+- [x] **ORG-01** Block wave advancement on eval-gate failure (fail-closed verification).
+- [x] **ORG-02** Scope session and access records to active git worktree path.
+- [x] **ORG-03** Maintain intent-level soft locks for shared-branch coordination.
+
+## UI
+
+- [x] **UI-01** Expose a read-only Axum/Askama dashboard showing active intents and worktree projections.
+- [x] **UI-02** Stream live agent activity and telemetry updates using Server-Sent Events (SSE).
+- [x] **UI-03** Manage Git worktree lifecycle using async tokio::process::Command without blocking the HTTP server.
+- [x] **UI-04** Present a detailed task view including PAVL state, token costs, and HITL block controls.
+
 ## Traceability Table
 
 | Requirement | Scope | Status | Notes |
@@ -40,3 +53,10 @@
 | OBS-02 | Phase 03 MCP instrumentation and summary surfaces | Complete | best-effort telemetry hooks + session summary resource + CLI session-cost |
 | EVAL-01 | Phase 03 deterministic groundedness scoring | Complete | lexical overlap score in [0,1] for lexical and semantic retrieval |
 | EVAL-02 | Phase 03 retrieval trajectory persistence | Complete | query + strategy + score + result_count + session persisted in tool_events |
+| ORG-01 | Phase 04 wave-level eval gating | Complete | fail-closed transitions in_review->verified and verified->merged |
+| ORG-02 | Phase 04 worktree-scoped telemetry and memory | Complete | scope partitioning by deterministic worktree_id |
+| ORG-03 | Phase 04 intent soft locks | Complete | lease-based lock ownership on in_progress transitions |
+| UI-01 | Phase 05 dashboard foundation | Complete | read-only intent/worktree dashboard via Axum + Askama |
+| UI-02 | Phase 05 live activity surface | Complete | SSE stream + HTMX reconnect-safe activity fragment |
+| UI-03 | Phase 05 async worktree operations | Complete | async git adapter + deterministic intent/worktree binding |
+| UI-04 | Phase 05 task detail and HITL controls | Complete | task detail, review panel, and validated block/unblock actions |
