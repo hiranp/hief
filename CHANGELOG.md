@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Multi-Tenant / Multi-Worktree Isolation**: Automatic session partitioning and cognitive memory mapping by Git worktree ID, falling back cleanly to the project-root database for legacy callers.
 - **Intent Soft-Locks**: Lease-based exclusive soft locks when intents transition to `in_progress`, rejecting competing worktree ownership via structured, typed conflict errors.
 - **Retrieval Weight Learning**: Self-improving retrieval parameters that learn from bounded groundedness windows with shadow-mode scoring, candidate generation, and validation checks.
+- **Task Tracking UI**: Local task-tracking dashboard and worktree session UI for live intent progress, task details, and HITL review controls.
 - **Lexical Overlap Groundedness Scoring**: Deterministic overlap scoring normalized to `[0, 1]` for hybrid retrieval evaluation, removing the dependency on external heavy LLM judges.
 
 ### Removed
