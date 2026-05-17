@@ -192,31 +192,6 @@ impl Database {
         Ok(rows.next().await.map_err(HiefError::Database)?.is_some())
     }
 
-    /// Record a tool event for telemetry and observability.
-    #[allow(dead_code)]
-    pub async fn record_tool_event(
-        &self,
-        session_id: &str,
-        tool: &str,
-        query: &str,
-        strategy: Option<&str>,
-        result_count: Option<i32>,
-        latency_ms: Option<i32>,
-        groundedness_score: Option<f64>,
-    ) -> Result<i64> {
-        self.record_tool_event_scoped(
-            session_id,
-            tool,
-            query,
-            strategy,
-            result_count,
-            latency_ms,
-            groundedness_score,
-            None,
-        )
-        .await
-    }
-
     /// Record a tool event scoped to a specific worktree.
     #[allow(dead_code)]
     pub async fn record_tool_event_scoped(
@@ -266,12 +241,6 @@ impl Database {
         Ok(event_id as i64)
     }
 
-    /// Query session summary metrics from telemetry data.
-    #[allow(dead_code)]
-    pub async fn get_session_summary(&self, session_id: &str) -> Result<Option<SessionSummary>> {
-        self.get_session_summary_scoped(session_id, None).await
-    }
-
     /// Query session summary metrics from telemetry data for a specific worktree.
     #[allow(dead_code)]
     pub async fn get_session_summary_scoped(
@@ -317,11 +286,6 @@ impl Database {
         } else {
             Ok(None)
         }
-    }
-
-    /// Query aggregate telemetry metrics with per-tool breakdown.
-    pub async fn get_session_cost_summary(&self, session_id: &str) -> Result<SessionCostSummary> {
-        self.get_session_cost_summary_scoped(session_id, None).await
     }
 
     /// Query aggregate telemetry metrics scoped to a specific worktree.

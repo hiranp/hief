@@ -99,20 +99,6 @@ pub struct SessionFileAccess {
 // Access recording (Step 2)
 // ---------------------------------------------------------------------------
 
-/// Record an access event for a search result.
-///
-/// Called by MCP tool handlers after returning search results to the agent.
-pub async fn record_access(
-    db: &Database,
-    file_path: &str,
-    chunk_id: Option<&str>,
-    query: Option<&str>,
-    tool: &str,
-    session_id: Option<&str>,
-) -> Result<String> {
-    record_access_scoped(db, file_path, chunk_id, query, tool, session_id, None).await
-}
-
 /// Record an access event scoped to a specific worktree.
 pub async fn record_access_scoped(
     db: &Database,
@@ -149,19 +135,6 @@ pub async fn record_access_scoped(
     );
 
     Ok(id)
-}
-
-/// Record accesses for multiple files from a single search operation.
-///
-/// Also triggers co-access graph updates for all file pairs in the result set.
-pub async fn record_search_accesses(
-    db: &Database,
-    file_paths: &[String],
-    query: Option<&str>,
-    tool: &str,
-    session_id: Option<&str>,
-) -> Result<()> {
-    record_search_accesses_scoped(db, file_paths, query, tool, session_id, None).await
 }
 
 /// Record accesses for multiple files from a single search operation scoped to a worktree.
@@ -401,17 +374,6 @@ pub async fn compute_access_boost(db: &Database, file_path: &str) -> Result<f64>
     }
 }
 
-/// Get access boost values for multiple files at once (batch query for search).
-///
-/// Returns a map of file_path → access_boost for efficient lookup during
-/// search result re-ranking.
-pub async fn batch_access_boost(
-    db: &Database,
-    file_paths: &[String],
-) -> Result<std::collections::HashMap<String, f64>> {
-    batch_access_boost_scoped(db, file_paths, None).await
-}
-
 /// Compute access boosts for multiple files in a specific worktree scope.
 pub async fn batch_access_boost_scoped(
     db: &Database,
@@ -461,17 +423,6 @@ pub async fn batch_access_boost_scoped(
 // ---------------------------------------------------------------------------
 // Session context (Step 6)
 // ---------------------------------------------------------------------------
-
-/// Build session context: files accessed this session plus related suggestions.
-///
-/// This powers the `project://session-context` MCP resource.
-pub async fn get_session_context(
-    db: &Database,
-    session_id: &str,
-    suggestion_limit: usize,
-) -> Result<SessionContext> {
-    get_session_context_scoped(db, session_id, suggestion_limit, None).await
-}
 
 /// Build session context scoped to a specific worktree.
 pub async fn get_session_context_scoped(
@@ -686,13 +637,14 @@ mod tests {
     async fn test_record_access() {
         let db = Database::open_memory().await.unwrap();
 
-        let id = record_access(
+        let id = record_access_scoped(
             &db,
             "src/main.rs",
             Some("chunk-1"),
             Some("fn main"),
             "search_code",
             Some("session-1"),
+            None,
         )
         .await
         .unwrap();
@@ -725,7 +677,7 @@ mod tests {
             "src/config.rs".to_string(),
         ];
 
-        record_search_accesses(&db, &files, Some("database"), "search_code", Some("s1"))
+        record_search_accesses_scoped(&db, &files, Some("database"), "search_code", Some("s1"), None)
             .await
             .unwrap();
 
@@ -869,7 +821,7 @@ mod tests {
 
         // Record some accesses
         for _ in 0..5 {
-            record_access(&db, "src/hot.rs", None, Some("test"), "search_code", None)
+            record_access_scoped(&db, "src/hot.rs", None, Some("test"), "search_code", None, None)
                 .await
                 .unwrap();
         }
@@ -892,43 +844,47 @@ mod tests {
         let session = "test-session-42";
 
         // Record accesses in this session
-        record_access(
+        record_access_scoped(
             &db,
             "src/db.rs",
             None,
             Some("database"),
             "search_code",
             Some(session),
+            None,
         )
         .await
         .unwrap();
-        record_access(
+        record_access_scoped(
             &db,
             "src/db.rs",
             None,
             Some("query"),
             "search_code",
             Some(session),
+            None,
         )
         .await
         .unwrap();
-        record_access(
+        record_access_scoped(
             &db,
             "src/errors.rs",
             None,
             Some("error"),
             "search_code",
             Some(session),
+            None,
         )
         .await
         .unwrap();
 
-        // Add some co-access data
         upsert_co_access(&db, "src/config.rs", "src/db.rs")
             .await
             .unwrap();
 
-        let ctx = get_session_context(&db, session, 10).await.unwrap();
+        let ctx = get_session_context_scoped(&db, session, 10, None)
+            .await
+            .unwrap();
 
         assert_eq!(ctx.accessed_files.len(), 2);
         assert_eq!(ctx.total_accesses, 3);
@@ -960,16 +916,16 @@ mod tests {
 
         // Record varying access counts
         for _ in 0..5 {
-            record_access(&db, "src/hot.rs", None, None, "search_code", None)
+            record_access_scoped(&db, "src/hot.rs", None, None, "search_code", None, None)
                 .await
                 .unwrap();
         }
         for _ in 0..2 {
-            record_access(&db, "src/warm.rs", None, None, "search_code", None)
+            record_access_scoped(&db, "src/warm.rs", None, None, "search_code", None, None)
                 .await
                 .unwrap();
         }
-        record_access(&db, "src/cold.rs", None, None, "search_code", None)
+        record_access_scoped(&db, "src/cold.rs", None, None, "search_code", None, None)
             .await
             .unwrap();
 
@@ -990,11 +946,11 @@ mod tests {
         let db = Database::open_memory().await.unwrap();
 
         for _ in 0..3 {
-            record_access(&db, "src/a.rs", None, None, "search_code", None)
+            record_access_scoped(&db, "src/a.rs", None, None, "search_code", None, None)
                 .await
                 .unwrap();
         }
-        record_access(&db, "src/b.rs", None, None, "search_code", None)
+        record_access_scoped(&db, "src/b.rs", None, None, "search_code", None, None)
             .await
             .unwrap();
 
@@ -1003,7 +959,7 @@ mod tests {
             "src/b.rs".to_string(),
             "src/c.rs".to_string(),
         ];
-        let boosts = batch_access_boost(&db, &paths).await.unwrap();
+        let boosts = batch_access_boost_scoped(&db, &paths, None).await.unwrap();
 
         assert!(boosts.get("src/a.rs").unwrap() > boosts.get("src/b.rs").unwrap());
         assert!(!boosts.contains_key("src/c.rs")); // No access history

@@ -80,7 +80,7 @@ async fn test_record_tool_event_with_all_fields() {
     let db = open_test_db().await;
 
     let event_id = db
-        .record_tool_event(
+        .record_tool_event_scoped(
             "session-123",
             "search_code",
             "find authentication",
@@ -88,6 +88,7 @@ async fn test_record_tool_event_with_all_fields() {
             Some(42),
             Some(125),
             Some(0.95),
+            None,
         )
         .await
         .expect("record event");
@@ -129,10 +130,11 @@ async fn test_record_tool_event_with_optional_fields_none() {
     let db = open_test_db().await;
 
     let event_id = db
-        .record_tool_event(
+        .record_tool_event_scoped(
             "session-456",
             "search_semantic",
             "database connection",
+            None,
             None,
             None,
             None,
@@ -177,21 +179,21 @@ async fn test_session_summary_aggregation() {
     let session_id = "session-agg-test";
 
     // Insert multiple events for the same session
-    db.record_tool_event(session_id, "search_code", "auth", Some("deterministic"), Some(10), Some(50), Some(0.90))
+    db.record_tool_event_scoped(session_id, "search_code", "auth", Some("deterministic"), Some(10), Some(50), Some(0.90), None)
         .await
         .expect("record event 1");
 
-    db.record_tool_event(session_id, "search_semantic", "database", Some("semantic"), Some(15), Some(100), Some(0.85))
+    db.record_tool_event_scoped(session_id, "search_semantic", "database", Some("semantic"), Some(15), Some(100), Some(0.85), None)
         .await
         .expect("record event 2");
 
-    db.record_tool_event(session_id, "search_code", "routing", Some("deterministic"), Some(20), Some(75), Some(0.92))
+    db.record_tool_event_scoped(session_id, "search_code", "routing", Some("deterministic"), Some(20), Some(75), Some(0.92), None)
         .await
         .expect("record event 3");
 
     // Query session summary
     let summary = db
-        .get_session_summary(session_id)
+        .get_session_summary_scoped(session_id, None)
         .await
         .expect("get summary")
         .expect("summary should exist");
@@ -216,7 +218,7 @@ async fn test_session_summary_nonexistent_session() {
     let db = open_test_db().await;
 
     let summary = db
-        .get_session_summary("nonexistent-session")
+        .get_session_summary_scoped("nonexistent-session", None)
         .await
         .expect("get summary");
 
@@ -228,21 +230,21 @@ async fn test_tool_events_roundtrip_with_multiple_sessions() {
     let db = open_test_db().await;
 
     // Insert events for multiple sessions
-    db.record_tool_event("session-1", "search_code", "query1", Some("deterministic"), Some(5), Some(10), Some(0.80))
+    db.record_tool_event_scoped("session-1", "search_code", "query1", Some("deterministic"), Some(5), Some(10), Some(0.80), None)
         .await
         .expect("record 1");
 
-    db.record_tool_event("session-1", "search_code", "query2", Some("deterministic"), Some(8), Some(15), Some(0.85))
+    db.record_tool_event_scoped("session-1", "search_code", "query2", Some("deterministic"), Some(8), Some(15), Some(0.85), None)
         .await
         .expect("record 2");
 
-    db.record_tool_event("session-2", "search_semantic", "query3", Some("semantic"), Some(12), Some(50), Some(0.90))
+    db.record_tool_event_scoped("session-2", "search_semantic", "query3", Some("semantic"), Some(12), Some(50), Some(0.90), None)
         .await
         .expect("record 3");
 
     // Verify session-1 summary
     let summary1 = db
-        .get_session_summary("session-1")
+        .get_session_summary_scoped("session-1", None)
         .await
         .expect("get summary 1")
         .expect("summary 1 should exist");
@@ -252,7 +254,7 @@ async fn test_tool_events_roundtrip_with_multiple_sessions() {
 
     // Verify session-2 summary
     let summary2 = db
-        .get_session_summary("session-2")
+        .get_session_summary_scoped("session-2", None)
         .await
         .expect("get summary 2")
         .expect("summary 2 should exist");
@@ -265,7 +267,7 @@ async fn test_tool_events_roundtrip_with_multiple_sessions() {
 async fn test_session_cost_summary_includes_totals_and_breakdown() {
     let db = open_test_db().await;
 
-    db.record_tool_event(
+    db.record_tool_event_scoped(
         "session-cost-1",
         "search_code",
         "auth",
@@ -273,10 +275,11 @@ async fn test_session_cost_summary_includes_totals_and_breakdown() {
         Some(2),
         Some(30),
         Some(0.8),
+        None,
     )
     .await
     .expect("insert event 1");
-    db.record_tool_event(
+    db.record_tool_event_scoped(
         "session-cost-1",
         "search_code",
         "authz",
@@ -284,10 +287,11 @@ async fn test_session_cost_summary_includes_totals_and_breakdown() {
         Some(3),
         Some(70),
         Some(0.9),
+        None,
     )
     .await
     .expect("insert event 2");
-    db.record_tool_event(
+    db.record_tool_event_scoped(
         "session-cost-1",
         "semantic_search",
         "token budget",
@@ -295,12 +299,13 @@ async fn test_session_cost_summary_includes_totals_and_breakdown() {
         Some(4),
         Some(50),
         Some(0.7),
+        None,
     )
     .await
     .expect("insert event 3");
 
     let summary = db
-        .get_session_cost_summary("session-cost-1")
+        .get_session_cost_summary_scoped("session-cost-1", None)
         .await
         .expect("session cost summary");
 
@@ -322,7 +327,7 @@ async fn test_session_cost_summary_empty_session_returns_zero_values() {
     let db = open_test_db().await;
 
     let summary = db
-        .get_session_cost_summary("missing-session")
+        .get_session_cost_summary_scoped("missing-session", None)
         .await
         .expect("session cost summary");
 

@@ -31,6 +31,13 @@ pub async fn run(
         results.push(result);
     }
 
+    // Trigger bounded learning update now that fresh eval data is persisted.
+    // wave_gate_open is true when every evaluated golden set passed.
+    let wave_gate_open = results.iter().all(|r| r.passed);
+    if let Err(err) = crate::router::learn_retrieval_weights(db, wave_gate_open).await {
+        tracing::warn!(error = %err, "retrieval weight learning failed after eval; continuing");
+    }
+
     Ok(results)
 }
 

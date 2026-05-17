@@ -71,7 +71,7 @@ async fn test_lexical_search_populates_groundedness_signal() {
 async fn test_trajectory_row_persists_query_strategy_score_and_session() {
     let db = open_test_db().await;
 
-    db.record_tool_event(
+    db.record_tool_event_scoped(
         "trajectory-session",
         "semantic_search",
         "auth refresh",
@@ -79,6 +79,7 @@ async fn test_trajectory_row_persists_query_strategy_score_and_session() {
         Some(6),
         Some(42),
         Some(0.77),
+        None,
     )
     .await
     .expect("record trajectory event");
