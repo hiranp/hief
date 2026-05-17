@@ -6,6 +6,11 @@ use tracing::{debug, info};
 
 use crate::errors::{HiefError, Result};
 
+const MAX_SESSION_ID_LEN: usize = 128;
+const MAX_TOOL_LEN: usize = 128;
+const MAX_QUERY_LEN: usize = 2048;
+const MAX_STRATEGY_LEN: usize = 512;
+
 /// Wrapper around libsql connection providing migration support.
 #[derive(Clone)]
 pub struct Database {
@@ -140,12 +145,20 @@ impl Database {
         groundedness_score: Option<f64>,
     ) -> Result<i64> {
         use libsql::Value;
-        
+
+        let bounded_session_id = bounded_text(session_id, MAX_SESSION_ID_LEN);
+        let bounded_tool = bounded_text(tool, MAX_TOOL_LEN);
+        let bounded_query = bounded_text(query, MAX_QUERY_LEN);
+        let bounded_strategy = strategy.map(|s| bounded_text(s, MAX_STRATEGY_LEN));
+
         let params = [
-            Value::from(session_id),
-            Value::from(tool),
-            Value::from(query),
-            strategy.map(Value::from).unwrap_or(Value::Null),
+            Value::from(bounded_session_id),
+            Value::from(bounded_tool),
+            Value::from(bounded_query),
+            bounded_strategy
+                .as_deref()
+                .map(Value::from)
+                .unwrap_or(Value::Null),
             result_count.map(|v| Value::from(v as i64)).unwrap_or(Value::Null),
             latency_ms.map(|v| Value::from(v as i64)).unwrap_or(Value::Null),
             groundedness_score.map(Value::from).unwrap_or(Value::Null),
@@ -205,6 +218,68 @@ impl Database {
             Ok(None)
         }
     }
+
+    /// Query aggregate telemetry metrics with per-tool breakdown.
+    pub async fn get_session_cost_summary(&self, session_id: &str) -> Result<SessionCostSummary> {
+        let mut totals_rows = self
+            .conn
+            .query(
+                r#"SELECT
+                    COUNT(*) as total_calls,
+                    COALESCE(SUM(latency_ms), 0) as total_latency_ms,
+                    AVG(groundedness_score) as avg_groundedness
+                   FROM tool_events
+                   WHERE session_id = ?1"#,
+                [session_id],
+            )
+            .await
+            .map_err(HiefError::Database)?;
+
+        let (total_calls, total_latency_ms, avg_groundedness) =
+            if let Some(row) = totals_rows.next().await.map_err(HiefError::Database)? {
+                let total_calls: i64 = row.get(0).map_err(HiefError::Database)?;
+                let total_latency_ms: i64 = row.get(1).map_err(HiefError::Database)?;
+                let avg_groundedness: Option<f64> = row.get(2).map_err(HiefError::Database)?;
+                (total_calls, total_latency_ms, avg_groundedness)
+            } else {
+                (0, 0, None)
+            };
+
+        let mut tool_rows = self
+            .conn
+            .query(
+                r#"SELECT
+                    tool,
+                    COUNT(*) as calls,
+                    COALESCE(SUM(latency_ms), 0) as total_latency_ms,
+                    AVG(groundedness_score) as avg_groundedness
+                   FROM tool_events
+                   WHERE session_id = ?1
+                   GROUP BY tool
+                   ORDER BY calls DESC, tool ASC"#,
+                [session_id],
+            )
+            .await
+            .map_err(HiefError::Database)?;
+
+        let mut per_tool = Vec::new();
+        while let Some(row) = tool_rows.next().await.map_err(HiefError::Database)? {
+            per_tool.push(ToolBreakdown {
+                tool: row.get(0).map_err(HiefError::Database)?,
+                total_calls: row.get(1).map_err(HiefError::Database)?,
+                total_latency_ms: row.get(2).map_err(HiefError::Database)?,
+                avg_groundedness: row.get(3).map_err(HiefError::Database)?,
+            });
+        }
+
+        Ok(SessionCostSummary {
+            session_id: session_id.to_string(),
+            total_calls,
+            total_latency_ms,
+            avg_groundedness,
+            per_tool,
+        })
+    }
 }
 
 /// Session summary metrics aggregated from tool events.
@@ -220,6 +295,29 @@ pub struct SessionSummary {
     pub session_start: i64,
     pub session_end: i64,
     pub session_duration_seconds: i64,
+}
+
+/// Aggregate session telemetry with per-tool breakdown.
+#[derive(Debug, Clone)]
+pub struct SessionCostSummary {
+    pub session_id: String,
+    pub total_calls: i64,
+    pub total_latency_ms: i64,
+    pub avg_groundedness: Option<f64>,
+    pub per_tool: Vec<ToolBreakdown>,
+}
+
+/// Per-tool telemetry totals for a session.
+#[derive(Debug, Clone)]
+pub struct ToolBreakdown {
+    pub tool: String,
+    pub total_calls: i64,
+    pub total_latency_ms: i64,
+    pub avg_groundedness: Option<f64>,
+}
+
+fn bounded_text(input: &str, max_chars: usize) -> String {
+    input.chars().take(max_chars).collect()
 }
 
 // ---------------------------------------------------------------------------

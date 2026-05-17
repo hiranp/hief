@@ -7,6 +7,8 @@
 
 use std::path::Path;
 
+use schemars::JsonSchema;
+
 mod check;
 mod docs;
 mod doctor;
@@ -153,5 +155,84 @@ pub fn install_platform(
 	}
 
 	// TODO(PRO-04): implement real registration write path.
+	Ok(())
+}
+
+/// Human-facing session telemetry summary for CLI.
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct SessionCostSummaryView {
+	pub session_id: String,
+	pub total_calls: i64,
+	pub total_latency_ms: i64,
+	pub avg_groundedness: Option<f64>,
+	pub per_tool: Vec<SessionCostToolView>,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct SessionCostToolView {
+	pub tool: String,
+	pub total_calls: i64,
+	pub total_latency_ms: i64,
+	pub avg_groundedness: Option<f64>,
+}
+
+/// Render a per-session telemetry summary.
+pub async fn session_cost(
+	db: &crate::db::Database,
+	session_id: &str,
+	json: bool,
+) -> crate::errors::Result<()> {
+	let summary = db.get_session_cost_summary(session_id).await?;
+	let view = SessionCostSummaryView {
+		session_id: summary.session_id,
+		total_calls: summary.total_calls,
+		total_latency_ms: summary.total_latency_ms,
+		avg_groundedness: summary.avg_groundedness,
+		per_tool: summary
+			.per_tool
+			.into_iter()
+			.map(|tool| SessionCostToolView {
+				tool: tool.tool,
+				total_calls: tool.total_calls,
+				total_latency_ms: tool.total_latency_ms,
+				avg_groundedness: tool.avg_groundedness,
+			})
+			.collect(),
+	};
+
+	if json {
+		println!(
+			"{}",
+			serde_json::to_string_pretty(&view)
+				.map_err(|e| crate::errors::HiefError::Other(e.to_string()))?
+		);
+		return Ok(());
+	}
+
+	println!("Session: {}", view.session_id);
+	println!("Total calls: {}", view.total_calls);
+	println!("Total latency (ms): {}", view.total_latency_ms);
+	match view.avg_groundedness {
+		Some(score) => println!("Average groundedness: {:.3}", score),
+		None => println!("Average groundedness: n/a"),
+	}
+
+	if view.per_tool.is_empty() {
+		println!("Per-tool breakdown: none");
+		return Ok(());
+	}
+
+	println!("Per-tool breakdown:");
+	for row in view.per_tool {
+		let groundedness = row
+			.avg_groundedness
+			.map(|score| format!("{:.3}", score))
+			.unwrap_or_else(|| "n/a".to_string());
+		println!(
+			"- {}: calls={}, latency_ms={}, avg_groundedness={}",
+			row.tool, row.total_calls, row.total_latency_ms, groundedness
+		);
+	}
+
 	Ok(())
 }

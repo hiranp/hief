@@ -14,6 +14,37 @@ use crate::db::Database;
 use crate::errors::{HiefError, Result};
 use crate::eval::golden::{EvalCase, GoldenSet};
 
+/// Deterministic lexical-overlap groundedness score in [0.0, 1.0].
+///
+/// This L0 signal compares normalized query tokens against normalized retrieval
+/// content tokens. It is local-only and dependency-free by design.
+pub fn groundedness_score(query: &str, contents: &[&str]) -> f64 {
+    let query_tokens = normalized_tokens(query);
+    if query_tokens.is_empty() {
+        return 0.0;
+    }
+
+    let mut covered = 0usize;
+    for token in &query_tokens {
+        if contents
+            .iter()
+            .any(|content| normalized_tokens(content).contains(token))
+        {
+            covered += 1;
+        }
+    }
+
+    let raw = covered as f64 / query_tokens.len() as f64;
+    raw.clamp(0.0, 1.0)
+}
+
+fn normalized_tokens(text: &str) -> std::collections::BTreeSet<String> {
+    text.split(|ch: char| !ch.is_alphanumeric() && ch != '_')
+        .map(|token| token.trim().to_ascii_lowercase())
+        .filter(|token| token.len() >= 2)
+        .collect()
+}
+
 /// Overall result of evaluating a golden set.
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct EvalResult {

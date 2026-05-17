@@ -57,9 +57,9 @@ Plans:
 
 Plans:
 
-- [ ] 03-01-PLAN.md - telemetry schema and write path
-- [ ] 03-02-PLAN.md - MCP instrumentation, session-cost tooling, and PRO-03 lane-event audit wiring
-- [ ] 03-03-PLAN.md - groundedness scoring and trajectory capture
+- [x] 03-01-PLAN.md - telemetry schema and write path
+- [x] 03-02-PLAN.md - MCP instrumentation, session-cost tooling, and PRO-03 lane-event audit wiring
+- [x] 03-03-PLAN.md - groundedness scoring and trajectory capture
 
 ---
 

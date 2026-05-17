@@ -136,6 +136,7 @@ impl SemanticQuery {
 pub struct SemanticSearchOutcome {
     pub results: Vec<SemanticResult>,
     pub cache_used: bool,
+    pub groundedness_score: Option<f64>,
 }
 
 /// Convert indexed chunks into deterministic embeddings for LanceDB storage.
@@ -280,6 +281,7 @@ pub async fn search(
         return Ok(SemanticSearchOutcome {
             results: Vec::new(),
             cache_used: false,
+            groundedness_score: Some(0.0),
         });
     }
     if query_vector.len() != config.dimensions {
@@ -291,9 +293,16 @@ pub async fn search(
     }
 
     if let Some(cached) = read_semantic_cache(db, query_vector, query).await? {
+        let contexts: Vec<&str> = cached.iter().map(|r| r.content.as_str()).collect();
+        let groundedness = if contexts.is_empty() {
+            0.0
+        } else {
+            crate::eval::scorer::groundedness_score(&query.query, &contexts)
+        };
         return Ok(SemanticSearchOutcome {
             results: cached,
             cache_used: true,
+            groundedness_score: Some(groundedness),
         });
     }
 
@@ -302,6 +311,7 @@ pub async fn search(
         return Ok(SemanticSearchOutcome {
             results: Vec::new(),
             cache_used: false,
+            groundedness_score: Some(0.0),
         });
     }
 
@@ -311,6 +321,7 @@ pub async fn search(
             return Ok(SemanticSearchOutcome {
                 results: Vec::new(),
                 cache_used: false,
+                groundedness_score: Some(0.0),
             })
         }
     };
@@ -340,10 +351,18 @@ pub async fn search(
     }
     results.truncate(query.top_k);
 
+    let contexts: Vec<&str> = results.iter().map(|r| r.content.as_str()).collect();
+    let groundedness = if contexts.is_empty() {
+        0.0
+    } else {
+        crate::eval::scorer::groundedness_score(&query.query, &contexts)
+    };
+
     write_semantic_cache(db, query_vector, query, &results).await?;
     Ok(SemanticSearchOutcome {
         results,
         cache_used: false,
+        groundedness_score: Some(groundedness),
     })
 }
 

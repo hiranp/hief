@@ -117,6 +117,25 @@ pub struct ConventionSummary {
     pub info_count: usize,
 }
 
+/// Session-level observability summary exposed to users.
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct SessionSummaryResource {
+    pub session_id: String,
+    pub total_calls: i64,
+    pub total_latency_ms: i64,
+    pub avg_groundedness: Option<f64>,
+    pub per_tool: Vec<SessionToolBreakdown>,
+}
+
+/// Per-tool aggregate metrics for a session.
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct SessionToolBreakdown {
+    pub tool: String,
+    pub total_calls: i64,
+    pub total_latency_ms: i64,
+    pub avg_groundedness: Option<f64>,
+}
+
 /// Build the project overview resource.
 pub async fn get_project_overview(db: &Database, project_root: &Path) -> Result<ProjectOverview> {
     // Get index stats
@@ -337,6 +356,32 @@ pub async fn get_project_health(
         drift_score,
         drift_errors,
         drift_warnings,
+    })
+}
+
+/// Build a session-level telemetry summary.
+pub async fn get_session_summary_resource(
+    db: &Database,
+    session_id: &str,
+) -> Result<SessionSummaryResource> {
+    let summary = db.get_session_cost_summary(session_id).await?;
+    let per_tool = summary
+        .per_tool
+        .into_iter()
+        .map(|entry| SessionToolBreakdown {
+            tool: entry.tool,
+            total_calls: entry.total_calls,
+            total_latency_ms: entry.total_latency_ms,
+            avg_groundedness: entry.avg_groundedness,
+        })
+        .collect();
+
+    Ok(SessionSummaryResource {
+        session_id: summary.session_id,
+        total_calls: summary.total_calls,
+        total_latency_ms: summary.total_latency_ms,
+        avg_groundedness: summary.avg_groundedness,
+        per_tool,
     })
 }
 

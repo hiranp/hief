@@ -260,3 +260,75 @@ async fn test_tool_events_roundtrip_with_multiple_sessions() {
     assert_eq!(summary2.total_events, 1);
     assert_eq!(summary2.unique_tools, 1);
 }
+
+#[tokio::test]
+async fn test_session_cost_summary_includes_totals_and_breakdown() {
+    let db = open_test_db().await;
+
+    db.record_tool_event(
+        "session-cost-1",
+        "search_code",
+        "auth",
+        Some("strategy=deterministic;lane=mcp;reason=test;outcome=ok"),
+        Some(2),
+        Some(30),
+        Some(0.8),
+    )
+    .await
+    .expect("insert event 1");
+    db.record_tool_event(
+        "session-cost-1",
+        "search_code",
+        "authz",
+        Some("strategy=deterministic;lane=mcp;reason=test;outcome=ok"),
+        Some(3),
+        Some(70),
+        Some(0.9),
+    )
+    .await
+    .expect("insert event 2");
+    db.record_tool_event(
+        "session-cost-1",
+        "semantic_search",
+        "token budget",
+        Some("strategy=semantic;lane=progressive_mcp;reason=test;outcome=ok"),
+        Some(4),
+        Some(50),
+        Some(0.7),
+    )
+    .await
+    .expect("insert event 3");
+
+    let summary = db
+        .get_session_cost_summary("session-cost-1")
+        .await
+        .expect("session cost summary");
+
+    assert_eq!(summary.total_calls, 3);
+    assert_eq!(summary.total_latency_ms, 150);
+    assert_eq!(summary.per_tool.len(), 2);
+
+    let search_code = summary
+        .per_tool
+        .iter()
+        .find(|row| row.tool == "search_code")
+        .expect("search_code row");
+    assert_eq!(search_code.total_calls, 2);
+    assert_eq!(search_code.total_latency_ms, 100);
+}
+
+#[tokio::test]
+async fn test_session_cost_summary_empty_session_returns_zero_values() {
+    let db = open_test_db().await;
+
+    let summary = db
+        .get_session_cost_summary("missing-session")
+        .await
+        .expect("session cost summary");
+
+    assert_eq!(summary.session_id, "missing-session");
+    assert_eq!(summary.total_calls, 0);
+    assert_eq!(summary.total_latency_ms, 0);
+    assert!(summary.avg_groundedness.is_none());
+    assert!(summary.per_tool.is_empty());
+}

@@ -109,6 +109,9 @@ pub enum Commands {
     #[command(subcommand)]
     Mcp(McpCmd),
 
+    /// Show per-session telemetry summary and cost-like metrics
+    SessionCost(SessionCostArgs),
+
     /// Start the MCP server
     Serve(ServeArgs),
 
@@ -370,4 +373,11 @@ pub struct ServeArgs {
     /// Port for HTTP transport
     #[arg(long)]
     pub port: Option<u16>,
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct SessionCostArgs {
+    /// Session identifier to summarize.
+    #[arg(long)]
+    pub session_id: String,
 }

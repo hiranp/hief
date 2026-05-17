@@ -29,7 +29,7 @@ use tracing_subscriber::EnvFilter;
 
 use cli::{
     Cli, Commands, DocsCmd, EvalCmd, GoldenCmd, GraphCmd, HooksCmd, IndexCmd, InstallArgs,
-    McpCmd, PatternsCmd, SkillsCmd,
+    McpCmd, PatternsCmd, SessionCostArgs, SkillsCmd,
 };
 use config::Config;
 use db::Database;
@@ -81,6 +81,12 @@ async fn run(cli: Cli, project_root: PathBuf) -> anyhow::Result<()> {
         Commands::Install(InstallArgs { platform, dry_run }) => {
             let config = Config::load(&config_path)?;
             cli::commands::install_platform(&config, &project_root, &platform, dry_run, json)?;
+        }
+
+        Commands::SessionCost(SessionCostArgs { session_id }) => {
+            let db_path = Config::db_path(&project_root);
+            let db = Database::open(&db_path).await?;
+            cli::commands::session_cost(&db, &session_id, json).await?;
         }
 
         Commands::Index(cmd) => {

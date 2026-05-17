@@ -60,6 +60,7 @@ pub struct SearchResult {
     pub end_line: u32,
     pub rank: f64,
     pub snippet: String,
+    pub groundedness_score: Option<f64>,
 }
 
 /// Retrieval metadata attached to semantic search responses.
@@ -71,11 +72,15 @@ pub struct RetrievalMetadata {
 }
 
 /// Construct placeholder retrieval metadata for a semantic response.
-pub fn semantic_retrieval_metadata(strategy: impl Into<String>, cache_used: bool) -> RetrievalMetadata {
+pub fn semantic_retrieval_metadata(
+    strategy: impl Into<String>,
+    cache_used: bool,
+    quality_signal: Option<f64>,
+) -> RetrievalMetadata {
     RetrievalMetadata {
         strategy: strategy.into(),
         cache_used,
-        quality_signal: None,
+        quality_signal,
     }
 }
 
@@ -178,7 +183,18 @@ pub async fn search(db: &Database, query: &SearchQuery) -> Result<Vec<SearchResu
             end_line: end_line as u32,
             rank,
             snippet,
+            groundedness_score: None,
         });
+    }
+
+    let groundedness = if results.is_empty() {
+        0.0
+    } else {
+        let contexts: Vec<&str> = results.iter().map(|r| r.content.as_str()).collect();
+        crate::eval::scorer::groundedness_score(&query.text, &contexts)
+    };
+    for result in &mut results {
+        result.groundedness_score = Some(groundedness);
     }
 
     debug!(

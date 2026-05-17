@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::{Json, Parameters};
@@ -26,7 +26,7 @@ use crate::index;
 use crate::index::search::{SearchQuery, SearchResult};
 use crate::index::structural;
 use rmcp::handler::server::tool::ToolName;
-use tracing::debug;
+use tracing::{debug, warn};
 
 /// The HIEF MCP server handler.
 #[derive(Clone)]
@@ -101,6 +101,33 @@ impl HiefServer {
         value: Option<&str>,
     ) -> std::result::Result<String, ErrorData> {
         validate_required_param(tool, parameter, value)
+    }
+
+    async fn record_tool_event_best_effort(
+        &self,
+        session_id: &str,
+        tool: &str,
+        query: &str,
+        strategy: Option<&str>,
+        result_count: Option<i32>,
+        latency_ms: Option<i32>,
+        groundedness_score: Option<f64>,
+    ) {
+        if let Err(err) = self
+            .db
+            .record_tool_event(
+                session_id,
+                tool,
+                query,
+                strategy,
+                result_count,
+                latency_ms,
+                groundedness_score,
+            )
+            .await
+        {
+            warn!(tool, error=%err, "telemetry write failed; continuing");
+        }
     }
 }
 
@@ -293,6 +320,14 @@ pub struct SemanticSearchParams {
     pub top_k: Option<usize>,
     /// Filter by programming language
     pub language: Option<String>,
+    /// MCP session identifier for telemetry correlation
+    pub session_id: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct GetSessionSummaryParams {
+    /// Session identifier to summarize.
+    pub session_id: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -537,6 +572,26 @@ fn compress_semantic_results(
     Vec::new()
 }
 
+fn retrieval_strategy_name(route: &crate::router::RetrievalStrategy) -> &'static str {
+    match route {
+        crate::router::RetrievalStrategy::Deterministic { .. } => "deterministic",
+        crate::router::RetrievalStrategy::Hybrid { .. } => "hybrid",
+        crate::router::RetrievalStrategy::Semantic { .. } => "semantic",
+    }
+}
+
+fn lane_strategy_label(
+    base_strategy: &str,
+    lane: &crate::router::LaneDecision,
+    outcome: &str,
+) -> String {
+    let lane_name = lane.lane.as_str().replace('-', "_");
+    format!(
+        "strategy={};lane={};reason={};outcome={}",
+        base_strategy, lane_name, lane.reason, outcome
+    )
+}
+
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct FindCallersParams {
     /// Name of the function to find call sites for
@@ -656,6 +711,7 @@ impl HiefServer {
         &self,
         Parameters(params): Parameters<SearchCodeParams>,
     ) -> Result<Json<ObjectResponse<Vec<SearchResult>>>, ErrorData> {
+        let started_at = Instant::now();
         let query = self.validate_required_string("search_code", "query", params.query.as_deref())?;
         let route = crate::index::route_query(&query);
         debug!(?route, "search_code route selected");
@@ -665,9 +721,33 @@ impl HiefServer {
         search_query.language = params.language;
         search_query.symbol_kind = params.symbol_kind;
 
-        let mut results = index::search(&self.db, &search_query)
-            .await
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        let lane = crate::router::select_lane(
+            &crate::router::OperationRequest::remote(
+                "search_code",
+                search_query.top_k.saturating_mul(128),
+            ),
+            &self.config.router,
+        );
+        let base_strategy = retrieval_strategy_name(&route);
+
+        let mut results = match index::search(&self.db, &search_query).await {
+            Ok(results) => results,
+            Err(err) => {
+                let latency_ms = started_at.elapsed().as_millis().min(i32::MAX as u128) as i32;
+                let strategy = lane_strategy_label(base_strategy, &lane, "error");
+                self.record_tool_event_best_effort(
+                    params.session_id.as_deref().unwrap_or("unknown"),
+                    "search_code",
+                    &query,
+                    Some(&strategy),
+                    None,
+                    Some(latency_ms),
+                    None,
+                )
+                .await;
+                return Err(ErrorData::internal_error(err.to_string(), None));
+            }
+        };
 
         // Step 4: Apply activation-weighted boost if requested
         if params.boost_by_history.unwrap_or(false) && !results.is_empty() {
@@ -710,6 +790,19 @@ impl HiefServer {
         }
 
         let results = compress_search_results(&results);
+
+        let latency_ms = started_at.elapsed().as_millis().min(i32::MAX as u128) as i32;
+        let strategy = lane_strategy_label(base_strategy, &lane, "ok");
+        self.record_tool_event_best_effort(
+            params.session_id.as_deref().unwrap_or("unknown"),
+            "search_code",
+            &query,
+            Some(&strategy),
+            Some(results.len().min(i32::MAX as usize) as i32),
+            Some(latency_ms),
+            None,
+        )
+        .await;
 
         Ok(Json(ObjectResponse { result: results }))
     }
@@ -1058,11 +1151,36 @@ impl HiefServer {
         Parameters(params): Parameters<StructuralSearchParams>,
     ) -> Result<Json<ObjectResponse<Vec<crate::index::structural::StructuralMatch>>>, ErrorData>
     {
+        let started_at = Instant::now();
         let mut query = structural::StructuralQuery::new(&params.pattern, &params.language);
         query.top_k = self.validate_top_k("structural_search", "top_k", params.top_k, 50)?;
 
-        let results = structural::search(&self.project_root, &query)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        let lane = crate::router::select_lane(
+            &crate::router::OperationRequest::remote(
+                "structural_search",
+                query.top_k.saturating_mul(96),
+            ),
+            &self.config.router,
+        );
+
+        let results = match structural::search(&self.project_root, &query) {
+            Ok(results) => results,
+            Err(err) => {
+                let latency_ms = started_at.elapsed().as_millis().min(i32::MAX as u128) as i32;
+                let strategy = lane_strategy_label("structural", &lane, "error");
+                self.record_tool_event_best_effort(
+                    params.session_id.as_deref().unwrap_or("unknown"),
+                    "structural_search",
+                    &params.pattern,
+                    Some(&strategy),
+                    None,
+                    Some(latency_ms),
+                    None,
+                )
+                .await;
+                return Err(ErrorData::internal_error(err.to_string(), None));
+            }
+        };
 
         // Record access for cognitive memory (fire-and-forget)
         let file_paths: Vec<String> = results.iter().map(|r| r.file_path.clone()).collect();
@@ -1081,6 +1199,19 @@ impl HiefServer {
                 .await;
             });
         }
+
+        let latency_ms = started_at.elapsed().as_millis().min(i32::MAX as u128) as i32;
+        let strategy = lane_strategy_label("structural", &lane, "ok");
+        self.record_tool_event_best_effort(
+            params.session_id.as_deref().unwrap_or("unknown"),
+            "structural_search",
+            &params.pattern,
+            Some(&strategy),
+            Some(results.len().min(i32::MAX as usize) as i32),
+            Some(latency_ms),
+            None,
+        )
+        .await;
 
         Ok(Json(ObjectResponse { result: results }))
     }
@@ -1182,7 +1313,19 @@ impl HiefServer {
         &self,
         Parameters(params): Parameters<SemanticSearchParams>,
     ) -> Result<Json<SemanticSearchResponse>, ErrorData> {
+        let started_at = Instant::now();
+        let session_id = params.session_id.clone();
         if !self.config.vectors.enabled {
+            self.record_tool_event_best_effort(
+                session_id.as_deref().unwrap_or("unknown"),
+                "semantic_search",
+                params.query.as_deref().unwrap_or(""),
+                Some("strategy=semantic;lane=mcp;reason=vectors_disabled;outcome=error"),
+                None,
+                Some(started_at.elapsed().as_millis().min(i32::MAX as u128) as i32),
+                None,
+            )
+            .await;
             return Err(ErrorData::internal_error(
                 "Semantic search is not enabled. Set vectors.enabled = true in hief.toml and rebuild the index.".to_string(),
                 None,
@@ -1191,29 +1334,71 @@ impl HiefServer {
 
         let query_text =
             self.validate_required_string("semantic_search", "query", params.query.as_deref())?;
+        let query_for_telemetry = query_text.clone();
         let route = crate::index::route_query(&query_text);
         debug!(?route, "semantic_search route selected");
+        let lane = crate::router::select_lane(
+            &crate::router::OperationRequest::remote(
+                "semantic_search",
+                params.top_k.unwrap_or(10).saturating_mul(160),
+            ),
+            &self.config.router,
+        );
+        let base_strategy = retrieval_strategy_name(&route);
 
-        let query_vector =
-            crate::index::vectors::embed_text(&query_text, self.config.vectors.dimensions)
-                .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        let query_vector = match crate::index::vectors::embed_text(&query_text, self.config.vectors.dimensions) {
+            Ok(vec) => vec,
+            Err(err) => {
+                let strategy = lane_strategy_label(base_strategy, &lane, "error");
+                self.record_tool_event_best_effort(
+                    session_id.as_deref().unwrap_or("unknown"),
+                    "semantic_search",
+                    &query_text,
+                    Some(&strategy),
+                    None,
+                    Some(started_at.elapsed().as_millis().min(i32::MAX as u128) as i32),
+                    None,
+                )
+                .await;
+                return Err(ErrorData::internal_error(err.to_string(), None));
+            }
+        };
         let query = crate::index::vectors::SemanticQuery {
             query: query_text.clone(),
             top_k: self.validate_top_k("semantic_search", "top_k", params.top_k, 10)?,
             language: params.language.clone(),
         };
-        let outcome = crate::index::vectors::search(
+        let outcome = match crate::index::vectors::search(
             &self.db,
             &self.project_root,
             &query_vector,
             &query,
             &self.config.vectors,
         )
-        .await
-        .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        .await {
+            Ok(outcome) => outcome,
+            Err(err) => {
+                let strategy = lane_strategy_label(base_strategy, &lane, "error");
+                self.record_tool_event_best_effort(
+                    session_id.as_deref().unwrap_or("unknown"),
+                    "semantic_search",
+                    &query_text,
+                    Some(&strategy),
+                    None,
+                    Some(started_at.elapsed().as_millis().min(i32::MAX as u128) as i32),
+                    None,
+                )
+                .await;
+                return Err(ErrorData::internal_error(err.to_string(), None));
+            }
+        };
 
         let compressed_results = compress_semantic_results(&outcome.results);
-        let metadata = crate::index::search::semantic_retrieval_metadata("semantic", outcome.cache_used);
+        let metadata = crate::index::search::semantic_retrieval_metadata(
+            "semantic",
+            outcome.cache_used,
+            outcome.groundedness_score,
+        );
 
         let resp = SemanticSearchResponse {
             status: "ok".to_string(),
@@ -1233,7 +1418,38 @@ impl HiefServer {
             results: compressed_results,
         };
 
+        let strategy = lane_strategy_label(base_strategy, &lane, "ok");
+        self.record_tool_event_best_effort(
+            session_id.as_deref().unwrap_or("unknown"),
+            "semantic_search",
+            &query_for_telemetry,
+            Some(&strategy),
+            Some(resp.results.len().min(i32::MAX as usize) as i32),
+            Some(started_at.elapsed().as_millis().min(i32::MAX as u128) as i32),
+            resp.quality_signal,
+        )
+        .await;
+
         Ok(Json(resp))
+    }
+
+    #[tool(
+        name = "get_session_summary",
+        description = "Get aggregate observability metrics for a session: total_calls, total_latency_ms, avg_groundedness, and per-tool breakdown. Returns zero-valued metrics when no telemetry exists for the session."
+    )]
+    async fn get_session_summary(
+        &self,
+        Parameters(params): Parameters<GetSessionSummaryParams>,
+    ) -> Result<Json<ObjectResponse<resources::SessionSummaryResource>>, ErrorData> {
+        let session_id = self.validate_required_string(
+            "get_session_summary",
+            "session_id",
+            params.session_id.as_deref(),
+        )?;
+        let result = resources::get_session_summary_resource(&self.db, &session_id)
+            .await
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        Ok(Json(ObjectResponse { result }))
     }
 
     #[tool(
@@ -1766,6 +1982,7 @@ mod tests {
             end_line: 40,
             rank: -12.5,
             snippet: ">>>route_query<<<".to_string(),
+            groundedness_score: Some(0.5),
         }];
 
         let compressed = compress_search_results(&results);
