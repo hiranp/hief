@@ -62,6 +62,23 @@ pub struct SearchResult {
     pub snippet: String,
 }
 
+/// Retrieval metadata attached to semantic search responses.
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct RetrievalMetadata {
+    pub strategy: String,
+    pub cache_used: bool,
+    pub quality_signal: Option<f64>,
+}
+
+/// Construct placeholder retrieval metadata for a semantic response.
+pub fn semantic_retrieval_metadata(strategy: impl Into<String>, cache_used: bool) -> RetrievalMetadata {
+    RetrievalMetadata {
+        strategy: strategy.into(),
+        cache_used,
+        quality_signal: None,
+    }
+}
+
 /// Execute a full-text search query against the chunks index.
 pub async fn search(db: &Database, query: &SearchQuery) -> Result<Vec<SearchResult>> {
     let conn = db.conn();

@@ -114,6 +114,9 @@ pub struct SemanticSearchResponse {
     pub query: String,
     pub top_k: usize,
     pub language: Option<String>,
+    pub strategy: String,
+    pub cache_used: bool,
+    pub quality_signal: Option<f64>,
     pub results: Vec<crate::index::vectors::SemanticResult>,
 }
 
@@ -1016,7 +1019,7 @@ impl HiefServer {
             top_k: self.validate_top_k(params.top_k, 10),
             language: params.language.clone(),
         };
-        let results = crate::index::vectors::search(
+        let outcome = crate::index::vectors::search(
             &self.db,
             &self.project_root,
             &query_vector,
@@ -1026,13 +1029,14 @@ impl HiefServer {
         .await
         .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
-        let compressed_results = compress_semantic_results(&results);
+        let compressed_results = compress_semantic_results(&outcome.results);
+        let metadata = crate::index::search::semantic_retrieval_metadata("semantic", outcome.cache_used);
 
         let resp = SemanticSearchResponse {
             status: "ok".to_string(),
-            message: if results.is_empty() {
+            message: if outcome.results.is_empty() {
                 Some("No semantic matches found for the query.".to_string())
-            } else if compressed_results.len() < results.len() {
+            } else if compressed_results.len() < outcome.results.len() {
                 Some("Results were compressed to fit the response budget.".to_string())
             } else {
                 None
@@ -1040,6 +1044,9 @@ impl HiefServer {
             query: params.query.clone(),
             top_k: query.top_k,
             language: params.language.clone(),
+            strategy: metadata.strategy,
+            cache_used: metadata.cache_used,
+            quality_signal: metadata.quality_signal,
             results: compressed_results,
         };
 

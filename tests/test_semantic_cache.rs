@@ -74,10 +74,12 @@ async fn test_semantic_cache_hit_miss_and_expiry() {
     };
 
     let first = search(&db, root, &query_vector, &query, &config).await.expect("first search");
-    assert!(!first.is_empty(), "expected at least one semantic result");
+    assert!(!first.results.is_empty(), "expected at least one semantic result");
+    assert!(!first.cache_used, "first lookup should miss cache");
 
     let second = search(&db, root, &query_vector, &query, &config).await.expect("second search");
-    assert_eq!(first.len(), second.len(), "cache hit should preserve result count");
+    assert_eq!(first.results.len(), second.results.len(), "cache hit should preserve result count");
+    assert!(second.cache_used, "second lookup should hit cache");
 
     let mut rows = db
         .conn()
@@ -104,7 +106,8 @@ async fn test_semantic_cache_hit_miss_and_expiry() {
         .expect("expire cache row");
 
     let third = search(&db, root, &query_vector, &query, &config).await.expect("third search");
-    assert_eq!(first.len(), third.len(), "expired cache should recompute deterministically");
+    assert_eq!(first.results.len(), third.results.len(), "expired cache should recompute deterministically");
+    assert!(!third.cache_used, "expired cache should fall back to recomputation");
 }
 
 #[tokio::test]
@@ -133,13 +136,15 @@ async fn test_semantic_cache_separates_language_scope() {
         language: Some("python".to_string()),
     };
 
-    let _ = search(&db, root, &query_vector, &rust_query, &config).await.expect("rust search");
-    let _ = search(&db, root, &query_vector, &python_query, &config).await.expect("python search");
+    let rust_outcome = search(&db, root, &query_vector, &rust_query, &config).await.expect("rust search");
+    let python_outcome = search(&db, root, &query_vector, &python_query, &config).await.expect("python search");
+    assert!(!rust_outcome.cache_used);
+    assert!(!python_outcome.cache_used);
 
     let mut rows = db
         .conn()
         .query(
-            "SELECT COUNT(*) FROM semantic_cache WHERE query_fingerprint = query_fingerprint",
+            "SELECT COUNT(*) FROM semantic_cache",
             (),
         )
         .await

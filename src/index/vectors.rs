@@ -131,6 +131,13 @@ impl SemanticQuery {
     }
 }
 
+/// Metadata returned alongside semantic search results.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SemanticSearchOutcome {
+    pub results: Vec<SemanticResult>,
+    pub cache_used: bool,
+}
+
 /// Convert indexed chunks into deterministic embeddings for LanceDB storage.
 pub fn embed_chunks(chunks: &[Chunk], dimensions: usize) -> Result<Vec<EmbeddedChunk>> {
     chunks
@@ -268,9 +275,12 @@ pub async fn search(
     query_vector: &[f32],
     query: &SemanticQuery,
     config: &VectorConfig,
-) -> Result<Vec<SemanticResult>> {
+) -> Result<SemanticSearchOutcome> {
     if query_vector.is_empty() {
-        return Ok(Vec::new());
+        return Ok(SemanticSearchOutcome {
+            results: Vec::new(),
+            cache_used: false,
+        });
     }
     if query_vector.len() != config.dimensions {
         return Err(HiefError::Config(format!(
@@ -281,17 +291,28 @@ pub async fn search(
     }
 
     if let Some(cached) = read_semantic_cache(db, query_vector, query).await? {
-        return Ok(cached);
+        return Ok(SemanticSearchOutcome {
+            results: cached,
+            cache_used: true,
+        });
     }
 
     let dir = vectors_dir(project_root);
     if !dir.exists() {
-        return Ok(Vec::new());
+        return Ok(SemanticSearchOutcome {
+            results: Vec::new(),
+            cache_used: false,
+        });
     }
 
     let table = match open_table(project_root).await {
         Ok(table) => table,
-        Err(_) => return Ok(Vec::new()),
+        Err(_) => {
+            return Ok(SemanticSearchOutcome {
+                results: Vec::new(),
+                cache_used: false,
+            })
+        }
     };
 
     let mut vector_query = table
@@ -320,7 +341,10 @@ pub async fn search(
     results.truncate(query.top_k);
 
     write_semantic_cache(db, query_vector, query, &results).await?;
-    Ok(results)
+    Ok(SemanticSearchOutcome {
+        results,
+        cache_used: false,
+    })
 }
 
 /// Delete all embeddings for files that are no longer in the index.
@@ -862,8 +886,9 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let db = Database::open_memory().await.unwrap();
         let query = SemanticQuery::new("test");
-        let results = search(&db, tmp.path(), &[], &query, &config).await.unwrap();
-        assert!(results.is_empty());
+        let outcome = search(&db, tmp.path(), &[], &query, &config).await.unwrap();
+        assert!(outcome.results.is_empty());
+        assert!(!outcome.cache_used);
     }
 
     #[tokio::test]
@@ -896,7 +921,7 @@ mod tests {
 
         let mut query = SemanticQuery::new("bearer token auth");
         query.top_k = 5;
-        let results = search(
+        let outcome = search(
             &db,
             tmp.path(),
             &embed_text(&query.query, config.dimensions).unwrap(),
@@ -906,10 +931,11 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].file_path, "src/auth.rs");
-        assert_eq!(results[0].symbol_name.as_deref(), Some("authenticate_user"));
-        assert!(results[0].score > 0.0);
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].file_path, "src/auth.rs");
+        assert_eq!(outcome.results[0].symbol_name.as_deref(), Some("authenticate_user"));
+        assert!(outcome.results[0].score > 0.0);
+        assert!(!outcome.cache_used);
     }
 
     #[tokio::test]
@@ -987,7 +1013,7 @@ mod tests {
 
         let mut query = SemanticQuery::new("authentication logic");
         query.language = Some("python".to_string());
-        let results = search(
+        let outcome = search(
             &db,
             tmp.path(),
             &embed_text(&query.query, config.dimensions).unwrap(),
@@ -997,7 +1023,8 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].language, "python");
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.results[0].language, "python");
+        assert!(!outcome.cache_used);
     }
 }
