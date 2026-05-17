@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}HIEF Dashboard{% endblock %}
+{% block content %}
+<section id="intents-section" class="card">
+  <h2>Intents</h2>
+  {% if view.intents.is_empty() %}
+    <p id="intents-empty" class="muted">No intents found for this workspace.</p>
+  {% else %}
+    <table>
+      <thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Priority</th><th>Assigned</th></tr></thead>
+      <tbody>
+      {% for intent in view.intents %}
+        <tr>
+          <td><a href="/ui/tasks/{{ intent.id }}">{{ intent.id }}</a></td>
+          <td>{{ intent.title }}</td>
+          <td><span class="status-pill">{{ intent.status }}</span></td>
+          <td>{{ intent.priority }}</td>
+          <td>{{ intent.assigned_to }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</section>
+
+<section id="worktrees-section" class="card">
+  <h2>Worktrees</h2>
+  {% if view.worktrees.is_empty() %}
+    <p id="worktrees-empty" class="muted">No worktrees discovered by git porcelain.</p>
+  {% else %}
+    <table>
+      <thead><tr><th>Path</th><th>Branch</th><th>HEAD</th><th>Locked</th><th>Prunable</th></tr></thead>
+      <tbody>
+      {% for wt in view.worktrees %}
+        <tr>
+          <td>{{ wt.path }}</td>
+          <td>{% match wt.branch %}{% when Some with (branch) %}{{ branch }}{% when None %}<span class="muted">detached</span>{% endmatch %}</td>
+          <td>{% match wt.head %}{% when Some with (head) %}{{ head }}{% when None %}<span class="muted">n/a</span>{% endmatch %}</td>
+          <td>{{ wt.locked }}</td>
+          <td>{{ wt.prunable }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</section>
+
+<section id="activity-host" class="card">
+  <h2>Live Activity</h2>
+  <div hx-get="/ui/activity" hx-trigger="load" hx-target="#activity-feed" hx-swap="innerHTML"></div>
+  <div id="activity-feed"></div>
+</section>
+{% endblock %}

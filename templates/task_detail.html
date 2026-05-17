@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Task Detail{% endblock %}
+{% block content %}
+<section id="task-detail" class="card">
+  {% if found %}
+    <h2>Task {{ intent_id }}</h2>
+    <p><strong>{{ title }}</strong></p>
+    <p>Status: <span class="status-pill">{{ status }}</span> | Priority: {{ priority }} | Assigned: {{ assigned_to }}</p>
+    <p>PAVL Gate: <strong>{% if gate_open %}open{% else %}blocked{% endif %}</strong> ({{ gate_reason }})</p>
+    <p>Telemetry: calls={{ total_calls }}, latency_ms={{ total_latency_ms }}, groundedness={{ groundedness }}</p>
+    <h3>Dependencies</h3>
+    {% if dependencies.is_empty() %}
+      <p class="muted">No dependencies.</p>
+    {% else %}
+      <ul>
+        {% for dep in dependencies %}
+          <li>{{ dep }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+    <p>Recent activity points: {{ activity_count }}</p>
+    <div hx-get="/ui/review/{{ intent_id }}" hx-trigger="load" hx-target="#review-panel" hx-swap="innerHTML"></div>
+    <div id="review-panel"></div>
+  {% else %}
+    <h2>Task not found</h2>
+    <p id="task-not-found" class="muted">Intent {{ intent_id }} does not exist.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}HIEF UI{% endblock %}</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --ink: #1f2421;
+      --accent: #0f766e;
+      --card: #fffdf8;
+      --muted: #5f6b66;
+      --line: #d9d2c2;
+    }
+    body { margin: 0; font-family: Georgia, "Times New Roman", serif; background: linear-gradient(140deg, #f4efe6, #ece6d8); color: var(--ink); }
+    header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--line); background: rgba(255,253,248,0.85); backdrop-filter: blur(4px); }
+    main { padding: 1.25rem; max-width: 1000px; margin: 0 auto; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; }
+    h1,h2,h3 { margin: 0 0 0.5rem; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 0.45rem 0.3rem; border-bottom: 1px solid var(--line); font-size: 0.95rem; }
+    .muted { color: var(--muted); }
+    .status-pill { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: 0.1rem 0.45rem; }
+    .action { padding: 0.4rem 0.7rem; border: 1px solid var(--accent); border-radius: 8px; background: #e5faf8; color: #0b4e48; cursor: pointer; }
+    @media (max-width: 720px) {
+      th:nth-child(4), td:nth-child(4), th:nth-child(5), td:nth-child(5) { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>HIEF Task Tracking</h1>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

@@ -112,6 +112,9 @@ pub enum Commands {
     /// Show per-session telemetry summary and cost-like metrics
     SessionCost(SessionCostArgs),
 
+    /// Start the local task-tracking UI server
+    Ui(UiArgs),
+
     /// Start the MCP server
     Serve(ServeArgs),
 
@@ -380,4 +383,15 @@ pub struct SessionCostArgs {
     /// Session identifier to summarize.
     #[arg(long)]
     pub session_id: String,
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct UiArgs {
+    /// Host interface for the UI server.
+    #[arg(long, default_value = "127.0.0.1")]
+    pub host: String,
+
+    /// Port for the UI server.
+    #[arg(long, default_value_t = 3190)]
+    pub port: u16,
 }

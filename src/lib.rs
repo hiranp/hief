@@ -18,4 +18,5 @@ pub mod patterns;
 pub mod router;
 pub mod scope;
 pub mod skills;
+pub mod ui;
 pub mod watcher;

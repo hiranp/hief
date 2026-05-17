@@ -1,0 +1,19 @@
+<section id="review-state" class="card">
+  <h3>Review Panel</h3>
+  <p>Gate: <strong>{{ gate_state }}</strong> ({{ gate_reason }})</p>
+  <p>Session calls: {{ total_calls }}, avg groundedness: {{ avg_groundedness }}</p>
+  {% match message %}
+    {% when Some with (text) %}
+      <div id="review-message" data-result="ok">{{ text }}</div>
+    {% when None %}
+  {% endmatch %}
+  <form method="post" action="/ui/review/{{ intent_id }}/block">
+    <button class="action" type="submit">Block</button>
+  </form>
+  <form method="post" action="/ui/review/{{ intent_id }}/unblock">
+    <button class="action" type="submit">Unblock</button>
+  </form>
+  <form method="post" action="/ui/review/{{ intent_id }}/to-review">
+    <button class="action" type="submit">Move to review</button>
+  </form>
+</section>

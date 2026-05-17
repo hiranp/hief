@@ -70,6 +70,8 @@ ast-grep-core = "0.35"
 # MCP server
 rmcp = { version = "0.17", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
 axum = "0.8"
+askama = "0.14"
+tower-http = { version = "0.6", features = ["trace"] }
 
 # Templating
 minijinja = "2"
@@ -89,6 +91,7 @@ reqwest = { version = "0.12", features = ["json"], optional = true }
 
 [dev-dependencies]
 tempfile = "3"
+tower = { version = "0.5", features = ["util"] }
 
 [features]
 default = []

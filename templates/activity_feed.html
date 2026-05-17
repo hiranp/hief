@@ -1,0 +1,32 @@
+<div id="activity-fragment"
+     hx-ext="sse"
+     sse-connect="/ui/events"
+     sse-swap="activity-update"
+     sse-close="task-update"
+     hx-get="/ui/activity"
+     hx-trigger="sse:open from:body"
+     hx-target="#activity-feed"
+     hx-swap="innerHTML">
+  <h3>Recent Activity</h3>
+  {% if rows.is_empty() %}
+    <p class="muted">No activity events captured for this worktree.</p>
+  {% else %}
+    <table>
+      <thead><tr><th>Tool</th><th>Intent</th><th>Timestamp</th><th>Latency (ms)</th><th>Quality</th></tr></thead>
+      <tbody>
+      {% for row in rows %}
+        <tr>
+          <td>{{ row.tool }}</td>
+          <td>{% match row.intent_id %}{% when Some with (id) %}{{ id }}{% when None %}<span class="muted">n/a</span>{% endmatch %}</td>
+          <td>{{ row.created_at }}</td>
+          <td>{% match row.latency_ms %}{% when Some with (ms) %}{{ ms }}{% when None %}<span class="muted">n/a</span>{% endmatch %}</td>
+          <td>{% match row.groundedness %}{% when Some with (score) %}{{ "{:.3}"|format(score) }}{% when None %}<span class="muted">n/a</span>{% endmatch %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+  {% if reconnect_refresh %}
+    <p class="muted">On reconnect, this fragment performs a soft refresh to recover missed events.</p>
+  {% endif %}
+</div>

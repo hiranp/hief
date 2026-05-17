@@ -20,6 +20,7 @@ mod patterns;
 mod router;
 mod scope;
 mod skills;
+mod ui;
 mod watcher;
 
 use std::path::PathBuf;
@@ -30,7 +31,7 @@ use tracing_subscriber::EnvFilter;
 
 use cli::{
     Cli, Commands, DocsCmd, EvalCmd, GoldenCmd, GraphCmd, HooksCmd, IndexCmd, InstallArgs,
-    McpCmd, PatternsCmd, SessionCostArgs, SkillsCmd,
+    McpCmd, PatternsCmd, SessionCostArgs, SkillsCmd, UiArgs,
 };
 use config::Config;
 use db::Database;
@@ -88,6 +89,12 @@ async fn run(cli: Cli, project_root: PathBuf) -> anyhow::Result<()> {
             let db_path = Config::db_path(&project_root);
             let db = Database::open(&db_path).await?;
             cli::commands::session_cost(&db, &project_root, &session_id, json).await?;
+        }
+
+        Commands::Ui(UiArgs { host, port }) => {
+            let db_path = Config::db_path(&project_root);
+            let db = Database::open(&db_path).await?;
+            ui::start(db, project_root.clone(), &host, port).await?;
         }
 
         Commands::Index(cmd) => {
