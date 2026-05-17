@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::Database;
 use crate::errors::{HiefError, Result};
+use crate::scope;
 
 const DEFAULT_LOCK_HOLDER: &str = "unassigned";
 const DEFAULT_LOCK_WORKTREE: &str = "project-root";
@@ -204,7 +205,7 @@ pub async fn acquire_soft_lock(
 ) -> Result<()> {
     let now = chrono::Utc::now().timestamp();
     let holder = normalize_holder(holder);
-    let worktree_id = normalize_worktree_id(worktree_id);
+    let worktree_id = scope::normalize_with_default(worktree_id, DEFAULT_LOCK_WORKTREE);
     let expires_at = now + lease_secs as i64;
 
     // Reclaim expired lock rows first.
@@ -249,7 +250,7 @@ pub async fn acquire_soft_lock(
                worktree_id = excluded.worktree_id,
                acquired_at = excluded.acquired_at,
                expires_at = excluded.expires_at",
-            libsql::params![intent_id, holder, worktree_id, now, expires_at],
+            libsql::params![intent_id, holder, worktree_id.as_str(), now, expires_at],
         )
         .await
         .map_err(HiefError::Database)?;
@@ -264,11 +265,11 @@ pub async fn release_soft_lock(
     worktree_id: Option<&str>,
 ) -> Result<()> {
     let affected = if let Some(worktree) = worktree_id {
-        let normalized = normalize_worktree_id(worktree);
+        let normalized = scope::normalize_with_default(worktree, DEFAULT_LOCK_WORKTREE);
         db.conn()
             .execute(
                 "DELETE FROM intent_locks WHERE intent_id = ?1 AND worktree_id = ?2",
-                libsql::params![intent_id, normalized],
+                libsql::params![intent_id, normalized.as_str()],
             )
             .await
             .map_err(HiefError::Database)?
@@ -383,13 +384,5 @@ fn normalize_holder(holder: &str) -> &str {
         DEFAULT_LOCK_HOLDER
     } else {
         holder.trim()
-    }
-}
-
-fn normalize_worktree_id(worktree_id: &str) -> &str {
-    if worktree_id.trim().is_empty() {
-        DEFAULT_LOCK_WORKTREE
-    } else {
-        worktree_id.trim()
     }
 }

@@ -19,8 +19,7 @@ use uuid::Uuid;
 
 use crate::db::Database;
 use crate::errors::{HiefError, Result};
-
-const DEFAULT_WORKTREE_SCOPE: &str = "project-root";
+use crate::scope;
 
 // ---------------------------------------------------------------------------
 // Data types
@@ -126,7 +125,7 @@ pub async fn record_access_scoped(
 ) -> Result<String> {
     let id = Uuid::new_v4().to_string();
     let conn = db.conn();
-    let normalized_worktree_id = normalize_worktree_id(worktree_id);
+    let normalized_worktree_id = scope::normalize_worktree_id(worktree_id);
 
     conn.execute(
         "INSERT INTO chunk_access (id, chunk_id, file_path, query, tool, session_id, worktree_id)
@@ -231,7 +230,7 @@ async fn update_co_access_from_session(
     worktree_id: Option<&str>,
 ) -> Result<()> {
     let conn = db.conn();
-    let normalized_worktree_id = normalize_worktree_id(worktree_id);
+    let normalized_worktree_id = scope::normalize_worktree_id(worktree_id);
 
     // Get distinct files accessed in this session within the last 5 minutes
     let mut rows = conn
@@ -426,7 +425,7 @@ pub async fn batch_access_boost_scoped(
     }
 
     let conn = db.conn();
-    let normalized_worktree_id = normalize_worktree_id(worktree_id);
+    let normalized_worktree_id = scope::normalize_worktree_id(worktree_id);
 
     // Query access stats for all relevant files in one go
     // Using a single query with GROUP BY is more efficient than per-file queries
@@ -482,7 +481,7 @@ pub async fn get_session_context_scoped(
     worktree_id: Option<&str>,
 ) -> Result<SessionContext> {
     let conn = db.conn();
-    let normalized_worktree_id = normalize_worktree_id(worktree_id);
+    let normalized_worktree_id = scope::normalize_worktree_id(worktree_id);
 
     // Get files accessed this session with counts
     let mut rows = conn
@@ -644,7 +643,7 @@ pub async fn get_access_stats_scoped(
     worktree_id: Option<&str>,
 ) -> Result<Vec<FileAccessStats>> {
     let conn = db.conn();
-    let normalized_worktree_id = normalize_worktree_id(worktree_id);
+    let normalized_worktree_id = scope::normalize_worktree_id(worktree_id);
 
     let mut rows = conn
         .query(
@@ -673,13 +672,6 @@ pub async fn get_access_stats_scoped(
     }
 
     Ok(stats)
-}
-
-fn normalize_worktree_id(worktree_id: Option<&str>) -> &str {
-    worktree_id
-        .map(str::trim)
-        .filter(|id| !id.is_empty())
-        .unwrap_or(DEFAULT_WORKTREE_SCOPE)
 }
 
 // ---------------------------------------------------------------------------

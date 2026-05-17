@@ -16,5 +16,6 @@ pub mod index;
 pub mod mcp;
 pub mod patterns;
 pub mod router;
+pub mod scope;
 pub mod skills;
 pub mod watcher;

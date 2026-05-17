@@ -45,7 +45,7 @@ impl HiefServer {
     /// Construct a new server instance and register dynamic skill tools.
     pub fn new(db: Database, project_root: PathBuf) -> Self {
         let mut tool_router = Self::tool_router();
-        let worktree_id = derive_worktree_id(&project_root);
+        let worktree_id = crate::scope::derive_worktree_id(&project_root);
 
         // Load config once at startup; fall back to safe defaults if hief.toml is absent.
         let config = Config::load(&project_root.join("hief.toml")).unwrap_or_default();
@@ -354,12 +354,6 @@ fn session_id_or_anonymous(session_id: Option<&str>) -> std::borrow::Cow<'_, str
         Some(id) if !id.trim().is_empty() => std::borrow::Cow::Borrowed(id),
         _ => std::borrow::Cow::Owned(format!("anon-{}", uuid::Uuid::new_v4().as_simple())),
     }
-}
-
-fn derive_worktree_id(project_root: &Path) -> String {
-    let canonical = std::fs::canonicalize(project_root).unwrap_or_else(|_| project_root.to_path_buf());
-    let fingerprint = blake3::hash(canonical.to_string_lossy().as_bytes());
-    format!("wt-{}", &fingerprint.to_hex()[..12])
 }
 
 fn validation_error(message: String, payload: ToolValidationPayload) -> ErrorData {

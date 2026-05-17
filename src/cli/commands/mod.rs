@@ -200,10 +200,14 @@ pub struct SessionCostToolView {
 /// Render a per-session telemetry summary.
 pub async fn session_cost(
 	db: &crate::db::Database,
+	project_root: &std::path::Path,
 	session_id: &str,
 	json: bool,
 ) -> crate::errors::Result<()> {
-	let summary = db.get_session_cost_summary(session_id).await?;
+	let worktree_id = crate::scope::derive_worktree_id(project_root);
+	let summary = db
+		.get_session_cost_summary_scoped(session_id, Some(&worktree_id))
+		.await?;
 	let view = SessionCostSummaryView {
 		session_id: summary.session_id,
 		total_calls: summary.total_calls,

@@ -6,13 +6,12 @@ use std::path::Path;
 use tracing::{debug, info};
 
 use crate::errors::{HiefError, Result};
+use crate::scope;
 
 const MAX_SESSION_ID_LEN: usize = 128;
 const MAX_TOOL_LEN: usize = 128;
 const MAX_QUERY_LEN: usize = 2048;
 const MAX_STRATEGY_LEN: usize = 512;
-const DEFAULT_WORKTREE_SCOPE: &str = "project-root";
-
 /// Wrapper around libsql connection providing migration support.
 #[derive(Clone)]
 pub struct Database {
@@ -109,10 +108,14 @@ impl Database {
         for (name, sql) in migrations {
             if !self.migration_applied(name).await? {
                 debug!("Applying migration: {}", name);
-                self.conn
-                    .execute_batch(sql)
-                    .await
-                    .map_err(|e| HiefError::Migration(format!("{}: {}", name, e)))?;
+                if *name == "007_worktree_scope" {
+                    self.apply_migration_007_worktree_scope().await?;
+                } else {
+                    self.conn
+                        .execute_batch(sql)
+                        .await
+                        .map_err(|e| HiefError::Migration(format!("{}: {}", name, e)))?;
+                }
 
                 self.conn
                     .execute("INSERT INTO _migrations (name) VALUES (?1)", [*name])
@@ -124,6 +127,58 @@ impl Database {
         }
 
         Ok(())
+    }
+
+    async fn apply_migration_007_worktree_scope(&self) -> Result<()> {
+        if !self.table_has_column("chunk_access", "worktree_id").await? {
+            self.conn
+                .execute(
+                    "ALTER TABLE chunk_access ADD COLUMN worktree_id TEXT NOT NULL DEFAULT 'project-root'",
+                    (),
+                )
+                .await
+                .map_err(|e| HiefError::Migration(format!("007_worktree_scope: {}", e)))?;
+        }
+
+        if !self.table_has_column("tool_events", "worktree_id").await? {
+            self.conn
+                .execute(
+                    "ALTER TABLE tool_events ADD COLUMN worktree_id TEXT NOT NULL DEFAULT 'project-root'",
+                    (),
+                )
+                .await
+                .map_err(|e| HiefError::Migration(format!("007_worktree_scope: {}", e)))?;
+        }
+
+        self.conn
+            .execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_chunk_access_session_worktree
+                    ON chunk_access(session_id, worktree_id);
+                 CREATE INDEX IF NOT EXISTS idx_tool_events_session_worktree
+                    ON tool_events(session_id, worktree_id);",
+            )
+            .await
+            .map_err(|e| HiefError::Migration(format!("007_worktree_scope: {}", e)))?;
+
+        Ok(())
+    }
+
+    async fn table_has_column(&self, table: &str, column: &str) -> Result<bool> {
+        let pragma = format!("PRAGMA table_info({})", table);
+        let mut rows = self
+            .conn
+            .query(&pragma, ())
+            .await
+            .map_err(HiefError::Database)?;
+
+        while let Some(row) = rows.next().await.map_err(HiefError::Database)? {
+            let name: String = row.get(1).map_err(HiefError::Database)?;
+            if name == column {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 
     /// Check if a migration has already been applied.
@@ -181,7 +236,7 @@ impl Database {
         let bounded_tool = bounded_text(tool, MAX_TOOL_LEN);
         let bounded_query = bounded_text(query, MAX_QUERY_LEN);
         let bounded_strategy = strategy.map(|s| bounded_text(s, MAX_STRATEGY_LEN));
-        let normalized_worktree_id = normalize_worktree_id(worktree_id);
+        let normalized_worktree_id = scope::normalize_worktree_id(worktree_id);
 
         let params = [
             Value::from(bounded_session_id),
@@ -224,7 +279,7 @@ impl Database {
         session_id: &str,
         worktree_id: Option<&str>,
     ) -> Result<Option<SessionSummary>> {
-        let normalized_worktree_id = normalize_worktree_id(worktree_id);
+        let normalized_worktree_id = scope::normalize_worktree_id(worktree_id);
         let mut rows = self
             .conn
             .query(
@@ -275,7 +330,7 @@ impl Database {
         session_id: &str,
         worktree_id: Option<&str>,
     ) -> Result<SessionCostSummary> {
-        let normalized_worktree_id = normalize_worktree_id(worktree_id);
+        let normalized_worktree_id = scope::normalize_worktree_id(worktree_id);
         let mut totals_rows = self
             .conn
             .query(
@@ -493,14 +548,6 @@ fn bounded_text(input: &str, max_chars: usize) -> String {
     input.chars().take(max_chars).collect()
 }
 
-fn normalize_worktree_id(worktree_id: Option<&str>) -> String {
-    worktree_id
-        .map(str::trim)
-        .filter(|id| !id.is_empty())
-        .unwrap_or(DEFAULT_WORKTREE_SCOPE)
-        .to_string()
-}
-
 // ---------------------------------------------------------------------------
 // Migration SQL
 // ---------------------------------------------------------------------------
@@ -688,13 +735,7 @@ GROUP BY session_id;
 "#;
 
 const MIGRATION_007_WORKTREE_SCOPE: &str = r#"
-ALTER TABLE chunk_access ADD COLUMN worktree_id TEXT NOT NULL DEFAULT 'project-root';
-ALTER TABLE tool_events ADD COLUMN worktree_id TEXT NOT NULL DEFAULT 'project-root';
-
-CREATE INDEX IF NOT EXISTS idx_chunk_access_session_worktree
-    ON chunk_access(session_id, worktree_id);
-CREATE INDEX IF NOT EXISTS idx_tool_events_session_worktree
-    ON tool_events(session_id, worktree_id);
+-- handled by apply_migration_007_worktree_scope() for replay-safe ALTER TABLE
 "#;
 
 const MIGRATION_008_INTENT_LOCKS: &str = r#"

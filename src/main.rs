@@ -18,6 +18,7 @@ mod index;
 mod mcp;
 mod patterns;
 mod router;
+mod scope;
 mod skills;
 mod watcher;
 
@@ -86,7 +87,7 @@ async fn run(cli: Cli, project_root: PathBuf) -> anyhow::Result<()> {
         Commands::SessionCost(SessionCostArgs { session_id }) => {
             let db_path = Config::db_path(&project_root);
             let db = Database::open(&db_path).await?;
-            cli::commands::session_cost(&db, &session_id, json).await?;
+            cli::commands::session_cost(&db, &project_root, &session_id, json).await?;
         }
 
         Commands::Index(cmd) => {
