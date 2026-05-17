@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 use crate::db::Database;
 use crate::errors::{HiefError, Result};
 
+const DEFAULT_LOCK_HOLDER: &str = "unassigned";
+const DEFAULT_LOCK_WORKTREE: &str = "project-root";
+
 /// An intent node — a unit of work in the dependency graph.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Intent {
@@ -188,6 +191,98 @@ pub async fn assign(db: &Database, id: &str, assigned_to: &str) -> Result<()> {
     Ok(())
 }
 
+/// Acquire or renew a soft lock for an intent.
+///
+/// If an active lock exists for a different worktree, returns `IntentLockConflict`.
+/// Expired locks are reclaimed automatically.
+pub async fn acquire_soft_lock(
+    db: &Database,
+    intent_id: &str,
+    holder: &str,
+    worktree_id: &str,
+    lease_secs: u64,
+) -> Result<()> {
+    let now = chrono::Utc::now().timestamp();
+    let holder = normalize_holder(holder);
+    let worktree_id = normalize_worktree_id(worktree_id);
+    let expires_at = now + lease_secs as i64;
+
+    // Reclaim expired lock rows first.
+    db.conn()
+        .execute(
+            "DELETE FROM intent_locks
+             WHERE intent_id = ?1 AND expires_at <= ?2",
+            libsql::params![intent_id, now],
+        )
+        .await
+        .map_err(HiefError::Database)?;
+
+    let mut existing = db
+        .conn()
+        .query(
+            "SELECT holder, worktree_id
+             FROM intent_locks
+             WHERE intent_id = ?1 AND expires_at > ?2",
+            libsql::params![intent_id, now],
+        )
+        .await
+        .map_err(HiefError::Database)?;
+
+    if let Some(row) = existing.next().await.map_err(HiefError::Database)? {
+        let existing_holder: String = row.get(0).map_err(HiefError::Database)?;
+        let existing_worktree: String = row.get(1).map_err(HiefError::Database)?;
+        if existing_worktree != worktree_id {
+            return Err(HiefError::IntentLockConflict {
+                intent_id: intent_id.to_string(),
+                holder: existing_holder,
+                worktree_id: existing_worktree,
+            });
+        }
+    }
+
+    db.conn()
+        .execute(
+            "INSERT INTO intent_locks (intent_id, holder, worktree_id, acquired_at, expires_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(intent_id) DO UPDATE SET
+               holder = excluded.holder,
+               worktree_id = excluded.worktree_id,
+               acquired_at = excluded.acquired_at,
+               expires_at = excluded.expires_at",
+            libsql::params![intent_id, holder, worktree_id, now, expires_at],
+        )
+        .await
+        .map_err(HiefError::Database)?;
+
+    Ok(())
+}
+
+/// Release soft lock for an intent.
+pub async fn release_soft_lock(
+    db: &Database,
+    intent_id: &str,
+    worktree_id: Option<&str>,
+) -> Result<()> {
+    let affected = if let Some(worktree) = worktree_id {
+        let normalized = normalize_worktree_id(worktree);
+        db.conn()
+            .execute(
+                "DELETE FROM intent_locks WHERE intent_id = ?1 AND worktree_id = ?2",
+                libsql::params![intent_id, normalized],
+            )
+            .await
+            .map_err(HiefError::Database)?
+    } else {
+        db.conn()
+            .execute("DELETE FROM intent_locks WHERE intent_id = ?1", [intent_id])
+            .await
+            .map_err(HiefError::Database)?
+    };
+
+    let _ = affected;
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -281,4 +376,20 @@ fn row_to_intent(row: &libsql::Row) -> Result<Intent> {
         created_at: row.get(9).map_err(HiefError::Database)?,
         updated_at: row.get(10).map_err(HiefError::Database)?,
     })
+}
+
+fn normalize_holder(holder: &str) -> &str {
+    if holder.trim().is_empty() {
+        DEFAULT_LOCK_HOLDER
+    } else {
+        holder.trim()
+    }
+}
+
+fn normalize_worktree_id(worktree_id: &str) -> &str {
+    if worktree_id.trim().is_empty() {
+        DEFAULT_LOCK_WORKTREE
+    } else {
+        worktree_id.trim()
+    }
 }

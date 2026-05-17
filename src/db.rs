@@ -101,6 +101,7 @@ impl Database {
             ("005_semantic_cache", MIGRATION_005_SEMANTIC_CACHE),
             ("006_tool_events", MIGRATION_006_TOOL_EVENTS),
             ("007_worktree_scope", MIGRATION_007_WORKTREE_SCOPE),
+            ("008_intent_locks", MIGRATION_008_INTENT_LOCKS),
         ];
 
         for (name, sql) in migrations {
@@ -576,6 +577,19 @@ CREATE INDEX IF NOT EXISTS idx_tool_events_session_worktree
     ON tool_events(session_id, worktree_id);
 "#;
 
+const MIGRATION_008_INTENT_LOCKS: &str = r#"
+CREATE TABLE IF NOT EXISTS intent_locks (
+    intent_id TEXT PRIMARY KEY REFERENCES intents(id) ON DELETE CASCADE,
+    holder TEXT NOT NULL,
+    worktree_id TEXT NOT NULL,
+    acquired_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    expires_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_intent_locks_expires ON intent_locks(expires_at);
+CREATE INDEX IF NOT EXISTS idx_intent_locks_worktree ON intent_locks(worktree_id);
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -612,7 +626,8 @@ mod tests {
                 "004_cognitive_memory",
                 "005_semantic_cache",
                 "006_tool_events",
-                "007_worktree_scope"
+                "007_worktree_scope",
+                "008_intent_locks"
             ]
         );
     }
@@ -770,7 +785,7 @@ mod tests {
                 .unwrap();
             let row = rows.next().await.unwrap().unwrap();
             let count: i64 = row.get(0).unwrap();
-            assert_eq!(count, 7, "Expected 7 migrations (001_chunks, 002_intents, 003_eval_runs, 004_cognitive_memory, 005_semantic_cache, 006_tool_events, 007_worktree_scope)");
+            assert_eq!(count, 8, "Expected 8 migrations (001_chunks, 002_intents, 003_eval_runs, 004_cognitive_memory, 005_semantic_cache, 006_tool_events, 007_worktree_scope, 008_intent_locks)");
         }
     }
 

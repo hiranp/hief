@@ -86,7 +86,10 @@ async fn test_soft_lock_conflict_release_and_expiry_reclaim() {
         .expect("acquire after release");
 
     // Lease of 0 should be immediately reclaimable.
-    graph::intent::acquire_soft_lock(&db, &intent_id, "agent-c", "wt-c", 0)
+    graph::intent::acquire_soft_lock(&db, &intent_id, "agent-b", "wt-b", 0)
+        .await
+        .expect("create immediately-expired lease");
+    graph::intent::acquire_soft_lock(&db, &intent_id, "agent-c", "wt-c", 3600)
         .await
         .expect("expired lock should be reclaimable");
 }

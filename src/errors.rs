@@ -57,6 +57,15 @@ pub enum HiefError {
         matches: Vec<String>,
     },
 
+    #[error(
+        "intent lock conflict for {intent_id}: held by {holder} in worktree {worktree_id}"
+    )]
+    IntentLockConflict {
+        intent_id: String,
+        holder: String,
+        worktree_id: String,
+    },
+
     // Eval errors
     #[error("golden set not found: {0}")]
     GoldenSetNotFound(String),

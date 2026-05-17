@@ -9,6 +9,8 @@ use serde::Serialize;
 use crate::db::Database;
 use crate::errors::{HiefError, Result};
 
+const DEFAULT_STALE_TIMEOUT_HOURS: u64 = 48;
+
 pub use self::edges::IntentEdge;
 pub use self::intent::Intent;
 pub use self::intent::resolve_id;
@@ -88,6 +90,18 @@ pub async fn list_intents(
 
 /// Update an intent's status with transition validation.
 pub async fn update_status(db: &Database, id: &str, new_status: &str) -> Result<()> {
+    update_status_scoped(db, id, new_status, None, None, DEFAULT_STALE_TIMEOUT_HOURS).await
+}
+
+/// Update intent status with explicit actor/worktree context for lock ownership.
+pub async fn update_status_scoped(
+    db: &Database,
+    id: &str,
+    new_status: &str,
+    holder: Option<&str>,
+    worktree_id: Option<&str>,
+    stale_timeout_hours: u64,
+) -> Result<()> {
     let current = intent::get(db, id).await?;
 
     if !validate_transition(&current.status, new_status) {
@@ -113,7 +127,34 @@ pub async fn update_status(db: &Database, id: &str, new_status: &str) -> Result<
         }
     }
 
-    intent::update_status(db, id, new_status).await
+    let normalized_worktree = worktree_id
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .unwrap_or("project-root");
+    let normalized_holder = holder
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .unwrap_or("unassigned");
+    let lease_secs = std::cmp::max(stale_timeout_hours, 1) * 3600;
+
+    if current.status != "in_progress" && new_status == "in_progress" {
+        intent::acquire_soft_lock(
+            db,
+            id,
+            normalized_holder,
+            normalized_worktree,
+            lease_secs,
+        )
+        .await?;
+    }
+
+    intent::update_status(db, id, new_status).await?;
+
+    if current.status == "in_progress" && new_status != "in_progress" {
+        intent::release_soft_lock(db, id, Some(normalized_worktree)).await?;
+    }
+
+    Ok(())
 }
 
 /// Update an intent's assigned_to field.

@@ -929,7 +929,14 @@ impl HiefServer {
         Parameters(params): Parameters<UpdateIntentParams>,
     ) -> Result<Json<Intent>, ErrorData> {
         if let Some(new_status) = &params.status {
-            graph::update_status(&self.db, &params.id, new_status)
+            graph::update_status_scoped(
+                &self.db,
+                &params.id,
+                new_status,
+                params.assigned_to.as_deref(),
+                Some(&self.worktree_id),
+                self.config.graph.stale_timeout_hours,
+            )
                 .await
                 .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         }
