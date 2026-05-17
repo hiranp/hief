@@ -108,3 +108,32 @@ async fn test_review_transition_validation_rejects_invalid_move() {
     assert!(body.contains("transition rejected"));
     assert!(body.contains("invalid status transition"));
 }
+
+#[tokio::test]
+async fn test_review_panel_renders_hitl_controls() {
+    let (_dir, state, id) = test_state().await;
+    let app = ui::build_router(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/ui/review/{id}"))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = String::from_utf8(
+        to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .expect("body")
+            .to_vec(),
+    )
+    .expect("utf8");
+
+    assert!(body.contains("/block"));
+    assert!(body.contains("/unblock"));
+    assert!(body.contains("/to-review"));
+}
