@@ -377,8 +377,11 @@ pub async fn get_project_health(
 pub async fn get_session_summary_resource(
     db: &Database,
     session_id: &str,
+    worktree_id: Option<&str>,
 ) -> Result<SessionSummaryResource> {
-    let summary = db.get_session_cost_summary(session_id).await?;
+    let summary = db
+        .get_session_cost_summary_scoped(session_id, worktree_id)
+        .await?;
     let per_tool = summary
         .per_tool
         .into_iter()

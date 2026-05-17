@@ -20,6 +20,8 @@ use uuid::Uuid;
 use crate::db::Database;
 use crate::errors::{HiefError, Result};
 
+const DEFAULT_WORKTREE_SCOPE: &str = "project-root";
+
 // ---------------------------------------------------------------------------
 // Data types
 // ---------------------------------------------------------------------------
@@ -109,12 +111,26 @@ pub async fn record_access(
     tool: &str,
     session_id: Option<&str>,
 ) -> Result<String> {
+    record_access_scoped(db, file_path, chunk_id, query, tool, session_id, None).await
+}
+
+/// Record an access event scoped to a specific worktree.
+pub async fn record_access_scoped(
+    db: &Database,
+    file_path: &str,
+    chunk_id: Option<&str>,
+    query: Option<&str>,
+    tool: &str,
+    session_id: Option<&str>,
+    worktree_id: Option<&str>,
+) -> Result<String> {
     let id = Uuid::new_v4().to_string();
     let conn = db.conn();
+    let normalized_worktree_id = normalize_worktree_id(worktree_id);
 
     conn.execute(
-        "INSERT INTO chunk_access (id, chunk_id, file_path, query, tool, session_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT INTO chunk_access (id, chunk_id, file_path, query, tool, session_id, worktree_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         libsql::params![
             id.as_str(),
             chunk_id.unwrap_or(""),
@@ -122,6 +138,7 @@ pub async fn record_access(
             query.unwrap_or(""),
             tool,
             session_id.unwrap_or(""),
+            normalized_worktree_id,
         ],
     )
     .await
@@ -145,9 +162,21 @@ pub async fn record_search_accesses(
     tool: &str,
     session_id: Option<&str>,
 ) -> Result<()> {
+    record_search_accesses_scoped(db, file_paths, query, tool, session_id, None).await
+}
+
+/// Record accesses for multiple files from a single search operation scoped to a worktree.
+pub async fn record_search_accesses_scoped(
+    db: &Database,
+    file_paths: &[String],
+    query: Option<&str>,
+    tool: &str,
+    session_id: Option<&str>,
+    worktree_id: Option<&str>,
+) -> Result<()> {
     // Record individual accesses
     for path in file_paths {
-        record_access(db, path, None, query, tool, session_id).await?;
+        record_access_scoped(db, path, None, query, tool, session_id, worktree_id).await?;
     }
 
     // Update co-access graph for all pairs of files in the result set
@@ -155,7 +184,7 @@ pub async fn record_search_accesses(
 
     // Also update co-access based on session proximity
     if let Some(sid) = session_id {
-        update_co_access_from_session(db, sid).await?;
+        update_co_access_from_session(db, sid, worktree_id).await?;
     }
 
     Ok(())
@@ -196,17 +225,24 @@ async fn update_co_access_from_results(db: &Database, file_paths: &[String]) -> 
 ///
 /// Looks at recent accesses in the same session and strengthens connections
 /// between files that were accessed close together in time.
-async fn update_co_access_from_session(db: &Database, session_id: &str) -> Result<()> {
+async fn update_co_access_from_session(
+    db: &Database,
+    session_id: &str,
+    worktree_id: Option<&str>,
+) -> Result<()> {
     let conn = db.conn();
+    let normalized_worktree_id = normalize_worktree_id(worktree_id);
 
     // Get distinct files accessed in this session within the last 5 minutes
     let mut rows = conn
         .query(
             "SELECT DISTINCT file_path FROM chunk_access
-             WHERE session_id = ?1 AND accessed_at >= (unixepoch() - 300)
+                         WHERE session_id = ?1
+                             AND worktree_id = ?2
+                             AND accessed_at >= (unixepoch() - 300)
              ORDER BY accessed_at DESC
              LIMIT 20",
-            [session_id],
+                        libsql::params![session_id, normalized_worktree_id],
         )
         .await
         .map_err(HiefError::Database)?;
@@ -374,6 +410,15 @@ pub async fn batch_access_boost(
     db: &Database,
     file_paths: &[String],
 ) -> Result<std::collections::HashMap<String, f64>> {
+    batch_access_boost_scoped(db, file_paths, None).await
+}
+
+/// Compute access boosts for multiple files in a specific worktree scope.
+pub async fn batch_access_boost_scoped(
+    db: &Database,
+    file_paths: &[String],
+    worktree_id: Option<&str>,
+) -> Result<std::collections::HashMap<String, f64>> {
     let mut boosts = std::collections::HashMap::new();
 
     if file_paths.is_empty() {
@@ -381,6 +426,7 @@ pub async fn batch_access_boost(
     }
 
     let conn = db.conn();
+    let normalized_worktree_id = normalize_worktree_id(worktree_id);
 
     // Query access stats for all relevant files in one go
     // Using a single query with GROUP BY is more efficient than per-file queries
@@ -388,9 +434,10 @@ pub async fn batch_access_boost(
         .query(
             "SELECT file_path, COUNT(*) as access_count, MAX(accessed_at) as last_accessed
              FROM chunk_access
-             WHERE file_path IN (SELECT DISTINCT file_path FROM chunk_access)
+                         WHERE worktree_id = ?1
+                             AND file_path IN (SELECT DISTINCT file_path FROM chunk_access WHERE worktree_id = ?1)
              GROUP BY file_path",
-            (),
+                        [normalized_worktree_id],
         )
         .await
         .map_err(HiefError::Database)?;
@@ -424,17 +471,28 @@ pub async fn get_session_context(
     session_id: &str,
     suggestion_limit: usize,
 ) -> Result<SessionContext> {
+    get_session_context_scoped(db, session_id, suggestion_limit, None).await
+}
+
+/// Build session context scoped to a specific worktree.
+pub async fn get_session_context_scoped(
+    db: &Database,
+    session_id: &str,
+    suggestion_limit: usize,
+    worktree_id: Option<&str>,
+) -> Result<SessionContext> {
     let conn = db.conn();
+    let normalized_worktree_id = normalize_worktree_id(worktree_id);
 
     // Get files accessed this session with counts
     let mut rows = conn
         .query(
             "SELECT file_path, COUNT(*) as cnt, MAX(accessed_at) as last_access
              FROM chunk_access
-             WHERE session_id = ?1
+             WHERE session_id = ?1 AND worktree_id = ?2
              GROUP BY file_path
              ORDER BY last_access DESC",
-            [session_id],
+            libsql::params![session_id, normalized_worktree_id],
         )
         .await
         .map_err(HiefError::Database)?;
@@ -576,16 +634,27 @@ fn compute_pending_grows(accessed_paths: &[String]) -> Vec<PendingGrow> {
 /// Get access statistics for all files (used by the health/overview resources).
 #[allow(dead_code)]
 pub async fn get_access_stats(db: &Database, limit: usize) -> Result<Vec<FileAccessStats>> {
+    get_access_stats_scoped(db, limit, None).await
+}
+
+/// Get access statistics for all files in a specific worktree scope.
+pub async fn get_access_stats_scoped(
+    db: &Database,
+    limit: usize,
+    worktree_id: Option<&str>,
+) -> Result<Vec<FileAccessStats>> {
     let conn = db.conn();
+    let normalized_worktree_id = normalize_worktree_id(worktree_id);
 
     let mut rows = conn
         .query(
             "SELECT file_path, COUNT(*) as cnt, MAX(accessed_at) as last_access
              FROM chunk_access
+             WHERE worktree_id = ?2
              GROUP BY file_path
              ORDER BY cnt DESC
              LIMIT ?1",
-            [limit as i64],
+            libsql::params![limit as i64, normalized_worktree_id],
         )
         .await
         .map_err(HiefError::Database)?;
@@ -604,6 +673,13 @@ pub async fn get_access_stats(db: &Database, limit: usize) -> Result<Vec<FileAcc
     }
 
     Ok(stats)
+}
+
+fn normalize_worktree_id(worktree_id: Option<&str>) -> &str {
+    worktree_id
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .unwrap_or(DEFAULT_WORKTREE_SCOPE)
 }
 
 // ---------------------------------------------------------------------------

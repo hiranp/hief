@@ -33,6 +33,7 @@ use tracing::{debug, warn};
 pub struct HiefServer {
     db: Database,
     project_root: PathBuf,
+    worktree_id: String,
     /// Cached project config. Loaded once at startup to avoid per-request disk I/O.
     /// Use `hief serve` restart to pick up `hief.toml` changes.
     config: Config,
@@ -44,6 +45,7 @@ impl HiefServer {
     /// Construct a new server instance and register dynamic skill tools.
     pub fn new(db: Database, project_root: PathBuf) -> Self {
         let mut tool_router = Self::tool_router();
+        let worktree_id = derive_worktree_id(&project_root);
 
         // Load config once at startup; fall back to safe defaults if hief.toml is absent.
         let config = Config::load(&project_root.join("hief.toml")).unwrap_or_default();
@@ -66,6 +68,7 @@ impl HiefServer {
         Self {
             db,
             project_root,
+            worktree_id,
             config,
             tool_router,
             skills,
@@ -115,7 +118,7 @@ impl HiefServer {
     ) {
         if let Err(err) = self
             .db
-            .record_tool_event(
+            .record_tool_event_scoped(
                 session_id,
                 tool,
                 query,
@@ -123,6 +126,7 @@ impl HiefServer {
                 result_count,
                 latency_ms,
                 groundedness_score,
+                Some(&self.worktree_id),
             )
             .await
         {
@@ -350,6 +354,12 @@ fn session_id_or_anonymous(session_id: Option<&str>) -> std::borrow::Cow<'_, str
         Some(id) if !id.trim().is_empty() => std::borrow::Cow::Borrowed(id),
         _ => std::borrow::Cow::Owned(format!("anon-{}", uuid::Uuid::new_v4().as_simple())),
     }
+}
+
+fn derive_worktree_id(project_root: &Path) -> String {
+    let canonical = std::fs::canonicalize(project_root).unwrap_or_else(|_| project_root.to_path_buf());
+    let fingerprint = blake3::hash(canonical.to_string_lossy().as_bytes());
+    format!("wt-{}", &fingerprint.to_hex()[..12])
 }
 
 fn validation_error(message: String, payload: ToolValidationPayload) -> ErrorData {
@@ -764,7 +774,11 @@ impl HiefServer {
         // Step 4: Apply activation-weighted boost if requested
         if params.boost_by_history.unwrap_or(false) && !results.is_empty() {
             let file_paths: Vec<String> = results.iter().map(|r| r.file_path.clone()).collect();
-            let boosts = index::memory::batch_access_boost(&self.db, &file_paths)
+            let boosts = index::memory::batch_access_boost_scoped(
+                &self.db,
+                &file_paths,
+                Some(&self.worktree_id),
+            )
                 .await
                 .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
@@ -789,13 +803,15 @@ impl HiefServer {
             let db = self.db.clone();
             let query_str = query.clone();
             let session = params.session_id.clone();
+            let worktree_id = self.worktree_id.clone();
             tokio::spawn(async move {
-                let _ = index::memory::record_search_accesses(
+                let _ = index::memory::record_search_accesses_scoped(
                     &db,
                     &file_paths,
                     Some(&query_str),
                     "search_code",
                     session.as_deref(),
+                    Some(worktree_id.as_str()),
                 )
                 .await;
             });
@@ -1200,13 +1216,15 @@ impl HiefServer {
             let db = self.db.clone();
             let pattern = params.pattern.clone();
             let session = params.session_id.clone();
+            let worktree_id = self.worktree_id.clone();
             tokio::spawn(async move {
-                let _ = index::memory::record_search_accesses(
+                let _ = index::memory::record_search_accesses_scoped(
                     &db,
                     &file_paths,
                     Some(&pattern),
                     "structural_search",
                     session.as_deref(),
+                    Some(worktree_id.as_str()),
                 )
                 .await;
             });
@@ -1310,7 +1328,12 @@ impl HiefServer {
             10,
         )?;
 
-        let ctx = index::memory::get_session_context(&self.db, &session_id, limit)
+        let ctx = index::memory::get_session_context_scoped(
+            &self.db,
+            &session_id,
+            limit,
+            Some(&self.worktree_id),
+        )
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
@@ -1458,7 +1481,11 @@ impl HiefServer {
             "session_id",
             params.session_id.as_deref(),
         )?;
-        let result = resources::get_session_summary_resource(&self.db, &session_id)
+        let result = resources::get_session_summary_resource(
+            &self.db,
+            &session_id,
+            Some(&self.worktree_id),
+        )
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         Ok(Json(ObjectResponse { result }))

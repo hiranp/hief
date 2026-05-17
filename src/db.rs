@@ -10,6 +10,7 @@ const MAX_SESSION_ID_LEN: usize = 128;
 const MAX_TOOL_LEN: usize = 128;
 const MAX_QUERY_LEN: usize = 2048;
 const MAX_STRATEGY_LEN: usize = 512;
+const DEFAULT_WORKTREE_SCOPE: &str = "project-root";
 
 /// Wrapper around libsql connection providing migration support.
 #[derive(Clone)]
@@ -99,6 +100,7 @@ impl Database {
             ("004_cognitive_memory", MIGRATION_004_COGNITIVE_MEMORY),
             ("005_semantic_cache", MIGRATION_005_SEMANTIC_CACHE),
             ("006_tool_events", MIGRATION_006_TOOL_EVENTS),
+            ("007_worktree_scope", MIGRATION_007_WORKTREE_SCOPE),
         ];
 
         for (name, sql) in migrations {
@@ -144,12 +146,39 @@ impl Database {
         latency_ms: Option<i32>,
         groundedness_score: Option<f64>,
     ) -> Result<i64> {
+        self.record_tool_event_scoped(
+            session_id,
+            tool,
+            query,
+            strategy,
+            result_count,
+            latency_ms,
+            groundedness_score,
+            None,
+        )
+        .await
+    }
+
+    /// Record a tool event scoped to a specific worktree.
+    #[allow(dead_code)]
+    pub async fn record_tool_event_scoped(
+        &self,
+        session_id: &str,
+        tool: &str,
+        query: &str,
+        strategy: Option<&str>,
+        result_count: Option<i32>,
+        latency_ms: Option<i32>,
+        groundedness_score: Option<f64>,
+        worktree_id: Option<&str>,
+    ) -> Result<i64> {
         use libsql::Value;
 
         let bounded_session_id = bounded_text(session_id, MAX_SESSION_ID_LEN);
         let bounded_tool = bounded_text(tool, MAX_TOOL_LEN);
         let bounded_query = bounded_text(query, MAX_QUERY_LEN);
         let bounded_strategy = strategy.map(|s| bounded_text(s, MAX_STRATEGY_LEN));
+        let normalized_worktree_id = normalize_worktree_id(worktree_id);
 
         let params = [
             Value::from(bounded_session_id),
@@ -162,14 +191,15 @@ impl Database {
             result_count.map(|v| Value::from(v as i64)).unwrap_or(Value::Null),
             latency_ms.map(|v| Value::from(v as i64)).unwrap_or(Value::Null),
             groundedness_score.map(Value::from).unwrap_or(Value::Null),
+            Value::from(normalized_worktree_id),
         ];
 
         let event_id = self
             .conn
             .execute(
                 r#"INSERT INTO tool_events
-                   (session_id, tool, query, strategy, result_count, latency_ms, groundedness_score)
-                   VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"#,
+                   (session_id, tool, query, strategy, result_count, latency_ms, groundedness_score, worktree_id)
+                   VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"#,
                 params,
             )
             .await
@@ -181,22 +211,34 @@ impl Database {
     /// Query session summary metrics from telemetry data.
     #[allow(dead_code)]
     pub async fn get_session_summary(&self, session_id: &str) -> Result<Option<SessionSummary>> {
+        self.get_session_summary_scoped(session_id, None).await
+    }
+
+    /// Query session summary metrics from telemetry data for a specific worktree.
+    #[allow(dead_code)]
+    pub async fn get_session_summary_scoped(
+        &self,
+        session_id: &str,
+        worktree_id: Option<&str>,
+    ) -> Result<Option<SessionSummary>> {
+        let normalized_worktree_id = normalize_worktree_id(worktree_id);
         let mut rows = self
             .conn
             .query(
                 r#"SELECT
                     session_id,
-                    total_events,
-                    unique_tools,
-                    avg_results,
-                    avg_latency_ms,
-                    avg_groundedness,
-                    session_start,
-                    session_end,
-                    session_duration_seconds
-                   FROM session_summary
-                   WHERE session_id = ?1"#,
-                [session_id],
+                    COUNT(*) as total_events,
+                    COUNT(DISTINCT tool) as unique_tools,
+                    AVG(result_count) as avg_results,
+                    AVG(latency_ms) as avg_latency_ms,
+                    AVG(groundedness_score) as avg_groundedness,
+                    MIN(created_at) as session_start,
+                    MAX(created_at) as session_end,
+                    MAX(created_at) - MIN(created_at) as session_duration_seconds
+                   FROM tool_events
+                   WHERE session_id = ?1 AND worktree_id = ?2
+                   GROUP BY session_id"#,
+                libsql::params![session_id, normalized_worktree_id.as_str()],
             )
             .await
             .map_err(HiefError::Database)?;
@@ -221,6 +263,16 @@ impl Database {
 
     /// Query aggregate telemetry metrics with per-tool breakdown.
     pub async fn get_session_cost_summary(&self, session_id: &str) -> Result<SessionCostSummary> {
+        self.get_session_cost_summary_scoped(session_id, None).await
+    }
+
+    /// Query aggregate telemetry metrics scoped to a specific worktree.
+    pub async fn get_session_cost_summary_scoped(
+        &self,
+        session_id: &str,
+        worktree_id: Option<&str>,
+    ) -> Result<SessionCostSummary> {
+        let normalized_worktree_id = normalize_worktree_id(worktree_id);
         let mut totals_rows = self
             .conn
             .query(
@@ -229,8 +281,8 @@ impl Database {
                     COALESCE(SUM(latency_ms), 0) as total_latency_ms,
                     AVG(groundedness_score) as avg_groundedness
                    FROM tool_events
-                   WHERE session_id = ?1"#,
-                [session_id],
+                   WHERE session_id = ?1 AND worktree_id = ?2"#,
+                libsql::params![session_id, normalized_worktree_id.as_str()],
             )
             .await
             .map_err(HiefError::Database)?;
@@ -254,10 +306,10 @@ impl Database {
                     COALESCE(SUM(latency_ms), 0) as total_latency_ms,
                     AVG(groundedness_score) as avg_groundedness
                    FROM tool_events
-                   WHERE session_id = ?1
+                         WHERE session_id = ?1 AND worktree_id = ?2
                    GROUP BY tool
                    ORDER BY calls DESC, tool ASC"#,
-                [session_id],
+                    libsql::params![session_id, normalized_worktree_id.as_str()],
             )
             .await
             .map_err(HiefError::Database)?;
@@ -318,6 +370,14 @@ pub struct ToolBreakdown {
 
 fn bounded_text(input: &str, max_chars: usize) -> String {
     input.chars().take(max_chars).collect()
+}
+
+fn normalize_worktree_id(worktree_id: Option<&str>) -> String {
+    worktree_id
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .unwrap_or(DEFAULT_WORKTREE_SCOPE)
+        .to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -506,6 +566,16 @@ FROM tool_events
 GROUP BY session_id;
 "#;
 
+const MIGRATION_007_WORKTREE_SCOPE: &str = r#"
+ALTER TABLE chunk_access ADD COLUMN worktree_id TEXT NOT NULL DEFAULT 'project-root';
+ALTER TABLE tool_events ADD COLUMN worktree_id TEXT NOT NULL DEFAULT 'project-root';
+
+CREATE INDEX IF NOT EXISTS idx_chunk_access_session_worktree
+    ON chunk_access(session_id, worktree_id);
+CREATE INDEX IF NOT EXISTS idx_tool_events_session_worktree
+    ON tool_events(session_id, worktree_id);
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -541,7 +611,8 @@ mod tests {
                 "003_eval_runs",
                 "004_cognitive_memory",
                 "005_semantic_cache",
-                "006_tool_events"
+                "006_tool_events",
+                "007_worktree_scope"
             ]
         );
     }
@@ -699,7 +770,7 @@ mod tests {
                 .unwrap();
             let row = rows.next().await.unwrap().unwrap();
             let count: i64 = row.get(0).unwrap();
-            assert_eq!(count, 6, "Expected 6 migrations (001_chunks, 002_intents, 003_eval_runs, 004_cognitive_memory, 005_semantic_cache, 006_tool_events)");
+            assert_eq!(count, 7, "Expected 7 migrations (001_chunks, 002_intents, 003_eval_runs, 004_cognitive_memory, 005_semantic_cache, 006_tool_events, 007_worktree_scope)");
         }
     }
 
