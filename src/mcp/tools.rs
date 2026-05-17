@@ -25,6 +25,7 @@ use crate::index;
 use crate::index::search::{SearchQuery, SearchResult};
 use crate::index::structural;
 use rmcp::handler::server::tool::ToolName;
+use tracing::debug;
 
 /// The HIEF MCP server handler.
 #[derive(Clone)]
@@ -128,6 +129,9 @@ pub struct CreateIntentResponse {
     pub intent: Intent,
     pub skill_content: Option<String>,
 }
+
+const SEARCH_RESPONSE_TOKEN_BUDGET: usize = 1_200;
+const SEARCH_RESULT_CONTENT_LIMITS: [usize; 6] = [512, 256, 128, 64, 32, 0];
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SearchCodeParams {
@@ -261,6 +265,107 @@ pub struct GetTransitiveDepsParams {
     pub id: String,
 }
 
+fn estimate_tokens(text: &str) -> usize {
+    text.chars().count().div_ceil(4).max(1)
+}
+
+fn estimated_serialized_tokens<T: Serialize>(value: &T) -> usize {
+    serde_json::to_string(value)
+        .map(|json| estimate_tokens(&json))
+        .unwrap_or(SEARCH_RESPONSE_TOKEN_BUDGET)
+}
+
+fn truncate_text(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+
+    text.chars().take(max_chars).collect()
+}
+
+fn compress_search_result(result: &SearchResult, content_limit: usize) -> SearchResult {
+    let mut compressed = result.clone();
+    compressed.content = truncate_text(&compressed.content, content_limit);
+    compressed
+}
+
+fn compress_search_results(results: &[SearchResult]) -> Vec<SearchResult> {
+    if results.is_empty() {
+        return Vec::new();
+    }
+
+    for &content_limit in &SEARCH_RESULT_CONTENT_LIMITS {
+        let compressed: Vec<SearchResult> = results
+            .iter()
+            .map(|result| compress_search_result(result, content_limit))
+            .collect();
+        if estimated_serialized_tokens(&ObjectResponse {
+            result: compressed.clone(),
+        }) <= SEARCH_RESPONSE_TOKEN_BUDGET
+        {
+            return compressed;
+        }
+    }
+
+    let mut end = results.len();
+    while end > 0 {
+        let compressed: Vec<SearchResult> = results[..end]
+            .iter()
+            .map(|result| compress_search_result(result, 0))
+            .collect();
+        if estimated_serialized_tokens(&ObjectResponse {
+            result: compressed.clone(),
+        }) <= SEARCH_RESPONSE_TOKEN_BUDGET
+        {
+            return compressed;
+        }
+        end -= 1;
+    }
+
+    Vec::new()
+}
+
+fn compress_semantic_result(
+    result: &crate::index::vectors::SemanticResult,
+    content_limit: usize,
+) -> crate::index::vectors::SemanticResult {
+    let mut compressed = result.clone();
+    compressed.content = truncate_text(&compressed.content, content_limit);
+    compressed
+}
+
+fn compress_semantic_results(
+    results: &[crate::index::vectors::SemanticResult],
+) -> Vec<crate::index::vectors::SemanticResult> {
+    if results.is_empty() {
+        return Vec::new();
+    }
+
+    for &content_limit in &SEARCH_RESULT_CONTENT_LIMITS {
+        let compressed: Vec<crate::index::vectors::SemanticResult> = results
+            .iter()
+            .map(|result| compress_semantic_result(result, content_limit))
+            .collect();
+        if estimated_serialized_tokens(&compressed) <= SEARCH_RESPONSE_TOKEN_BUDGET {
+            return compressed;
+        }
+    }
+
+    let mut end = results.len();
+    while end > 0 {
+        let compressed: Vec<crate::index::vectors::SemanticResult> = results[..end]
+            .iter()
+            .map(|result| compress_semantic_result(result, 0))
+            .collect();
+        if estimated_serialized_tokens(&compressed) <= SEARCH_RESPONSE_TOKEN_BUDGET {
+            return compressed;
+        }
+        end -= 1;
+    }
+
+    Vec::new()
+}
+
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct FindCallersParams {
     /// Name of the function to find call sites for
@@ -380,6 +485,9 @@ impl HiefServer {
         &self,
         Parameters(params): Parameters<SearchCodeParams>,
     ) -> Result<Json<ObjectResponse<Vec<SearchResult>>>, ErrorData> {
+        let route = crate::index::route_query(&params.query);
+        debug!(?route, "search_code route selected");
+
         let mut search_query = SearchQuery::new(&params.query);
         search_query.top_k = self.validate_top_k(params.top_k, 10);
         search_query.language = params.language;
@@ -428,6 +536,8 @@ impl HiefServer {
                 .await;
             });
         }
+
+        let results = compress_search_results(&results);
 
         Ok(Json(ObjectResponse { result: results }))
     }
@@ -895,6 +1005,9 @@ impl HiefServer {
             ));
         }
 
+            let route = crate::index::route_query(&params.query);
+            debug!(?route, "semantic_search route selected");
+
         let query_vector =
             crate::index::vectors::embed_text(&params.query, self.config.vectors.dimensions)
                 .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
@@ -912,17 +1025,21 @@ impl HiefServer {
         .await
         .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
+        let compressed_results = compress_semantic_results(&results);
+
         let resp = SemanticSearchResponse {
             status: "ok".to_string(),
             message: if results.is_empty() {
                 Some("No semantic matches found for the query.".to_string())
+            } else if compressed_results.len() < results.len() {
+                Some("Results were compressed to fit the response budget.".to_string())
             } else {
                 None
             },
             query: params.query.clone(),
             top_k: query.top_k,
             language: params.language.clone(),
-            results,
+            results: compressed_results,
         };
 
         Ok(Json(resp))
@@ -1439,6 +1556,69 @@ impl ServerHandler for HiefServer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::index::search::SearchResult;
+
+    fn long_text(prefix: &str, count: usize) -> String {
+        std::iter::repeat_n(prefix, count).collect::<Vec<_>>().join(" ")
+    }
+
+    #[test]
+    fn search_budget_compression_preserves_metadata_and_snippet() {
+        let results = vec![SearchResult {
+            file_path: "src/router/mod.rs".to_string(),
+            symbol_name: Some("route_query".to_string()),
+            symbol_kind: Some("fn".to_string()),
+            parent_scope: Some("router".to_string()),
+            language: "rust".to_string(),
+            content: long_text("content", 500),
+            start_line: 10,
+            end_line: 40,
+            rank: -12.5,
+            snippet: ">>>route_query<<<".to_string(),
+        }];
+
+        let compressed = compress_search_results(&results);
+        assert!(!compressed.is_empty());
+        assert_eq!(compressed[0].file_path, results[0].file_path);
+        assert_eq!(compressed[0].symbol_name, results[0].symbol_name);
+        assert_eq!(compressed[0].symbol_kind, results[0].symbol_kind);
+        assert_eq!(compressed[0].parent_scope, results[0].parent_scope);
+        assert_eq!(compressed[0].snippet, results[0].snippet);
+        assert!(estimated_serialized_tokens(&ObjectResponse {
+            result: compressed,
+        }) <= SEARCH_RESPONSE_TOKEN_BUDGET);
+    }
+
+    #[test]
+    fn search_budget_compression_keeps_empty_results_valid() {
+        let compressed = compress_search_results(&[]);
+        assert!(compressed.is_empty());
+        assert!(estimated_serialized_tokens(&ObjectResponse {
+            result: compressed,
+        }) > 0);
+    }
+
+    #[test]
+    fn semantic_budget_compression_truncates_large_payloads() {
+        let results = vec![crate::index::vectors::SemanticResult {
+            chunk_id: "chunk-1".to_string(),
+            file_path: "src/index/search.rs".to_string(),
+            symbol_name: Some("search".to_string()),
+            parent_scope: Some("index".to_string()),
+            language: "rust".to_string(),
+            content: long_text("semantic", 500),
+            start_line: 1,
+            end_line: 120,
+            score: 0.93,
+        }];
+
+        let compressed = compress_semantic_results(&results);
+        assert!(!compressed.is_empty());
+        assert_eq!(compressed[0].file_path, results[0].file_path);
+        assert_eq!(compressed[0].symbol_name, results[0].symbol_name);
+        assert_eq!(compressed[0].parent_scope, results[0].parent_scope);
+        assert!(estimated_serialized_tokens(&compressed) <= SEARCH_RESPONSE_TOKEN_BUDGET);
+    }
     use crate::config::Config;
     use tempfile::tempdir;
 
