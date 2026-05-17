@@ -46,6 +46,7 @@ yarn-error.log*
 
 # Custom
 dev-docs/
+.planning/
 .hief/hief.db
 .hief/hief.db-*
 ACTIVE_CONTEXT.md
