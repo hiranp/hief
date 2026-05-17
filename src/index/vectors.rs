@@ -299,6 +299,7 @@ pub async fn search(
         } else {
             crate::eval::scorer::groundedness_score(&query.query, &contexts)
         };
+        let _ = crate::router::emit_shadow_signal(db, "semantic", Some(groundedness)).await;
         return Ok(SemanticSearchOutcome {
             results: cached,
             cache_used: true,
@@ -357,6 +358,8 @@ pub async fn search(
     } else {
         crate::eval::scorer::groundedness_score(&query.query, &contexts)
     };
+
+    let _ = crate::router::emit_shadow_signal(db, "semantic", Some(groundedness)).await;
 
     write_semantic_cache(db, query_vector, query, &results).await?;
     Ok(SemanticSearchOutcome {

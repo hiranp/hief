@@ -90,6 +90,12 @@ pub struct ProjectHealth {
     pub wave_gate_open: bool,
     /// Machine-readable reason when gate is blocked.
     pub gate_reason: Option<String>,
+    /// Learning loop state: neutral, improving, or regressing.
+    pub learning_state: String,
+    /// Last learning action outcome.
+    pub last_learning_outcome: String,
+    /// Average absolute delta between current and candidate weights.
+    pub candidate_delta: f64,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -274,6 +280,7 @@ pub async fn get_project_health(
     } else {
         Some(gate_state.rejection_reason().to_string())
     };
+    let learning = crate::router::learn_retrieval_weights(db, wave_gate_open).await?;
 
     let mut eval_scores = Vec::new();
     let mut has_regressions = false;
@@ -370,6 +377,9 @@ pub async fn get_project_health(
         drift_warnings,
         wave_gate_open,
         gate_reason,
+        learning_state: learning.learning_state,
+        last_learning_outcome: learning.last_learning_outcome,
+        candidate_delta: learning.candidate_delta,
     })
 }
 

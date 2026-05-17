@@ -176,6 +176,17 @@ pub async fn search(db: &Database, query: &SearchQuery) -> Result<Vec<SearchResu
         ));
     }
 
+    let avg_quality = if results.is_empty() {
+        None
+    } else {
+        let sum: f64 = results
+            .iter()
+            .map(|r| r.groundedness_score.unwrap_or(0.0))
+            .sum();
+        Some(sum / results.len() as f64)
+    };
+    let _ = crate::router::emit_shadow_signal(db, "lexical", avg_quality).await;
+
     debug!(
         "Search returned {} results for '{}'",
         results.len(),
