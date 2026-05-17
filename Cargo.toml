@@ -9,7 +9,7 @@ readme = "README.md"
 repository = "https://github.com/hiranp/hief"
 homepage = "https://github.com/hiranp/hief"
 documentation = "https://docs.rs/hief"
-keywords = ["mcp", "ai", "agent", "context", "memory"]
+keywords = ["mcp", "ai", "agent", "context", "memory", "task-tracking", "semantic-search", "code-intelligence", "developer-tools", "cli"]
 categories = ["development-tools", "command-line-utilities"]
 
 [[bin]]
