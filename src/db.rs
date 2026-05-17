@@ -93,6 +93,7 @@ impl Database {
             ("003_eval_runs", MIGRATION_003_EVAL_RUNS),
             ("004_cognitive_memory", MIGRATION_004_COGNITIVE_MEMORY),
             ("005_semantic_cache", MIGRATION_005_SEMANTIC_CACHE),
+            ("006_tool_events", MIGRATION_006_TOOL_EVENTS),
         ];
 
         for (name, sql) in migrations {
@@ -125,6 +126,100 @@ impl Database {
 
         Ok(rows.next().await.map_err(HiefError::Database)?.is_some())
     }
+
+    /// Record a tool event for telemetry and observability.
+    #[allow(dead_code)]
+    pub async fn record_tool_event(
+        &self,
+        session_id: &str,
+        tool: &str,
+        query: &str,
+        strategy: Option<&str>,
+        result_count: Option<i32>,
+        latency_ms: Option<i32>,
+        groundedness_score: Option<f64>,
+    ) -> Result<i64> {
+        use libsql::Value;
+        
+        let params = [
+            Value::from(session_id),
+            Value::from(tool),
+            Value::from(query),
+            strategy.map(Value::from).unwrap_or(Value::Null),
+            result_count.map(|v| Value::from(v as i64)).unwrap_or(Value::Null),
+            latency_ms.map(|v| Value::from(v as i64)).unwrap_or(Value::Null),
+            groundedness_score.map(Value::from).unwrap_or(Value::Null),
+        ];
+
+        let event_id = self
+            .conn
+            .execute(
+                r#"INSERT INTO tool_events
+                   (session_id, tool, query, strategy, result_count, latency_ms, groundedness_score)
+                   VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"#,
+                params,
+            )
+            .await
+            .map_err(HiefError::Database)?;
+
+        Ok(event_id as i64)
+    }
+
+    /// Query session summary metrics from telemetry data.
+    #[allow(dead_code)]
+    pub async fn get_session_summary(&self, session_id: &str) -> Result<Option<SessionSummary>> {
+        let mut rows = self
+            .conn
+            .query(
+                r#"SELECT
+                    session_id,
+                    total_events,
+                    unique_tools,
+                    avg_results,
+                    avg_latency_ms,
+                    avg_groundedness,
+                    session_start,
+                    session_end,
+                    session_duration_seconds
+                   FROM session_summary
+                   WHERE session_id = ?1"#,
+                [session_id],
+            )
+            .await
+            .map_err(HiefError::Database)?;
+
+        if let Some(row) = rows.next().await.map_err(HiefError::Database)? {
+            let summary = SessionSummary {
+                session_id: row.get(0).map_err(HiefError::Database)?,
+                total_events: row.get(1).map_err(HiefError::Database)?,
+                unique_tools: row.get(2).map_err(HiefError::Database)?,
+                avg_results: row.get(3).map_err(HiefError::Database)?,
+                avg_latency_ms: row.get(4).map_err(HiefError::Database)?,
+                avg_groundedness: row.get(5).map_err(HiefError::Database)?,
+                session_start: row.get(6).map_err(HiefError::Database)?,
+                session_end: row.get(7).map_err(HiefError::Database)?,
+                session_duration_seconds: row.get(8).map_err(HiefError::Database)?,
+            };
+            Ok(Some(summary))
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+/// Session summary metrics aggregated from tool events.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct SessionSummary {
+    pub session_id: String,
+    pub total_events: i64,
+    pub unique_tools: i64,
+    pub avg_results: Option<f64>,
+    pub avg_latency_ms: Option<f64>,
+    pub avg_groundedness: Option<f64>,
+    pub session_start: i64,
+    pub session_end: i64,
+    pub session_duration_seconds: i64,
 }
 
 // ---------------------------------------------------------------------------
@@ -279,6 +374,40 @@ CREATE INDEX IF NOT EXISTS idx_semantic_cache_expires_at
     ON semantic_cache(expires_at);
 "#;
 
+const MIGRATION_006_TOOL_EVENTS: &str = r#"
+-- Tool invocation telemetry for observability and eval feedback
+CREATE TABLE IF NOT EXISTS tool_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    tool TEXT NOT NULL,
+    query TEXT NOT NULL,
+    strategy TEXT,
+    result_count INTEGER,
+    latency_ms INTEGER,
+    groundedness_score REAL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_tool_events_session ON tool_events(session_id);
+CREATE INDEX IF NOT EXISTS idx_tool_events_tool ON tool_events(tool);
+CREATE INDEX IF NOT EXISTS idx_tool_events_created ON tool_events(created_at);
+
+-- Session summary view: aggregate metrics per session
+CREATE VIEW IF NOT EXISTS session_summary AS
+SELECT
+    session_id,
+    COUNT(*) as total_events,
+    COUNT(DISTINCT tool) as unique_tools,
+    AVG(result_count) as avg_results,
+    AVG(latency_ms) as avg_latency_ms,
+    AVG(groundedness_score) as avg_groundedness,
+    MIN(created_at) as session_start,
+    MAX(created_at) as session_end,
+    MAX(created_at) - MIN(created_at) as session_duration_seconds
+FROM tool_events
+GROUP BY session_id;
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -313,7 +442,8 @@ mod tests {
                 "002_intents",
                 "003_eval_runs",
                 "004_cognitive_memory",
-                "005_semantic_cache"
+                "005_semantic_cache",
+                "006_tool_events"
             ]
         );
     }
