@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 
 use crate::db::{Database, RetrievalWeightSnapshotWrite};
 use crate::errors::{HiefError, Result};
@@ -505,6 +506,25 @@ pub async fn active_retrieval_weights(db: &Database) -> Result<RetrievalWeights>
     }
 }
 
+/// Read the latest persisted retrieval learning status without writing state.
+pub async fn current_retrieval_learning_status(db: &Database) -> Result<RetrievalLearningStatus> {
+    if let Some(snapshot) = db.latest_retrieval_weight_snapshot().await? {
+        return Ok(RetrievalLearningStatus {
+            learning_state: snapshot.learning_state,
+            last_learning_outcome: snapshot
+                .last_learning_outcome
+                .unwrap_or_else(|| "no_history".to_string()),
+            candidate_delta: snapshot.candidate_delta.unwrap_or(0.0),
+        });
+    }
+
+    Ok(RetrievalLearningStatus {
+        learning_state: "neutral".to_string(),
+        last_learning_outcome: "no_history".to_string(),
+        candidate_delta: 0.0,
+    })
+}
+
 /// Learn bounded retrieval weight candidates from recent groundedness telemetry.
 pub async fn learn_retrieval_weights(
     db: &Database,
@@ -615,7 +635,7 @@ pub async fn emit_shadow_signal(
     let strategy = format!(
         "lane={lane};baseline={baseline_score:.4};candidate={candidate_score:.4};mode=shadow"
     );
-    let _ = db
+    if let Err(err) = db
         .record_tool_event_scoped(
             "retrieval-learning-shadow",
             "retrieval_shadow",
@@ -626,7 +646,10 @@ pub async fn emit_shadow_signal(
             quality_signal,
             Some("project-root"),
         )
-        .await;
+        .await
+    {
+        warn!(lane, error=%err, "failed to emit retrieval shadow telemetry");
+    }
 
     Ok(())
 }

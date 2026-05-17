@@ -4,6 +4,7 @@ use std::process::Command;
 use hief::config::Config;
 use hief::db::Database;
 use hief::mcp::resources;
+use hief::router;
 use serde_json::Value;
 
 fn write_file(path: &Path, content: &str) {
@@ -161,7 +162,7 @@ file_patterns = ["src/*.rs"]
         serde_json::from_slice(&out_eval.stdout).expect("parse eval run --json output");
     let first = &results[0];
     assert_eq!(first["golden_set"], "workflow");
-    assert_eq!(first["passed"], true);
+    assert_eq!(first["passed"], Value::Bool(true));
 
     let out_report = run_hief(
         root,
@@ -351,7 +352,10 @@ async fn test_project_health_reports_improving_learning_state() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let db = open_health_db(tmp.path()).await;
     insert_eval(&db, true, 10).await;
-    insert_groundedness_series(&db, &vec![0.9; 12]).await;
+    insert_groundedness_series(&db, &[0.9; 12]).await;
+    router::learn_retrieval_weights(&db, true)
+        .await
+        .expect("learn weights");
 
     let config = Config::default();
     let health = resources::get_project_health(&db, tmp.path(), &config)
@@ -369,7 +373,10 @@ async fn test_project_health_reports_regressing_learning_state_with_rollback() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let db = open_health_db(tmp.path()).await;
     insert_eval(&db, false, 10).await;
-    insert_groundedness_series(&db, &vec![0.1; 12]).await;
+    insert_groundedness_series(&db, &[0.1; 12]).await;
+    router::learn_retrieval_weights(&db, false)
+        .await
+        .expect("learn weights");
 
     let config = Config::default();
     let health = resources::get_project_health(&db, tmp.path(), &config)
@@ -380,4 +387,44 @@ async fn test_project_health_reports_regressing_learning_state_with_rollback() {
     assert_eq!(health.learning_state, "regressing");
     assert_eq!(health.last_learning_outcome, "rolled_back");
     assert!(health.candidate_delta >= 0.0);
+}
+
+#[tokio::test]
+async fn test_project_health_does_not_write_learning_snapshots() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let db = open_health_db(tmp.path()).await;
+    insert_eval(&db, true, 10).await;
+
+    let mut rows = db
+        .conn()
+        .query("SELECT COUNT(*) FROM retrieval_weight_snapshots", ())
+        .await
+        .expect("query snapshot count");
+    let before = rows
+        .next()
+        .await
+        .expect("next before")
+        .expect("row before")
+        .get::<i64>(0)
+        .expect("count before");
+
+    let config = Config::default();
+    let _ = resources::get_project_health(&db, tmp.path(), &config)
+        .await
+        .expect("project health");
+
+    let mut rows = db
+        .conn()
+        .query("SELECT COUNT(*) FROM retrieval_weight_snapshots", ())
+        .await
+        .expect("query snapshot count");
+    let after = rows
+        .next()
+        .await
+        .expect("next after")
+        .expect("row after")
+        .get::<i64>(0)
+        .expect("count after");
+
+    assert_eq!(before, after);
 }

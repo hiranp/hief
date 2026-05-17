@@ -280,7 +280,7 @@ pub async fn get_project_health(
     } else {
         Some(gate_state.rejection_reason().to_string())
     };
-    let learning = crate::router::learn_retrieval_weights(db, wave_gate_open).await?;
+    let learning = crate::router::current_retrieval_learning_status(db).await?;
 
     let mut eval_scores = Vec::new();
     let mut has_regressions = false;
