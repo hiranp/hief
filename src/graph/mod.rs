@@ -518,6 +518,14 @@ mod tests {
         update_status(&db, &i1.id, "in_review")
             .await
             .expect("db operation failed");
+        db.conn()
+            .execute(
+                "INSERT INTO eval_runs (id, golden_set, overall_score, passed, details, git_commit, created_at)
+                 VALUES (?1, 'graph-test', 1.0, 1, '{}', '', unixepoch())",
+                libsql::params![uuid::Uuid::new_v4().to_string()],
+            )
+            .await
+            .expect("seed eval history");
         update_status(&db, &i1.id, "verified")
             .await
             .expect("db operation failed");
