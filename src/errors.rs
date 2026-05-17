@@ -69,6 +69,26 @@ pub enum HiefError {
     #[error("security violation: {0}")]
     SecurityViolation(String),
 
+    #[error("invalid tool params for {tool}: missing required parameter '{parameter}'")]
+    MissingToolParameter { tool: String, parameter: String },
+
+    #[error(
+        "invalid tool params for {tool}: parameter '{parameter}' violates constraint '{constraint}' (got {actual})"
+    )]
+    ToolParameterConstraint {
+        tool: String,
+        parameter: String,
+        constraint: String,
+        actual: String,
+    },
+
+    #[error("security violation in {tool} parameter '{parameter}': {reason}")]
+    ToolSecurityViolation {
+        tool: String,
+        parameter: String,
+        reason: String,
+    },
+
     #[error("path traversal detected: {0}")]
     PathTraversal(String),
 

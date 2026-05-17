@@ -1,7 +1,7 @@
 //! MCP tool definitions for the HIEF server.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -12,6 +12,7 @@ use rmcp::schemars;
 use rmcp::{ErrorData, ServerHandler, tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tokio::io::AsyncReadExt;
 
 use super::resources;
@@ -72,30 +73,34 @@ impl HiefServer {
     }
 
     /// Validates that a path is relative to the project root and doesn't escape it.
-    fn validate_path(&self, path: &str) -> std::result::Result<PathBuf, ErrorData> {
-        let p = std::path::Path::new(path);
-        if p.is_absolute() || path.contains("..") {
-            let err = crate::errors::HiefError::PathTraversal(path.to_string());
-            return Err(ErrorData::invalid_params(err.to_string(), None));
-        }
-
-        // Ensure path doesn't start with a hyphen (command flag injection protection)
-        if path.starts_with('-') {
-            let err = crate::errors::HiefError::SecurityViolation(format!(
-                "Invalid path '{}': cannot start with a hyphen",
-                path
-            ));
-            return Err(ErrorData::invalid_params(err.to_string(), None));
-        }
-
-        let full_path = self.project_root.join(p);
-        Ok(full_path)
+    fn validate_path(
+        &self,
+        tool: &str,
+        parameter: &str,
+        path: Option<&str>,
+    ) -> std::result::Result<PathBuf, ErrorData> {
+        validate_relative_tool_path(&self.project_root, tool, parameter, path)
     }
 
     /// Validates and limits top_k to prevent DoS.
-    fn validate_top_k(&self, top_k: Option<usize>, default: usize) -> usize {
-        let val = top_k.unwrap_or(default);
-        if val > 1000 { 1000 } else { val }
+    fn validate_top_k(
+        &self,
+        tool: &str,
+        parameter: &str,
+        top_k: Option<usize>,
+        default: usize,
+    ) -> std::result::Result<usize, ErrorData> {
+        validate_top_k_param(tool, parameter, top_k, default)
+    }
+
+    /// Validates that a required string parameter is present and non-empty.
+    fn validate_required_string(
+        &self,
+        tool: &str,
+        parameter: &str,
+        value: Option<&str>,
+    ) -> std::result::Result<String, ErrorData> {
+        validate_required_param(tool, parameter, value)
     }
 }
 
@@ -133,13 +138,41 @@ pub struct CreateIntentResponse {
     pub skill_content: Option<String>,
 }
 
+/// Maximum allowed top_k for MCP handlers.
+pub const MCP_MAX_TOP_K: usize = 1_000;
+
+/// Machine-readable retry guidance for recoverable tool validation failures.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub struct CorrectionHint {
+    pub parameter: String,
+    pub action: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub example: Option<String>,
+}
+
+/// Structured payload returned in ErrorData.data for MCP validation failures.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub struct ToolValidationPayload {
+    pub error_class: String,
+    pub tool: String,
+    pub parameter: String,
+    pub reason: String,
+    pub recoverable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub correction_hint: Option<CorrectionHint>,
+}
+
 const SEARCH_RESPONSE_TOKEN_BUDGET: usize = 1_200;
 const SEARCH_RESULT_CONTENT_LIMITS: [usize; 6] = [512, 256, 128, 64, 32, 0];
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SearchCodeParams {
     /// Search query (FTS5 syntax)
-    pub query: String,
+    pub query: Option<String>,
     /// Max results to return (default: 10)
     pub top_k: Option<usize>,
     /// Filter by programming language
@@ -203,7 +236,7 @@ pub struct GetEvalScoresParams {
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct GitBlameParams {
     /// File path relative to project root
-    pub file: String,
+    pub file: Option<String>,
     /// Start line (0-indexed)
     pub start_line: u32,
     /// End line (0-indexed)
@@ -225,7 +258,7 @@ pub struct StructuralSearchParams {
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct RelatedFilesParams {
     /// File path to find related files for
-    pub file: String,
+    pub file: Option<String>,
     /// Max results to return (default: 10)
     pub top_k: Option<usize>,
 }
@@ -247,7 +280,7 @@ pub struct GetSkillParams {
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct GetSessionContextParams {
     /// MCP session identifier
-    pub session_id: String,
+    pub session_id: Option<String>,
     /// Max related file suggestions (default: 10)
     pub suggestion_limit: Option<usize>,
 }
@@ -255,7 +288,7 @@ pub struct GetSessionContextParams {
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SemanticSearchParams {
     /// Natural language query (e.g., "authentication and authorization logic")
-    pub query: String,
+    pub query: Option<String>,
     /// Max results to return (default: 10)
     pub top_k: Option<usize>,
     /// Filter by programming language
@@ -270,6 +303,141 @@ pub struct GetTransitiveDepsParams {
 
 fn estimate_tokens(text: &str) -> usize {
     text.chars().count().div_ceil(4).max(1)
+}
+
+fn validation_error(message: String, payload: ToolValidationPayload) -> ErrorData {
+    let data = serde_json::to_value(payload).ok();
+    ErrorData::invalid_params(message, data)
+}
+
+fn missing_parameter_error(tool: &str, parameter: &str) -> ErrorData {
+    let err = crate::errors::HiefError::MissingToolParameter {
+        tool: tool.to_string(),
+        parameter: parameter.to_string(),
+    };
+    validation_error(
+        err.to_string(),
+        ToolValidationPayload {
+            error_class: "invalid_params".to_string(),
+            tool: tool.to_string(),
+            parameter: parameter.to_string(),
+            reason: "missing_required".to_string(),
+            recoverable: true,
+            correction_hint: Some(CorrectionHint {
+                parameter: parameter.to_string(),
+                action: "provide the required parameter".to_string(),
+                min: None,
+                max: None,
+                example: None,
+            }),
+        },
+    )
+}
+
+fn top_k_constraint_error(tool: &str, parameter: &str, actual: usize) -> ErrorData {
+    let err = crate::errors::HiefError::ToolParameterConstraint {
+        tool: tool.to_string(),
+        parameter: parameter.to_string(),
+        constraint: format!("must be between 1 and {}", MCP_MAX_TOP_K),
+        actual: actual.to_string(),
+    };
+    validation_error(
+        err.to_string(),
+        ToolValidationPayload {
+            error_class: "invalid_params".to_string(),
+            tool: tool.to_string(),
+            parameter: parameter.to_string(),
+            reason: "out_of_range".to_string(),
+            recoverable: true,
+            correction_hint: Some(CorrectionHint {
+                parameter: parameter.to_string(),
+                action: "choose a value within the supported range".to_string(),
+                min: Some(1),
+                max: Some(MCP_MAX_TOP_K),
+                example: Some(json!(10).to_string()),
+            }),
+        },
+    )
+}
+
+fn tool_security_error(tool: &str, parameter: &str, reason: &str, action: &str) -> ErrorData {
+    let err = crate::errors::HiefError::ToolSecurityViolation {
+        tool: tool.to_string(),
+        parameter: parameter.to_string(),
+        reason: reason.to_string(),
+    };
+    validation_error(
+        err.to_string(),
+        ToolValidationPayload {
+            error_class: "security_error".to_string(),
+            tool: tool.to_string(),
+            parameter: parameter.to_string(),
+            reason: reason.to_string(),
+            recoverable: true,
+            correction_hint: Some(CorrectionHint {
+                parameter: parameter.to_string(),
+                action: action.to_string(),
+                min: None,
+                max: None,
+                example: Some("src/lib.rs".to_string()),
+            }),
+        },
+    )
+}
+
+/// Validates that a required string parameter is present and non-empty.
+pub fn validate_required_param(
+    tool: &str,
+    parameter: &str,
+    value: Option<&str>,
+) -> std::result::Result<String, ErrorData> {
+    let trimmed = value.unwrap_or_default().trim();
+    if trimmed.is_empty() {
+        return Err(missing_parameter_error(tool, parameter));
+    }
+    Ok(trimmed.to_string())
+}
+
+/// Validates top_k against deterministic MCP bounds.
+pub fn validate_top_k_param(
+    tool: &str,
+    parameter: &str,
+    top_k: Option<usize>,
+    default: usize,
+) -> std::result::Result<usize, ErrorData> {
+    let value = top_k.unwrap_or(default);
+    if !(1..=MCP_MAX_TOP_K).contains(&value) {
+        return Err(top_k_constraint_error(tool, parameter, value));
+    }
+    Ok(value)
+}
+
+/// Validates a tool path as a project-relative path with no traversal markers.
+pub fn validate_relative_tool_path(
+    project_root: &Path,
+    tool: &str,
+    parameter: &str,
+    path: Option<&str>,
+) -> std::result::Result<PathBuf, ErrorData> {
+    let raw = validate_required_param(tool, parameter, path)?;
+    let candidate = Path::new(&raw);
+    if candidate.is_absolute() || raw.contains("..") {
+        return Err(tool_security_error(
+            tool,
+            parameter,
+            "path_traversal",
+            "use a project-relative path with no traversal markers",
+        ));
+    }
+    if raw.starts_with('-') {
+        return Err(tool_security_error(
+            tool,
+            parameter,
+            "flag_like_path",
+            "use a project-relative path that does not start with '-'.",
+        ));
+    }
+    Ok(project_root.join(candidate))
 }
 
 fn estimated_serialized_tokens<T: Serialize>(value: &T) -> usize {
@@ -488,11 +656,12 @@ impl HiefServer {
         &self,
         Parameters(params): Parameters<SearchCodeParams>,
     ) -> Result<Json<ObjectResponse<Vec<SearchResult>>>, ErrorData> {
-        let route = crate::index::route_query(&params.query);
+        let query = self.validate_required_string("search_code", "query", params.query.as_deref())?;
+        let route = crate::index::route_query(&query);
         debug!(?route, "search_code route selected");
 
-        let mut search_query = SearchQuery::new(&params.query);
-        search_query.top_k = self.validate_top_k(params.top_k, 10);
+        let mut search_query = SearchQuery::new(&query);
+        search_query.top_k = self.validate_top_k("search_code", "top_k", params.top_k, 10)?;
         search_query.language = params.language;
         search_query.symbol_kind = params.symbol_kind;
 
@@ -526,7 +695,7 @@ impl HiefServer {
         let file_paths: Vec<String> = results.iter().map(|r| r.file_path.clone()).collect();
         if !file_paths.is_empty() {
             let db = self.db.clone();
-            let query_str = params.query.clone();
+            let query_str = query.clone();
             let session = params.session_id.clone();
             tokio::spawn(async move {
                 let _ = index::memory::record_search_accesses(
@@ -703,7 +872,7 @@ impl HiefServer {
         let timeout_secs = params.timeout_secs.unwrap_or(600).clamp(1, 3600);
 
         let working_dir = match params.working_dir {
-            Some(dir) => self.validate_path(&dir)?,
+            Some(dir) => self.validate_path("run_test_suite", "working_dir", Some(&dir))?,
             None => self.project_root.clone(),
         };
 
@@ -871,9 +1040,10 @@ impl HiefServer {
         &self,
         Parameters(params): Parameters<GitBlameParams>,
     ) -> Result<Json<ObjectResponse<String>>, ErrorData> {
-        let _ = self.validate_path(&params.file)?;
+        let file = self.validate_required_string("git_blame", "file", params.file.as_deref())?;
+        let _ = self.validate_path("git_blame", "file", Some(&file))?;
         let result =
-            crate::index::search::git_blame_range(&params.file, params.start_line, params.end_line)
+            crate::index::search::git_blame_range(&file, params.start_line, params.end_line)
                 .await
                 .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         Ok(Json(ObjectResponse { result }))
@@ -889,7 +1059,7 @@ impl HiefServer {
     ) -> Result<Json<ObjectResponse<Vec<crate::index::structural::StructuralMatch>>>, ErrorData>
     {
         let mut query = structural::StructuralQuery::new(&params.pattern, &params.language);
-        query.top_k = self.validate_top_k(params.top_k, 50);
+        query.top_k = self.validate_top_k("structural_search", "top_k", params.top_k, 50)?;
 
         let results = structural::search(&self.project_root, &query)
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
@@ -923,10 +1093,11 @@ impl HiefServer {
         &self,
         Parameters(params): Parameters<RelatedFilesParams>,
     ) -> Result<Json<ObjectResponse<Vec<crate::index::memory::RelatedFile>>>, ErrorData> {
-        let _ = self.validate_path(&params.file)?;
-        let top_k = self.validate_top_k(params.top_k, 10);
+        let file = self.validate_required_string("related_files", "file", params.file.as_deref())?;
+        let _ = self.validate_path("related_files", "file", Some(&file))?;
+        let top_k = self.validate_top_k("related_files", "top_k", params.top_k, 10)?;
 
-        let related = index::memory::related_files(&self.db, &params.file, top_k)
+        let related = index::memory::related_files(&self.db, &file, top_k)
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
@@ -984,9 +1155,19 @@ impl HiefServer {
         &self,
         Parameters(params): Parameters<GetSessionContextParams>,
     ) -> Result<Json<ObjectResponse<crate::index::memory::SessionContext>>, ErrorData> {
-        let limit = self.validate_top_k(params.suggestion_limit, 10);
+        let session_id = self.validate_required_string(
+            "get_session_context",
+            "session_id",
+            params.session_id.as_deref(),
+        )?;
+        let limit = self.validate_top_k(
+            "get_session_context",
+            "suggestion_limit",
+            params.suggestion_limit,
+            10,
+        )?;
 
-        let ctx = index::memory::get_session_context(&self.db, &params.session_id, limit)
+        let ctx = index::memory::get_session_context(&self.db, &session_id, limit)
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
@@ -1008,15 +1189,17 @@ impl HiefServer {
             ));
         }
 
-            let route = crate::index::route_query(&params.query);
-            debug!(?route, "semantic_search route selected");
+        let query_text =
+            self.validate_required_string("semantic_search", "query", params.query.as_deref())?;
+        let route = crate::index::route_query(&query_text);
+        debug!(?route, "semantic_search route selected");
 
         let query_vector =
-            crate::index::vectors::embed_text(&params.query, self.config.vectors.dimensions)
+            crate::index::vectors::embed_text(&query_text, self.config.vectors.dimensions)
                 .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         let query = crate::index::vectors::SemanticQuery {
-            query: params.query.clone(),
-            top_k: self.validate_top_k(params.top_k, 10),
+            query: query_text.clone(),
+            top_k: self.validate_top_k("semantic_search", "top_k", params.top_k, 10)?,
             language: params.language.clone(),
         };
         let outcome = crate::index::vectors::search(
@@ -1041,7 +1224,7 @@ impl HiefServer {
             } else {
                 None
             },
-            query: params.query.clone(),
+            query: query_text,
             top_k: query.top_k,
             language: params.language.clone(),
             strategy: metadata.strategy,
@@ -1134,7 +1317,7 @@ impl HiefServer {
         &self,
         Parameters(params): Parameters<FindCallersParams>,
     ) -> Result<Json<FindCallersResponse>, ErrorData> {
-        let top_k = self.validate_top_k(params.top_k, 50);
+        let top_k = self.validate_top_k("find_callers", "top_k", params.top_k, 50)?;
 
         // Pattern for free-function call: fn_name($$$)
         let free_pattern = format!("{}($$$)", params.function_name);

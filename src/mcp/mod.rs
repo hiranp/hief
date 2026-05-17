@@ -4,6 +4,9 @@ pub mod resources;
 pub mod skills;
 pub mod tools;
 
+#[allow(unused_imports)]
+pub use tools::{CorrectionHint, ToolValidationPayload};
+
 use std::path::PathBuf;
 use tracing::info;
 
