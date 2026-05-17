@@ -97,6 +97,22 @@ pub async fn update_status(db: &Database, id: &str, new_status: &str) -> Result<
         });
     }
 
+    let gate_stage = match (current.status.as_str(), new_status) {
+        ("in_review", "verified") => Some("to_verified"),
+        ("verified", "merged") => Some("to_merged"),
+        _ => None,
+    };
+
+    if let Some(stage) = gate_stage {
+        let gate = query::latest_eval_gate(db).await?;
+        if gate != query::EvalGateState::Pass {
+            return Err(HiefError::EvalGateRejected {
+                stage: stage.to_string(),
+                reason: gate.rejection_reason().to_string(),
+            });
+        }
+    }
+
     intent::update_status(db, id, new_status).await
 }
 

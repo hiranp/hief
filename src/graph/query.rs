@@ -4,6 +4,51 @@ use crate::db::Database;
 use crate::errors::{HiefError, Result};
 use crate::graph::intent::Intent;
 
+/// Fail-closed evaluation gate status used by orchestration transitions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EvalGateState {
+    Pass,
+    Fail,
+    Missing,
+}
+
+impl EvalGateState {
+    /// Deterministic machine-readable rejection reason.
+    pub fn rejection_reason(self) -> &'static str {
+        match self {
+            Self::Pass => "pass",
+            Self::Fail => "failed_eval",
+            Self::Missing => "no_eval_history",
+        }
+    }
+}
+
+/// Read latest eval run status for transition gate decisions.
+pub async fn latest_eval_gate(db: &Database) -> Result<EvalGateState> {
+    let mut rows = db
+        .conn()
+        .query(
+            "SELECT passed
+             FROM eval_runs
+             ORDER BY created_at DESC, id DESC
+             LIMIT 1",
+            (),
+        )
+        .await
+        .map_err(HiefError::Database)?;
+
+    if let Some(row) = rows.next().await.map_err(HiefError::Database)? {
+        let passed: i64 = row.get(0).map_err(HiefError::Database)?;
+        if passed != 0 {
+            Ok(EvalGateState::Pass)
+        } else {
+            Ok(EvalGateState::Fail)
+        }
+    } else {
+        Ok(EvalGateState::Missing)
+    }
+}
+
 /// Find intents that are `approved` and whose ALL `depends_on` targets are satisfied.
 pub async fn ready_nodes(db: &Database) -> Result<Vec<Intent>> {
     let mut rows = db

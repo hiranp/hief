@@ -37,6 +37,9 @@ pub enum HiefError {
     #[error("invalid status transition: {from} → {to}")]
     InvalidTransition { from: String, to: String },
 
+    #[error("evaluation gate rejected transition at {stage}: {reason}")]
+    EvalGateRejected { stage: String, reason: String },
+
     #[allow(dead_code)]
     #[error("cycle detected in intent graph: {0}")]
     CycleDetected(String),
