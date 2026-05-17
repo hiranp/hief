@@ -63,7 +63,7 @@ Each task was committed atomically:
 1. **Task 1: retrieval routing API** - `d88b6a7` (feat)
 2. **Task 2: search response budgeting** - `056f128` (feat)
 
-**Plan metadata:** `056f128` (docs: complete plan)
+**Plan metadata:** `9bdc308` (docs: complete plan)
 
 ## Files Created/Modified
 
