@@ -5,13 +5,13 @@ milestone_name: milestone
 current_plan: 3
 status: in_progress
 stopped_at: Drafted 04-01-PLAN.md, 04-02-PLAN.md, and 04-03-PLAN.md
-last_updated: "2026-05-17T04:32:59.478Z"
+last_updated: "2026-05-17T04:37:41.175Z"
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 10
-  completed_plans: 9
-  percent: 60
+  completed_plans: 10
+  percent: 80
 ---
 
 # STATE
@@ -20,7 +20,7 @@ progress:
 
 Current Plan: 3
 Total Plans in Phase: 3
-Progress: [█████████░] 90%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -35,6 +35,7 @@ Progress: [█████████░] 90%
 | Phase 03 P03 | 30m | 2 tasks | 5 files |
 | Phase 04 P01 | 2m | 2 tasks | 6 files |
 | Phase 04 P02 | 5m | 2 tasks | 9 files |
+| Phase 04 P03 | 1m | 2 tasks | 7 files |
 
 ## Decisions Made
 
@@ -60,10 +61,12 @@ Progress: [█████████░] 90%
 - [Phase 04]: Project health now reports wave_gate_open and gate_reason from the shared latest-eval gate helper.
 - [Phase 04]: Session telemetry and cognitive memory are now partitioned by worktree_id with project-root fallback for legacy callers.
 - [Phase 04]: Intent transitions to in_progress now acquire lease-based soft locks and reject competing worktree ownership via typed conflict errors.
+- [Phase 04]: Retrieval weights now learn from bounded groundedness windows with deterministic candidate generation and normalization.
+- [Phase 04]: Shadow-mode scoring signals are emitted for lexical and semantic lanes while promotion remains gate-aware and fail-closed.
 
 ## Session Info
 
-Last session: 2026-05-17T04:32:59.469Z
-Last Date: 2026-05-17T04:32:59.469Z
+Last session: 2026-05-17T04:37:41.167Z
+Last Date: 2026-05-17T04:37:41.167Z
 Stopped At: Drafted 04-01-PLAN.md, 04-02-PLAN.md, and 04-03-PLAN.md
 Resume File: None
