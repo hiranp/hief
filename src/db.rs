@@ -92,6 +92,7 @@ impl Database {
             ("002_intents", MIGRATION_002_INTENTS),
             ("003_eval_runs", MIGRATION_003_EVAL_RUNS),
             ("004_cognitive_memory", MIGRATION_004_COGNITIVE_MEMORY),
+            ("005_semantic_cache", MIGRATION_005_SEMANTIC_CACHE),
         ];
 
         for (name, sql) in migrations {
@@ -259,6 +260,25 @@ CREATE TABLE IF NOT EXISTS co_access (
 CREATE INDEX IF NOT EXISTS idx_co_access_strength ON co_access(strength DESC);
 "#;
 
+const MIGRATION_005_SEMANTIC_CACHE: &str = r#"
+-- Semantic cache for repeated retrieval queries
+CREATE TABLE IF NOT EXISTS semantic_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query_fingerprint TEXT NOT NULL,
+    embedding_hash TEXT NOT NULL,
+    language_scope TEXT NOT NULL,
+    result_payload_hash TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_semantic_cache_key
+    ON semantic_cache(query_fingerprint, embedding_hash, language_scope);
+CREATE INDEX IF NOT EXISTS idx_semantic_cache_expires_at
+    ON semantic_cache(expires_at);
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -292,7 +312,8 @@ mod tests {
                 "001_chunks",
                 "002_intents",
                 "003_eval_runs",
-                "004_cognitive_memory"
+                "004_cognitive_memory",
+                "005_semantic_cache"
             ]
         );
     }

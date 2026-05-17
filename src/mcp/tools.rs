@@ -1017,6 +1017,7 @@ impl HiefServer {
             language: params.language.clone(),
         };
         let results = crate::index::vectors::search(
+            &self.db,
             &self.project_root,
             &query_vector,
             &query,

@@ -12,6 +12,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use arrow_array::types::Float32Type;
 use arrow_array::{Array, Float32Array, Int64Array, RecordBatch, RecordBatchIterator, StringArray};
@@ -22,12 +23,14 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
+use crate::db::Database;
 use crate::errors::{HiefError, Result};
 
 use super::chunker::Chunk;
 
 const TABLE_NAME: &str = "code_chunks";
 const VECTOR_COLUMN: &str = "vector";
+const SEMANTIC_CACHE_TTL_SECS: i64 = 30 * 60;
 
 /// Configuration for the vector search subsystem.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -260,6 +263,7 @@ pub async fn store_embeddings(
 /// The query text must first be embedded using the same model that
 /// generated the stored embeddings. The caller provides the query vector.
 pub async fn search(
+    db: &Database,
     project_root: &Path,
     query_vector: &[f32],
     query: &SemanticQuery,
@@ -274,6 +278,10 @@ pub async fn search(
             query_vector.len(),
             config.dimensions
         )));
+    }
+
+    if let Some(cached) = read_semantic_cache(db, query_vector, query).await? {
+        return Ok(cached);
     }
 
     let dir = vectors_dir(project_root);
@@ -310,6 +318,8 @@ pub async fn search(
         results.extend(batch_to_results(&batch)?);
     }
     results.truncate(query.top_k);
+
+    write_semantic_cache(db, query_vector, query, &results).await?;
     Ok(results)
 }
 
@@ -666,6 +676,112 @@ fn map_vector_error<E: std::fmt::Display>(error: E) -> HiefError {
     HiefError::Other(format!("vector store error: {error}"))
 }
 
+fn semantic_cache_key(query_vector: &[f32], query: &SemanticQuery) -> (String, String, String) {
+    let query_fingerprint = blake3::hash(query.query.as_bytes()).to_hex().to_string();
+    let mut embedding_bytes = Vec::with_capacity(query_vector.len() * 4);
+    for value in query_vector {
+        embedding_bytes.extend_from_slice(&value.to_ne_bytes());
+    }
+    let embedding_hash = blake3::hash(&embedding_bytes).to_hex().to_string();
+    let language_scope = query.language.clone().unwrap_or_else(|| "*".to_string());
+    (query_fingerprint, embedding_hash, language_scope)
+}
+
+async fn read_semantic_cache(
+    db: &Database,
+    query_vector: &[f32],
+    query: &SemanticQuery,
+) -> Result<Option<Vec<SemanticResult>>> {
+    let (query_fingerprint, embedding_hash, language_scope) = semantic_cache_key(query_vector, query);
+    let now = unix_now();
+
+    let mut rows = db
+        .conn()
+        .query(
+            "SELECT result_json, result_payload_hash FROM semantic_cache
+             WHERE query_fingerprint = ?1
+               AND embedding_hash = ?2
+               AND language_scope = ?3
+               AND expires_at > ?4
+             ORDER BY created_at DESC
+             LIMIT 1",
+            libsql::params![
+                query_fingerprint.as_str(),
+                embedding_hash.as_str(),
+                language_scope.as_str(),
+                now,
+            ],
+        )
+        .await
+        .map_err(crate::errors::HiefError::Database)?;
+
+    if let Some(row) = rows
+        .next()
+        .await
+        .map_err(crate::errors::HiefError::Database)?
+    {
+        let json: String = row.get(0).map_err(crate::errors::HiefError::Database)?;
+        let payload_hash: String = row.get(1).map_err(crate::errors::HiefError::Database)?;
+        let computed_hash = blake3::hash(json.as_bytes()).to_hex().to_string();
+        if computed_hash != payload_hash {
+            return Ok(None);
+        }
+        let results: Vec<SemanticResult> = serde_json::from_str(&json)
+            .map_err(|e| HiefError::Other(format!("failed to parse semantic cache payload: {e}")))?;
+        return Ok(Some(results));
+    }
+
+    Ok(None)
+}
+
+async fn write_semantic_cache(
+    db: &Database,
+    query_vector: &[f32],
+    query: &SemanticQuery,
+    results: &[SemanticResult],
+) -> Result<()> {
+    if results.is_empty() {
+        return Ok(());
+    }
+
+    let (query_fingerprint, embedding_hash, language_scope) = semantic_cache_key(query_vector, query);
+    let result_json = serde_json::to_string(results)
+        .map_err(|e| HiefError::Other(format!("failed to serialize semantic cache payload: {e}")))?;
+    let result_payload_hash = blake3::hash(result_json.as_bytes()).to_hex().to_string();
+    let expires_at = unix_now() + SEMANTIC_CACHE_TTL_SECS;
+
+    db.conn()
+        .execute(
+            "INSERT INTO semantic_cache
+             (query_fingerprint, embedding_hash, language_scope, result_payload_hash, result_json, expires_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(query_fingerprint, embedding_hash, language_scope)
+             DO UPDATE SET
+                 result_payload_hash = excluded.result_payload_hash,
+                 result_json = excluded.result_json,
+                 expires_at = excluded.expires_at",
+            libsql::params![
+                query_fingerprint,
+                embedding_hash,
+                language_scope,
+                result_payload_hash,
+                result_json,
+                expires_at,
+            ],
+        )
+        .await
+        .map_err(crate::errors::HiefError::Database)?;
+
+    Ok(())
+}
+
+fn unix_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or(0)
+}
+
 /// Calculate total size of a directory.
 fn dir_size(path: &Path) -> u64 {
     let mut total = 0u64;
@@ -687,6 +803,7 @@ fn dir_size(path: &Path) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::Database;
 
     #[test]
     fn test_default_config() {
@@ -743,8 +860,9 @@ mod tests {
     async fn test_search_empty() {
         let config = VectorConfig::default();
         let tmp = tempfile::tempdir().unwrap();
+        let db = Database::open_memory().await.unwrap();
         let query = SemanticQuery::new("test");
-        let results = search(tmp.path(), &[], &query, &config).await.unwrap();
+        let results = search(&db, tmp.path(), &[], &query, &config).await.unwrap();
         assert!(results.is_empty());
     }
 
@@ -756,6 +874,7 @@ mod tests {
             ..Default::default()
         };
         let tmp = tempfile::tempdir().unwrap();
+        let db = Database::open_memory().await.unwrap();
         init(tmp.path(), &config).await.unwrap();
 
         let chunks = vec![EmbeddedChunk {
@@ -778,6 +897,7 @@ mod tests {
         let mut query = SemanticQuery::new("bearer token auth");
         query.top_k = 5;
         let results = search(
+            &db,
             tmp.path(),
             &embed_text(&query.query, config.dimensions).unwrap(),
             &query,
@@ -834,6 +954,7 @@ mod tests {
             ..Default::default()
         };
         let tmp = tempfile::tempdir().unwrap();
+        let db = Database::open_memory().await.unwrap();
         init(tmp.path(), &config).await.unwrap();
 
         let chunks = vec![
@@ -867,6 +988,7 @@ mod tests {
         let mut query = SemanticQuery::new("authentication logic");
         query.language = Some("python".to_string());
         let results = search(
+            &db,
             tmp.path(),
             &embed_text(&query.query, config.dimensions).unwrap(),
             &query,
