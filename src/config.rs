@@ -287,18 +287,34 @@ pub struct RouterConfig {
     /// Path to the session routing table (relative to project root).
     #[serde(default = "default_router_path")]
     pub router_path: String,
+    /// Default protocol lane when no higher-priority rule applies.
+    #[serde(default = "default_protocol_lane")]
+    pub default_lane: crate::router::ProtocolLane,
+    /// Token estimate at or above which protocol operations move to progressive MCP.
+    #[serde(default = "default_token_pressure_threshold")]
+    pub token_pressure_threshold: usize,
 }
 
 impl Default for RouterConfig {
     fn default() -> Self {
         Self {
             router_path: default_router_path(),
+            default_lane: default_protocol_lane(),
+            token_pressure_threshold: default_token_pressure_threshold(),
         }
     }
 }
 
 fn default_router_path() -> String {
     ".hief/router.toml".to_string()
+}
+
+fn default_protocol_lane() -> crate::router::ProtocolLane {
+    crate::router::ProtocolLane::Cli
+}
+
+fn default_token_pressure_threshold() -> usize {
+    1_024
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -102,6 +102,9 @@ pub enum Commands {
     #[command(subcommand)]
     Skills(SkillsCmd),
 
+    /// Preview protocol-platform registration intent without mutating config yet
+    Install(InstallArgs),
+
     /// MCP server registration for AI coding frameworks
     #[command(subcommand)]
     Mcp(McpCmd),
@@ -323,6 +326,16 @@ pub enum SkillsCmd {
         /// Skill name (filename without extension)
         name: String,
     },
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct InstallArgs {
+    /// Target platform: claude-desktop, cursor, zed, or custom
+    #[arg(long)]
+    pub platform: String,
+    /// Emit a dry-run preview only. False is accepted but execution is deferred in this phase.
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+    pub dry_run: bool,
 }
 
 #[derive(Subcommand)]

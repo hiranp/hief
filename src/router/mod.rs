@@ -43,6 +43,71 @@ pub enum RetrievalStrategy {
     Semantic { top_k: usize, rerank: bool },
 }
 
+/// Policy lane chosen for a protocol operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum ProtocolLane {
+    /// Execute locally in the CLI lane.
+    Cli,
+    /// Execute as a single MCP operation.
+    Mcp,
+    /// Execute through a progressive MCP flow under token pressure.
+    ProgressiveMcp,
+}
+
+impl ProtocolLane {
+    /// Returns the stable string form used in config and user-facing explanations.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Cli => "cli",
+            Self::Mcp => "mcp",
+            Self::ProgressiveMcp => "progressive-mcp",
+        }
+    }
+}
+
+/// Minimal operation metadata needed for deterministic protocol lane routing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct OperationRequest {
+    /// Stable operation name used in diagnostics and tests.
+    pub operation: String,
+    /// True when the operation is local and deterministic.
+    pub local_deterministic: bool,
+    /// True when the operation requires a remote or authenticated MCP path.
+    pub remote_auth_required: bool,
+    /// Estimated response or context size used for token-pressure routing.
+    pub estimated_tokens: usize,
+}
+
+impl OperationRequest {
+    /// Creates a local deterministic operation.
+    #[allow(dead_code)]
+    pub fn local(operation: impl Into<String>, estimated_tokens: usize) -> Self {
+        Self {
+            operation: operation.into(),
+            local_deterministic: true,
+            remote_auth_required: false,
+            estimated_tokens,
+        }
+    }
+
+    /// Creates a remote or auth-bound operation.
+    pub fn remote(operation: impl Into<String>, estimated_tokens: usize) -> Self {
+        Self {
+            operation: operation.into(),
+            local_deterministic: false,
+            remote_auth_required: true,
+            estimated_tokens,
+        }
+    }
+}
+
+/// Deterministic explanation for a lane-routing decision.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LaneDecision {
+    pub lane: ProtocolLane,
+    pub reason: String,
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -145,6 +210,44 @@ pub fn route_query(query: &str) -> RetrievalStrategy {
             rerank: true,
         },
         (false, false) => default_hybrid(),
+    }
+}
+
+/// Selects the protocol lane for an operation using deterministic policy rules.
+pub fn select_lane(
+    request: &OperationRequest,
+    config: &crate::config::RouterConfig,
+) -> LaneDecision {
+    if request.estimated_tokens >= config.token_pressure_threshold {
+        return LaneDecision {
+            lane: ProtocolLane::ProgressiveMcp,
+            reason: format!(
+                "estimated token pressure {} exceeds threshold {}",
+                request.estimated_tokens, config.token_pressure_threshold
+            ),
+        };
+    }
+
+    if request.remote_auth_required {
+        return LaneDecision {
+            lane: ProtocolLane::Mcp,
+            reason: "operation requires remote or authenticated execution".to_string(),
+        };
+    }
+
+    if request.local_deterministic {
+        return LaneDecision {
+            lane: ProtocolLane::Cli,
+            reason: "operation is local and deterministic".to_string(),
+        };
+    }
+
+    LaneDecision {
+        lane: config.default_lane,
+        reason: format!(
+            "default lane policy selected {}",
+            config.default_lane.as_str()
+        ),
     }
 }
 

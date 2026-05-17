@@ -28,8 +28,8 @@ use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
 use cli::{
-    Cli, Commands, DocsCmd, EvalCmd, GoldenCmd, GraphCmd, HooksCmd, IndexCmd, McpCmd, PatternsCmd,
-    SkillsCmd,
+    Cli, Commands, DocsCmd, EvalCmd, GoldenCmd, GraphCmd, HooksCmd, IndexCmd, InstallArgs,
+    McpCmd, PatternsCmd, SkillsCmd,
 };
 use config::Config;
 use db::Database;
@@ -76,6 +76,11 @@ async fn run(cli: Cli, project_root: PathBuf) -> anyhow::Result<()> {
 
         Commands::Version => {
             println!("hief {}", env!("CARGO_PKG_VERSION"));
+        }
+
+        Commands::Install(InstallArgs { platform, dry_run }) => {
+            let config = Config::load(&config_path)?;
+            cli::commands::install_platform(&config, &project_root, &platform, dry_run, json)?;
         }
 
         Commands::Index(cmd) => {
