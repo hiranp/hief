@@ -220,6 +220,13 @@ pub struct DriftConfig {
     pub freshness_mode: String,
     #[serde(default = "default_staleness_commits")]
     pub staleness_commits: u32,
+    /// Checkers to skip, by name (e.g. `["todo-issue", "cited-paths"]`).
+    #[serde(default)]
+    pub disabled_checkers: Vec<String>,
+    /// Markdown files (globs, relative to the project root) that `cited-paths`
+    /// skips, e.g. dated plans that describe an old layout.
+    #[serde(default)]
+    pub ignore_paths: Vec<String>,
 }
 
 impl Default for DriftConfig {
@@ -228,6 +235,8 @@ impl Default for DriftConfig {
             staleness_days: default_staleness_days(),
             freshness_mode: default_freshness_mode(),
             staleness_commits: default_staleness_commits(),
+            disabled_checkers: Vec::new(),
+            ignore_paths: Vec::new(),
         }
     }
 }

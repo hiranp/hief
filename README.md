@@ -286,6 +286,25 @@ jobs:
       - run: hief check --diff-base origin/${{ github.base_ref }} --format github
 ```
 
+### Drift checkers
+
+`hief check` runs 12 checkers. Four of them catch repo rot:
+
+| Checker | Flags |
+|---|---|
+| `todo-issue` | `TODO`/`FIXME` without an issue ref (`TODO(#123)`), and `TODO(#n)` whose issue is closed (needs `gh`; skipped with a warning when `gh` is missing or offline) |
+| `cited-paths` | Paths and `file:line` cited in backticks in AGENTS.md, CLAUDE.md, GEMINI.md and `docs/` that no longer exist or are past the end of the file. Fenced blocks, URLs, globs and gitignored paths are skipped. |
+| `reference-freshness` | Docs with front matter `verified_at: <sha or date>` and `covers: [globs]` where a covered file changed after `verified_at` |
+| `instruction-literals` | Commands in agent instruction files that don't resolve: missing `scripts/` file, unknown npm script, unknown cargo alias or `-p` package |
+
+Turn checkers off, or skip noisy docs, in `hief.toml`:
+
+```toml
+[drift]
+disabled_checkers = ["todo-issue"]
+ignore_paths = ["docs/superpowers/**"]   # cited-paths skips these docs
+```
+
 ## Project Structure
 
 ```

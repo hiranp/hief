@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `hief check --write-baseline` saves current drift to `.hief/drift-baseline.json`; later runs fail only on new issues. `--diff-base <ref>` limits issues to changed files, `--format github` prints annotations, `--no-baseline` ignores the file. Exit code `2` now means a usage or config error.
+- Four drift checkers: `todo-issue`, `cited-paths`, `reference-freshness`, `instruction-literals`. Switch any checker off with `[drift] disabled_checkers`; `[drift] ignore_paths` makes `cited-paths` skip docs.
 
 ### Changed
 

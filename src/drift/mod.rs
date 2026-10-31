@@ -12,8 +12,15 @@
 //! 6. patterns_index_sync
 //! 7. npm_docs_drift
 //! 8. dependency_version_conflicts
+//! 9. todo-issue: TODO/FIXME without an issue ref, or whose issue is closed
+//! 10. cited-paths: paths and `file:line` cited in markdown that no longer exist
+//! 11. reference-freshness: docs with `verified_at`/`covers` front matter whose covered files changed
+//! 12. instruction-literals: commands in agent instruction files that do not resolve
+//!
+//! Any checker can be switched off with `[drift] disabled_checkers = ["todo-issue"]` in hief.toml.
 
 pub mod baseline;
+pub mod rot;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -113,9 +120,17 @@ pub fn run(project_root: &Path, config: &Config) -> Result<DriftReport> {
             "dependency_version_conflicts",
             check_dependency_version_conflicts,
         ),
+        (rot::TODO_ISSUE, rot::check_todo_issue),
+        (rot::CITED_PATHS, rot::check_cited_paths),
+        (rot::REFERENCE_FRESHNESS, rot::check_reference_freshness),
+        (rot::INSTRUCTION_LITERALS, rot::check_instruction_literals),
     ];
 
     for (name, checker_fn) in checkers {
+        if config.drift.disabled_checkers.iter().any(|d| d == name) {
+            debug!("checker '{}' disabled in config", name);
+            continue;
+        }
         checks_run.push((*name).to_string());
         checker_fn(project_root, config, &mut issues);
         debug!("checker '{}' finished (issues={})", name, issues.len());
@@ -792,11 +807,11 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn run_has_eight_checkers() {
+    fn run_has_twelve_checkers() {
         let root = tempdir().expect("tempdir");
         let cfg = Config::default();
         let report = run(root.path(), &cfg).expect("run");
-        assert_eq!(report.checks_run.len(), 8);
+        assert_eq!(report.checks_run.len(), 12);
     }
 
     #[test]

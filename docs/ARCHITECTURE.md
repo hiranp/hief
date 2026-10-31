@@ -118,7 +118,7 @@ graph TB
     Router -->|Checks Cache| libsql
     
     Index -->|Stores syntax chunks| libsql
-    Index -->|Stores vector weights| LanceDB
+    Index -->|Stores vector weights| VecStore
 
     Graph -->|Adjacency lists & leases| libsql
     Eval -->|Golden test scores & history| libsql
