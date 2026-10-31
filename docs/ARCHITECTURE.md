@@ -340,7 +340,7 @@ flowchart TD
 
 ## 9. CLI Usage Guide & Verification Runbook
 
-### 8.1 Initialize and Build the Workspace
+### 9.1 Initialize and Build the Workspace
 To spin up a new HIEF context, execute the initialization commands locally:
 
 ```sh
@@ -354,7 +354,7 @@ hief index build
 hief ui
 ```
 
-### 8.2 Starting the MCP Server in the Host Agent
+### 9.2 Starting the MCP Server in the Host Agent
 Integrate HIEF with Claude Desktop or cursor by appending the following runtime config:
 
 ```json
@@ -368,7 +368,7 @@ Integrate HIEF with Claude Desktop or cursor by appending the following runtime 
 }
 ```
 
-### 8.3 Quality Assurance Verification Command
+### 9.3 Quality Assurance Verification Command
 Before shipping modifications or completing a phase, verify that no regressions have been introduced against the golden sets:
 
 ```sh
