@@ -4,7 +4,18 @@ pub mod commands;
 
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+
+/// Output format of `hief check`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum CheckFormat {
+    /// Human-readable report.
+    Text,
+    /// Machine-readable report.
+    Json,
+    /// GitHub Actions `::error file=…,line=…::` annotations.
+    Github,
+}
 
 #[derive(Parser)]
 #[command(
@@ -47,10 +58,24 @@ pub enum Commands {
     Eval(EvalCmd),
 
     /// Documentation drift detection — validate scaffold against codebase (0–100 score)
+    ///
+    /// Exit codes: 0 = clean, 1 = new errors, 2 = usage or config error.
     Check {
         /// Only print the one-line score summary
         #[arg(long)]
         quiet: bool,
+        /// Output format (`--json` is the same as `--format json`)
+        #[arg(long, value_enum, default_value = "text")]
+        format: CheckFormat,
+        /// Save the current issues to .hief/drift-baseline.json; later runs fail only on new ones
+        #[arg(long)]
+        write_baseline: bool,
+        /// Ignore .hief/drift-baseline.json
+        #[arg(long, conflicts_with = "write_baseline")]
+        no_baseline: bool,
+        /// Only count issues in files changed since this git ref (git diff REF...HEAD)
+        #[arg(long, value_name = "REF", conflicts_with = "write_baseline")]
+        diff_base: Option<String>,
     },
 
     /// Pattern library management (project-scoped task guides)

@@ -234,11 +234,33 @@ async fn run(cli: Cli, project_root: PathBuf) -> anyhow::Result<()> {
             cli::commands::doctor(&db, &project_root, &config_path, &config, fix, json).await?;
         }
 
-        Commands::Check { quiet } => {
-            let config = Config::load(&config_path)?;
-            let exit_code = cli::commands::run_check(&project_root, &config, quiet, json).await?;
-            if exit_code != 0 {
-                process::exit(exit_code);
+        Commands::Check {
+            quiet,
+            format,
+            write_baseline,
+            no_baseline,
+            diff_base,
+        } => {
+            let opts = cli::commands::CheckOptions {
+                quiet,
+                format: if json { cli::CheckFormat::Json } else { format },
+                write_baseline,
+                no_baseline,
+                diff_base,
+            };
+            // Exit 2 (not 1) for bad config or git/baseline problems, so CI can
+            // tell "new drift" from "the gate itself is broken".
+            let result = match Config::load(&config_path) {
+                Ok(config) => cli::commands::run_check(&project_root, &config, &opts).await,
+                Err(e) => Err(e),
+            };
+            match result {
+                Ok(0) => {}
+                Ok(code) => process::exit(code),
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    process::exit(2);
+                }
             }
         }
 

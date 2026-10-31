@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Upgrade `rmcp` 0.17 → 3.8. This fixes five advisories in the Streamable HTTP server, including DNS rebinding (GHSA-89vp-x53w-74fx). The HTTP server refuses any request whose `Host` is not local, and a test covers it.
 
+### Added
+
+- `hief check --write-baseline` saves current drift to `.hief/drift-baseline.json`; later runs fail only on new issues. `--diff-base <ref>` limits issues to changed files, `--format github` prints annotations, `--no-baseline` ignores the file. Exit code `2` now means a usage or config error.
+
 ### Changed
 
 - **Semantic search now stores vectors in libsql** (`code_vectors` table in `.hief/hief.db`) instead of LanceDB. The dependency tree drops from about 750 to 400 crates, and builds no longer need `protoc`. The search contract is unchanged. Turning on `vectors.enabled` (or upgrading) re-embeds every file on the next `hief index build`. `.hief/vectors/` is no longer used and can be deleted. `semantic_search` scans exactly, with no ANN index.

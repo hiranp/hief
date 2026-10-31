@@ -13,6 +13,8 @@
 //! 7. npm_docs_drift
 //! 8. dependency_version_conflicts
 
+pub mod baseline;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;

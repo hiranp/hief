@@ -233,6 +233,8 @@ hief index structural '$X.unwrap()' -l rust  # AST pattern search
 hief serve                                   # Start MCP server (stdio)
 hief serve --transport http --port 3100      # Start MCP server (HTTP)
 hief check                                   # Run drift checker suite
+hief check --write-baseline                  # Accept today's drift; fail only on new issues
+hief check --diff-base origin/main --format github  # PR gate with annotations
 hief sync --backend none                     # Generate targeted sync prompt
 hief sync --backend codex --apply            # Generate prompt + run fixer backend
 hief watch --agent local-a                   # Watch filesystem + conflict warnings
@@ -252,6 +254,36 @@ hief docs generate harness --name "feature"  # Scaffold a new test harness
 hief skills init                              # Create skills directory for recipes
 hief skills list                              # List available skill files
 hief skills show create_database_migration    # Print a specific skill
+```
+
+### Gating CI with `hief check`
+
+`hief check` needs no index (`hief index build` is not required). Exit codes:
+`0` clean, `1` new errors, `2` usage or config error (bad `hief.toml`, unknown
+git ref, corrupt baseline).
+
+On a repo that already has drift, record it once and commit the file:
+
+```sh
+hief check --write-baseline      # writes .hief/drift-baseline.json
+```
+
+After that, `hief check` hides the known issues and fails only on new ones.
+Fixed issues drop out the next time you rewrite the baseline. `--no-baseline`
+ignores the file. `--diff-base <ref>` counts only issues in files changed since
+`<ref>`. `--format github` prints `::error file=…,line=…::` annotations.
+
+```yaml
+# .github/workflows/hief.yml
+on: pull_request
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # --diff-base needs history
+      - run: cargo install hief --locked   # or download a release binary
+      - run: hief check --diff-base origin/${{ github.base_ref }} --format github
 ```
 
 ## Project Structure
