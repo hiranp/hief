@@ -7,7 +7,7 @@
 #                                           (e.g. your Mac: native macOS coverage
 #                                           without paying for macOS runners)
 #   scripts/local-ci/ci.sh --release        also build the release profile
-#                                           (fat LTO, as the release workflow does)
+#                                           (thin LTO; the release workflow uses --profile dist)
 #   scripts/local-ci/ci.sh --quick          fmt + clippy only
 #   scripts/local-ci/ci.sh --install-hook   run before every git push
 #

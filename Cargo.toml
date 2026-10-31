@@ -68,7 +68,7 @@ ast-grep-core = "0.35"
 
 
 # MCP server
-rmcp = { version = "0.17", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
+rmcp = { version = "3.8", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
 axum = "0.8"
 askama = "0.14"
 tower-http = { version = "0.6", features = ["trace"] }
@@ -98,6 +98,11 @@ default = []
 embeddings = ["dep:reqwest"]
 
 [profile.release]
-lto = true
+lto = "thin"
 strip = true
+
+# Published binaries only (release.yml): fat LTO, slow to build.
+[profile.dist]
+inherits = "release"
+lto = true
 codegen-units = 1

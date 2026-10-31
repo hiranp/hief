@@ -78,19 +78,19 @@ jobs:
           sudo apt-get install -y clang libssl-dev pkg-config
 
       - name: Build
-        run: cargo build --locked --release --target ${{ matrix.target }}
+        run: cargo build --locked --profile dist --target ${{ matrix.target }}
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
         run: |
-          cd target/${{ matrix.target }}/release
+          cd target/${{ matrix.target }}/dist
           tar czf ../../../${{ matrix.asset_name }}.tar.gz ${{ matrix.artifact_name }}
           cd -
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         run: |
-          cd target/${{ matrix.target }}/release
+          cd target/${{ matrix.target }}/dist
           7z a ../../../${{ matrix.asset_name }}.zip ${{ matrix.artifact_name }}
           cd -
 

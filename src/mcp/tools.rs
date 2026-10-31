@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::{Json, Parameters};
-use rmcp::model::{Implementation, ServerCapabilities, ServerInfo};
+use rmcp::model::{Implementation, ServerCapabilities, ServerConfig};
 use rmcp::schemars;
 use rmcp::{ErrorData, ServerHandler, tool, tool_handler, tool_router};
 use schemars::JsonSchema;
@@ -1979,14 +1979,11 @@ fn parse_json_from_maybe_wrapped_text(raw: &str) -> Option<serde_json::Value> {
 }
 
 /// Implement ServerHandler for the HIEF MCP server.
-#[tool_handler]
+#[tool_handler(router = self.tool_router)]
 impl ServerHandler for HiefServer {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            protocol_version: Default::default(),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            server_info: Implementation::from_build_env(),
-            instructions: Some(
+    fn get_info(&self) -> ServerConfig {
+        ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
+            .with_instructions(
                 "HIEF is your local agentic task coordination platform & persistent memory layer.\n\
                  • Search code with precision: keyword, structural (AST), or semantic vectors.\n\
                  • Coordinate work using a lightweight intent graph (create, list, update, recover).\n\
@@ -1996,8 +1993,8 @@ impl ServerHandler for HiefServer {
                  • Most tools return `ObjectResponse` wrappers; check `result` field.\n\
                  • For detailed examples and full protocol, see dev-docs/agent-protocol.md."
                     .to_string(),
-            ),
-        }
+            )
+            .with_server_info(Implementation::from_build_env())
     }
 }
 

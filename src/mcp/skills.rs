@@ -123,17 +123,7 @@ pub fn generate_skill_tool_definitions(skills: &[Skill]) -> Vec<Tool> {
             .cloned()
             .unwrap_or_default();
 
-            Tool {
-                name: skill.name.clone().into(),
-                title: None,
-                description: Some(skill.description.clone().into()),
-                input_schema: input_schema.into(),
-                output_schema: None,
-                annotations: None,
-                execution: None,
-                icons: None,
-                meta: None,
-            }
+            Tool::new(skill.name.clone(), skill.description.clone(), input_schema)
         })
         .collect()
 }

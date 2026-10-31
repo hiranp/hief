@@ -59,8 +59,15 @@ async fn start_stdio(server: tools::HiefServer) -> Result<()> {
     Ok(())
 }
 
-async fn start_http(server: tools::HiefServer, host: &str, port: u16) -> Result<()> {
-    let config = rmcp::transport::StreamableHttpServerConfig::default();
+/// Build the HTTP router: `/mcp` (Streamable HTTP) and `/health`.
+fn http_router(server: tools::HiefServer, host: &str, port: u16) -> axum::Router {
+    // rmcp's default allowlist is loopback-only, which blocks DNS rebinding
+    // (GHSA-89vp-x53w-74fx). A deliberate non-loopback bind must also be allowed.
+    let mut config = rmcp::transport::StreamableHttpServerConfig::default();
+    if !matches!(host, "localhost" | "127.0.0.1" | "::1") {
+        config.allowed_hosts.push(host.to_string());
+        config.allowed_hosts.push(format!("{host}:{port}"));
+    }
     let session_manager = std::sync::Arc::new(
         rmcp::transport::streamable_http_server::session::local::LocalSessionManager::default(),
     );
@@ -70,9 +77,13 @@ async fn start_http(server: tools::HiefServer, host: &str, port: u16) -> Result<
         config,
     );
 
-    let app = axum::Router::new()
+    axum::Router::new()
         .nest_service("/mcp", service)
-        .route("/health", axum::routing::get(|| async { "ok" }));
+        .route("/health", axum::routing::get(|| async { "ok" }))
+}
+
+async fn start_http(server: tools::HiefServer, host: &str, port: u16) -> Result<()> {
+    let app = http_router(server, host, port);
 
     let addr = format!("{}:{}", host, port);
     let listener = tokio::net::TcpListener::bind(&addr)
@@ -85,4 +96,42 @@ async fn start_http(server: tools::HiefServer, host: &str, port: u16) -> Result<
         .map_err(|e| crate::errors::HiefError::Other(format!("HTTP server error: {}", e)))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use tower::util::ServiceExt;
+
+    async fn post_mcp(host_header: &str) -> StatusCode {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = crate::db::Database::open(&dir.path().join("hief.db"))
+            .await
+            .expect("open db");
+        let server = tools::HiefServer::new(db, dir.path().to_path_buf());
+        let req = Request::post("/mcp")
+            .header("host", host_header)
+            .header("content-type", "application/json")
+            .header("accept", "application/json, text/event-stream")
+            .body(Body::from("{}"))
+            .expect("request");
+        http_router(server, "127.0.0.1", 3100)
+            .oneshot(req)
+            .await
+            .expect("response")
+            .status()
+    }
+
+    /// A DNS-rebinding request carries a non-local `Host` and must be refused.
+    #[tokio::test]
+    async fn rejects_non_local_host_header() {
+        assert_eq!(post_mcp("evil.example.com").await, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn accepts_local_host_header() {
+        assert_ne!(post_mcp("localhost:3100").await, StatusCode::FORBIDDEN);
+    }
 }

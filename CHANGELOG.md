@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- Upgrade `rmcp` 0.17 → 3.8. This fixes five advisories in the Streamable HTTP server, including DNS rebinding (GHSA-89vp-x53w-74fx). The HTTP server refuses any request whose `Host` is not local, and a test covers it.
+
+### Changed
+
+- `cargo build --release` uses thin LTO. Release binaries are built with the new `dist` profile (fat LTO).
+- `cog.toml` now runs hief's own checks and pushes the tag. Removed the cocogitto template leftovers.
+- CI runs weekly on `main` and opens a tracking issue if it fails.
+
+### Fixed
+
+- `docs/ARCHITECTURE.md` section 9 subsections are numbered 9.x.
+
 ## [0.4.0] - 2026-10-30
 
 ### Added

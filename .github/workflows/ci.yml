@@ -25,6 +25,10 @@ on:
   pull_request:
     branches: [main]
     paths-ignore: ["**.md", "docs/**", ".planning/**", "LICENSE*"]
+  # Weekly, so toolchain breakage shows up between pushes and the cache stays
+  # warm (GitHub evicts caches unused for 7 days). Ignores paths-ignore.
+  schedule:
+    - cron: "0 6 * * 1"
   workflow_dispatch: {}
 
 concurrency:
@@ -58,6 +62,9 @@ jobs:
     name: Rust (clippy, test, eval)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    permissions:
+      contents: read
+      issues: write # the scheduled-failure step below
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -102,4 +109,20 @@ jobs:
             cargo run --locked --quiet -- eval run --ci
           else
             echo "No golden sets under .hief/golden; skipping"
+          fi
+
+      # A scheduled failure means main broke without a push, so open (or
+      # comment on) one tracking issue instead of only sending email.
+      - name: Report scheduled failure
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="CI: weekly scheduled run failing on main"
+          n=$(gh issue list --state open --search "\"$title\" in:title" --json number -q '.[0].number')
+          if [ -n "$n" ]; then
+            gh issue comment "$n" --body "Still failing: $RUN_URL"
+          else
+            gh issue create --title "$title" --body "The weekly run failed on latest stable: $RUN_URL"
           fi
