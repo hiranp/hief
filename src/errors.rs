@@ -64,6 +64,10 @@ pub enum HiefError {
         worktree_id: String,
     },
 
+    // Claim errors
+    #[error("claim error: {0}")]
+    Claim(String),
+
     // Eval errors
     #[error("golden set not found: {0}")]
     GoldenSetNotFound(String),

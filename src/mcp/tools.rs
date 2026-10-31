@@ -303,6 +303,30 @@ pub struct ReloadSkillsResponse {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct ClaimIssueParams {
+    /// Issue number or id, e.g. "42".
+    pub issue: String,
+    /// Your agent name. Defaults to $HIEF_AGENT, then $USER.
+    pub agent: Option<String>,
+    /// Lease length such as "30m", "4h" or "2d". Defaults to [claims] default_lease.
+    pub lease: Option<String>,
+    /// Also label and comment on the GitHub issue (needs gh).
+    pub github: Option<bool>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct ReleaseIssueParams {
+    /// Issue number or id, e.g. "42".
+    pub issue: String,
+    /// Your agent name. Defaults to $HIEF_AGENT, then $USER.
+    pub agent: Option<String>,
+    /// Release even if another agent holds the claim.
+    pub force: Option<bool>,
+    /// Also remove the label and comment on the GitHub issue (needs gh).
+    pub github: Option<bool>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct GetSkillParams {
     /// Skill name (filename without extension)
     pub name: String,
@@ -1285,6 +1309,68 @@ impl HiefServer {
             }
         }
         Ok(Json(ObjectResponse { result: names }))
+    }
+
+    #[tool(
+        name = "claim_issue",
+        description = "Claim an issue with a lease so other agents and worktrees of this clone see it is taken. Fails if someone else holds a live claim; expired leases are taken over."
+    )]
+    async fn claim_issue(
+        &self,
+        Parameters(params): Parameters<ClaimIssueParams>,
+    ) -> Result<Json<ObjectResponse<crate::claims::Claim>>, ErrorData> {
+        let internal = |e: crate::errors::HiefError| ErrorData::invalid_params(e.to_string(), None);
+        let lease = crate::claims::parse_lease(
+            params
+                .lease
+                .as_deref()
+                .unwrap_or(&self.config.claims.default_lease),
+        )
+        .map_err(internal)?;
+        let holder = crate::claims::current_holder(&self.project_root, params.agent.as_deref());
+        let claim = crate::claims::Claims::open(&self.project_root)
+            .and_then(|c| c.claim(&params.issue, &holder, lease, crate::claims::unix_now()))
+            .map_err(internal)?;
+        if params.github.unwrap_or(self.config.claims.github) {
+            if let Err(e) = crate::claims::sync_github(&self.project_root, &claim, true) {
+                tracing::warn!("claim_issue: GitHub sync failed: {e}");
+            }
+        }
+        Ok(Json(ObjectResponse { result: claim }))
+    }
+
+    #[tool(
+        name = "release_issue",
+        description = "Release a claim on an issue. Only the holder can release unless force is true."
+    )]
+    async fn release_issue(
+        &self,
+        Parameters(params): Parameters<ReleaseIssueParams>,
+    ) -> Result<Json<ObjectResponse<crate::claims::Claim>>, ErrorData> {
+        let internal = |e: crate::errors::HiefError| ErrorData::invalid_params(e.to_string(), None);
+        let holder = crate::claims::current_holder(&self.project_root, params.agent.as_deref());
+        let claim = crate::claims::Claims::open(&self.project_root)
+            .and_then(|c| c.release(&params.issue, &holder, params.force.unwrap_or(false)))
+            .map_err(internal)?;
+        if params.github.unwrap_or(self.config.claims.github) {
+            if let Err(e) = crate::claims::sync_github(&self.project_root, &claim, false) {
+                tracing::warn!("release_issue: GitHub sync failed: {e}");
+            }
+        }
+        Ok(Json(ObjectResponse { result: claim }))
+    }
+
+    #[tool(
+        name = "list_claims",
+        description = "List issue claims shared by all worktrees of this clone: who holds what, and when each lease expires."
+    )]
+    async fn list_claims(
+        &self,
+    ) -> Result<Json<ObjectResponse<Vec<crate::claims::Claim>>>, ErrorData> {
+        let claims = crate::claims::Claims::open(&self.project_root)
+            .and_then(|c| c.list())
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        Ok(Json(ObjectResponse { result: claims }))
     }
 
     #[tool(

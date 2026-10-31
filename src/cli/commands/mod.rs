@@ -10,6 +10,7 @@ use std::path::Path;
 use schemars::JsonSchema;
 
 mod check;
+mod claims;
 mod docs;
 mod doctor;
 mod eval;
@@ -28,6 +29,7 @@ use serde::Serialize;
 
 // Re-export everything so existing `cli::commands::*` paths keep working.
 pub use check::*;
+pub use claims::*;
 pub use docs::*;
 pub use doctor::*;
 pub use eval::*;

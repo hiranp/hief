@@ -169,7 +169,7 @@ HIEF exposes the following tools via the [Model Context Protocol](https://modelc
 | **Search** | |
 | `search_code` | Keyword search over indexed code chunks (FTS5). Optional cognitive memory boost via `boost_by_history`. |
 | `structural_search` | AST pattern matching via ast-grep (e.g., `$X.unwrap()`, `fn $NAME($$$)`) |
-| `semantic_search` | Vector similarity search *(in development)* |
+| `semantic_search` | Vector similarity search over libsql-stored embeddings (needs `vectors.enabled`) |
 | `index_status` | Index statistics (file count, chunk count, languages, DB size) |
 | `git_blame` | Git authorship info for a file range |
 | **Intents** | |
@@ -180,6 +180,10 @@ HIEF exposes the following tools via the [Model Context Protocol](https://modelc
 | `recover_stale_intents` | Recover stale `in_progress` intents past timeout back to `approved` |
 | `get_transitive_deps` | Resolve recursive dependency chain for an intent |
 | `find_callers` | Find call-sites using structural patterns |
+| **Claims** | |
+| `claim_issue` | Claim an issue with a lease; shared by every worktree of the clone |
+| `release_issue` | Release a claim (holder only, unless `force`) |
+| `list_claims` | Who holds which issue, and when each lease expires |
 | **Evaluation** | |
 | `run_evaluation` | Run golden set quality checks against the indexed codebase |
 | `run_test_suite` | Run local test commands with timeout and structured pass/fail summaries |
@@ -232,6 +236,9 @@ hief index search "query"                    # Search indexed code
 hief index structural '$X.unwrap()' -l rust  # AST pattern search
 hief serve                                   # Start MCP server (stdio)
 hief serve --transport http --port 3100      # Start MCP server (HTTP)
+hief claim 42 --lease 4h                     # Claim an issue across all worktrees
+hief claims                                  # Who holds what, with expiry
+hief release 42                              # Release your claim
 hief check                                   # Run drift checker suite
 hief check --write-baseline                  # Accept today's drift; fail only on new issues
 hief check --diff-base origin/main --format github  # PR gate with annotations
@@ -284,6 +291,30 @@ jobs:
         with: { fetch-depth: 0 }   # --diff-base needs history
       - run: cargo install hief --locked   # or download a release binary
       - run: hief check --diff-base origin/${{ github.base_ref }} --format github
+```
+
+### Claims across worktrees
+
+Parallel agents in separate git worktrees can claim issues so they do not
+collide. Claims are one file per issue under `$(git rev-parse --git-common-dir)/hief/claims/`,
+which every worktree of the clone shares. There is no daemon and no `flock`.
+
+```sh
+hief claim 42 --lease 4h --agent claude-1   # fails if someone holds a live claim
+hief claims                                 # holder, branch, worktree, expiry
+hief release 42                             # only the holder, unless --force
+```
+
+An expired lease is taken over silently. `--github` (or `[claims] github = true`)
+also adds the `status:in-progress` label and a comment, and removes the label on
+release; this is the cross-machine signal, and a GitHub failure only warns.
+Claims are separate from soft intent locks: those guard files for one intent in
+each worktree's database, and claims say who works on an issue.
+
+```toml
+[claims]
+default_lease = "4h"
+github = false
 ```
 
 ### Drift checkers

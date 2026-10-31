@@ -5,6 +5,7 @@
 //! - Intent tracking (dependency graph of tasks)
 //! - Evaluation scoring (golden set quality checks)
 
+mod claims;
 mod cli;
 mod config;
 mod context;
@@ -262,6 +263,46 @@ async fn run(cli: Cli, project_root: PathBuf) -> anyhow::Result<()> {
                     process::exit(2);
                 }
             }
+        }
+
+        Commands::Claim {
+            issue,
+            lease,
+            agent,
+            github,
+        } => {
+            let config = Config::load(&config_path)?;
+            cli::commands::claim_issue(
+                &project_root,
+                &config,
+                &issue,
+                lease.as_deref(),
+                agent.as_deref(),
+                github,
+                json,
+            )?;
+        }
+
+        Commands::Release {
+            issue,
+            agent,
+            force,
+            github,
+        } => {
+            let config = Config::load(&config_path)?;
+            cli::commands::release_issue(
+                &project_root,
+                &config,
+                &issue,
+                agent.as_deref(),
+                force,
+                github,
+                json,
+            )?;
+        }
+
+        Commands::Claims => {
+            cli::commands::list_claims(&project_root, json)?;
         }
 
         Commands::Patterns(cmd) => match cmd {

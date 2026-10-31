@@ -3,6 +3,7 @@
 //! Exposes the internal modules so integration tests and external tooling can
 //! reuse the same routing and indexing logic as the binary.
 
+pub mod claims;
 pub mod cli;
 pub mod config;
 pub mod context;

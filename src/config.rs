@@ -35,6 +35,8 @@ pub struct Config {
     pub watcher: WatcherConfig,
     #[serde(default)]
     pub vectors: crate::index::vectors::VectorConfig,
+    #[serde(default)]
+    pub claims: ClaimsConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -209,6 +211,30 @@ pub struct SkillsConfig {
     /// Path where skill files live (relative to project root)
     #[serde(default = "default_skills_path")]
     pub skills_path: String,
+}
+
+/// `[claims]` — issue claims shared across worktrees (`hief claim`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClaimsConfig {
+    /// Lease used when `--lease` is not given, e.g. `4h`.
+    #[serde(default = "default_lease")]
+    pub default_lease: String,
+    /// Also label and comment on the GitHub issue (needs `gh`).
+    #[serde(default)]
+    pub github: bool,
+}
+
+impl Default for ClaimsConfig {
+    fn default() -> Self {
+        Self {
+            default_lease: default_lease(),
+            github: false,
+        }
+    }
+}
+
+fn default_lease() -> String {
+    "4h".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -461,6 +487,7 @@ impl Default for Config {
             sync: SyncConfig::default(),
             watcher: WatcherConfig::default(),
             vectors: crate::index::vectors::VectorConfig::default(),
+            claims: ClaimsConfig::default(),
         }
     }
 }

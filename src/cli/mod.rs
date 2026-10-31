@@ -78,6 +78,39 @@ pub enum Commands {
         diff_base: Option<String>,
     },
 
+    /// Claim an issue so other worktrees and agents see it is taken
+    Claim {
+        /// Issue number or id (e.g. 42)
+        issue: String,
+        /// Lease length, e.g. 30m, 4h, 2d (default from [claims] default_lease)
+        #[arg(long)]
+        lease: Option<String>,
+        /// Agent name (default: $HIEF_AGENT, then $USER)
+        #[arg(long)]
+        agent: Option<String>,
+        /// Also label and comment on the GitHub issue (needs gh)
+        #[arg(long)]
+        github: bool,
+    },
+
+    /// Release a claim taken with `hief claim`
+    Release {
+        /// Issue number or id
+        issue: String,
+        /// Agent name (default: $HIEF_AGENT, then $USER)
+        #[arg(long)]
+        agent: Option<String>,
+        /// Release even if someone else holds it
+        #[arg(long)]
+        force: bool,
+        /// Also remove the label and comment on the GitHub issue (needs gh)
+        #[arg(long)]
+        github: bool,
+    },
+
+    /// List claims: who holds what, with expiry
+    Claims,
+
     /// Pattern library management (project-scoped task guides)
     #[command(subcommand)]
     Patterns(PatternsCmd),

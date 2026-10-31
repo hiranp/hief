@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `hief check --write-baseline` saves current drift to `.hief/drift-baseline.json`; later runs fail only on new issues. `--diff-base <ref>` limits issues to changed files, `--format github` prints annotations, `--no-baseline` ignores the file. Exit code `2` now means a usage or config error.
 - Four drift checkers: `todo-issue`, `cited-paths`, `reference-freshness`, `instruction-literals`. Switch any checker off with `[drift] disabled_checkers`; `[drift] ignore_paths` makes `cited-paths` skip docs.
 
+- `hief claim <issue> [--lease 4h]`, `hief release <issue>` and `hief claims` (and the MCP tools `claim_issue`, `release_issue`, `list_claims`) share issue claims across all worktrees of a clone, through files under the git common dir. `--github` also labels and comments on the issue.
+
 ### Changed
 
 - **Semantic search now stores vectors in libsql** (`code_vectors` table in `.hief/hief.db`) instead of LanceDB. The dependency tree drops from about 750 to 400 crates, and builds no longer need `protoc`. The search contract is unchanged. Turning on `vectors.enabled` (or upgrading) re-embeds every file on the next `hief index build`. `.hief/vectors/` is no longer used and can be deleted. `semantic_search` scans exactly, with no ANN index.
