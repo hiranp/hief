@@ -1,81 +1,105 @@
 name: CI
 
+# Cost and time rules, adopted from hiranp/email-agent's rust.yml:
+#
+# 1. One Rust job, not three. Test, Clippy and Eval each built about 750
+#    crates on their own runner and saved their own cache (6.9 GB of the
+#    repo's 10 GB). Now they run in sequence on one runner and share one build
+#    of the dependencies.
+# 2. `concurrency`: a newer push to the same PR cancels the older run.
+#    Runs on main are never cancelled, because main warms the cache.
+# 3. `paths-ignore`: a docs-only change builds nothing.
+# 4. Only main saves the cache. PRs restore it but never upload, so a PR
+#    can't evict main's entry.
+# 5. CARGO_INCREMENTAL=0 and line-tables-only debug info: CI never reuses an
+#    incremental build, and full debug info is most of target/.
+# 6. Each job has a timeout. The GitHub default is 360 minutes.
+#
+# Run the same steps locally or on a remote Mac without spending Actions
+# minutes: scripts/local-ci/ci.sh (see scripts/local-ci/README.md).
+
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**", ".planning/**", "LICENSE*"]
   pull_request:
-    branches: [ "main" ]
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**", ".planning/**", "LICENSE*"]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
 
 jobs:
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-    - name: Rust Cache
-      uses: Swatinem/rust-cache@v2
-    - name: Install Protoc
-      uses: arduino/setup-protoc@v3
-    - name: Run tests
-      run: cargo test --all-features
-
+  # Seconds, with no compile, so a formatting miss fails before the build starts.
   fmt:
     name: Format
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
-    - uses: actions/checkout@v4
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: rustfmt
-    - name: Check formatting
-      run: cargo fmt --all -- --check
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch
+        with:
+          toolchain: stable
+          components: rustfmt
+      - run: cargo fmt --all -- --check
 
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
+  rust:
+    name: Rust (clippy, test, eval)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
-    - uses: actions/checkout@v4
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: clippy
-    - name: Rust Cache
-      uses: Swatinem/rust-cache@v2
-    - name: Install Protoc
-      uses: arduino/setup-protoc@v3
-    - name: Run clippy
-      run: cargo clippy --all-targets --all-features -- -D warnings
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-  eval-guarded:
-    name: Eval (Guarded Burn-In)
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-    - uses: actions/checkout@v4
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-    - name: Rust Cache
-      uses: Swatinem/rust-cache@v2
-    - name: Install Protoc
-      uses: arduino/setup-protoc@v3
-    - name: Run guarded evaluation
-      run: |
-        if ls .hief/golden/*.toml >/dev/null 2>&1; then
-          echo "Golden sets found, running guarded eval burn-in"
-          cargo run --quiet -- index build
-          cargo run --quiet -- eval run --ci
-          echo "eval_guarded_status=pass" >> "$GITHUB_ENV"
-        else
-          echo "No golden sets found under .hief/golden; skipping guarded eval"
-          echo "eval_guarded_status=skip" >> "$GITHUB_ENV"
-        fi
-    - name: Burn-in summary
-      if: always()
-      run: |
-        echo "Guarded eval status: ${eval_guarded_status:-fail}"
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch
+        with:
+          toolchain: stable
+          components: clippy
+
+      # Only lancedb needs protoc (hiranp/hief#12). Without a token, the
+      # action's GitHub API lookup hits the shared-IP rate limit.
+      - uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: ci
+          add-job-id-key: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Install cargo-nextest
+        run: ./scripts/ci/install-tool.sh cargo-nextest
+
+      - name: Clippy
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+
+      # nextest runs each test as its own process at full parallelism.
+      # .config/nextest.toml sets the hang backstop. It can't run doctests,
+      # hence the second line.
+      - name: Test
+        run: |
+          cargo nextest run --locked --all-features --no-fail-fast
+          cargo test --locked --all-features --doc
+
+      # Burn-in: reported, not gating, same as before. It reuses the dev build
+      # from the Test step instead of building again on its own runner.
+      - name: Eval (guarded burn-in)
+        continue-on-error: true
+        run: |
+          if ls .hief/golden/*.toml >/dev/null 2>&1; then
+            cargo run --locked --quiet -- index build
+            cargo run --locked --quiet -- eval run --ci
+          else
+            echo "No golden sets under .hief/golden; skipping"
+          fi
