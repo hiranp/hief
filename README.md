@@ -5,8 +5,7 @@
 **Agentic Task Coordination Platform & Persistent Memory Layer**
 
 [![CI](https://github.com/hiranp/hief/actions/workflows/ci.yml/badge.svg)](https://github.com/hiranp/hief/actions/workflows/ci.yml)
-[![Crates.io](https://img.shields.io/crates/v/hief.svg)](https://crates.io/crates/hief)
-[![Docs.rs](https://docs.rs/hief/badge.svg)](https://docs.rs/hief)
+[![Release](https://img.shields.io/github/v/release/hiranp/hief)](https://github.com/hiranp/hief/releases/latest)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org/)
 [![MCP](https://img.shields.io/badge/protocol-MCP-green.svg)](https://modelcontextprotocol.io/)
@@ -16,7 +15,7 @@
 [MCP Tools](#mcp-tools) •
 [CLI Reference](#cli-reference) •
 [Documentation](#documentation) •
-[Security](#security---privacy) •
+[Security](#security--privacy) •
 [Manifesto](MANIFESTO.md)
 
 </div>
@@ -114,7 +113,11 @@ HIEF Server
 - [Rust](https://rustup.rs/) stable toolchain (MSRV **1.88+**)
 - Git (for blame and hooks integration)
 
-### Install from Source
+### Install
+
+Download a prebuilt binary from the [latest release](https://github.com/hiranp/hief/releases/latest)
+(Linux x86_64, macOS Intel and Apple silicon, Windows x86_64), unpack it, and put
+`hief` on your `PATH`. Or build from source:
 
 ```sh
 git clone https://github.com/hiranp/hief.git
@@ -139,6 +142,9 @@ hief index build
 # Start the MCP server (agents connect here)
 hief serve
 ```
+
+Keyword, structural and drift checks work right away. For semantic search, set
+`[vectors] enabled = true` in `hief.toml` and run `hief index build` again.
 
 ### Connect Your Agent
 
@@ -198,6 +204,7 @@ HIEF exposes the following tools via the [Model Context Protocol](https://modelc
 | `get_conventions` | Machine-readable project rules from `.hief/conventions.toml` |
 | `get_project_health` | Latest eval scores, regressions, and warnings |
 | `get_session_context` | Files accessed this session + co-access graph suggestions |
+| `get_session_summary` | Tool-call telemetry for a session |
 | `related_files` | Files frequently accessed alongside a given file (co-access graph) |
 | `list_context_files` | List `.hief/context/` files and metadata |
 | `read_context_file` | Read a named `.hief/context/` file |
@@ -213,10 +220,9 @@ HIEF exposes the following tools via the [Model Context Protocol](https://modelc
 | `reload_skills` | Hot-reload skill files without restarting the server |
 | `execute_skill_<name>` | *(dynamic)* Invoke any skill recipe — returns its full markdown text |
 
-> **Dynamic skills:** Any `.md` or `.yaml` file placed in `.hief/skills/` is automatically
-> advertised as a custom MCP tool named `execute_skill_<filename>` (hyphens converted to
-> underscores). Calling `create_intent` with a `skill` parameter injects the recipe content
-> directly into the response — giving the agent executable context before it starts work.
+> Calling `create_intent` with a `skill` parameter injects that recipe's content into
+> the response, giving the agent the procedure before it starts work. See
+> [Trimming the MCP tool list](#trimming-the-mcp-tool-list) to expose fewer tools.
 
 ### 🛠️ Scaffolding Commands
 
@@ -229,6 +235,7 @@ HIEF exposes the following tools via the [Model Context Protocol](https://modelc
 | `hief skills init` | Create .hief/skills directory with README |
 | `hief skills list` | List all skill recipes available |
 | `hief skills show <name>` | Display the contents of a skill file |
+| `hief skills export --target <harness>` | Write workflows as `SKILL.md` files for Claude, OpenCode or Gemini |
 
 ## CLI Reference
 
@@ -293,7 +300,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }   # --diff-base needs history
-      - run: cargo install hief --locked   # or download a release binary
+      - name: Install hief
+        run: |
+          curl -fsSL https://github.com/hiranp/hief/releases/latest/download/hief-linux-x86_64.tar.gz | tar xz
+          sudo install hief /usr/local/bin/hief
       - run: hief check --diff-base origin/${{ github.base_ref }} --format github
 ```
 
@@ -375,20 +385,21 @@ ignore_paths = ["docs/superpowers/**"]   # cited-paths skips these docs
 
 ```
 .hief/
-├── hief.db              # SQLite database (FTS5 index, intents, eval scores)
+├── hief.db              # SQLite database (FTS5 index, vectors, intents, eval scores)
 ├── conventions.toml     # Machine-readable project rules
 ├── context/             # Agent-maintained context docs (architecture/setup/etc.)
+├── golden/              # Golden set evaluation criteria (*.toml)
 ├── patterns/            # Project-specific task patterns + INDEX.md
+├── skills/              # Skill recipes (exposed as execute_skill_<name>)
+├── drift-baseline.json  # Known drift, from `hief check --write-baseline`
 └── router.toml          # Task-to-context routing table
-
-golden/
-└── *.toml               # Golden set evaluation criteria
 
 src/
 ├── cli/                 # CLI commands (clap)
+├── claims.rs            # Issue claims shared across worktrees
 ├── context/             # Context file read/write/list logic
 ├── docs/                # Doc scaffolding engine (MiniJinja templates)
-├── drift/               # Drift checkers + scoring
+├── drift/               # Drift checkers, scoring, baseline
 ├── eval/                # Golden set evaluation engine
 ├── graph/               # Intent dependency graph (DAG)
 ├── index/               # AST-aware code indexing + search
@@ -399,9 +410,12 @@ src/
 │   └── walker.rs        # File system walker
 ├── mcp/                 # MCP server (rmcp)
 │   ├── tools.rs         # Tool implementations
+│   ├── toolset.rs       # [mcp] tools presets
 │   └── resources.rs     # Resource definitions
 ├── patterns/            # Pattern library and index sync
 ├── router/              # Session routing table loader/defaults
+├── skills/              # Skill loading and `skills export`
+├── ui/                  # Local task-tracking web UI
 ├── watcher/             # Filesystem watcher + conflict warnings
 ├── config.rs            # TOML configuration (hief.toml)
 ├── db.rs                # Database initialization (libsql)
@@ -431,7 +445,7 @@ templates/               # Doc scaffolding templates
 | Document | Description |
 |----------|-------------|
 | [Manifesto](MANIFESTO.md) | Core beliefs and design philosophy |
-| [Task Tracking UI](dev-docs/task-tracking-ui.md) | Local-first task and worktree web UI architecture |
+| [Architecture](docs/ARCHITECTURE.md) | C4 views, design decisions, data schemas, failure modes |
 | [Constitution](docs/specs/constitution.md) | Inviolable project rules |
 | [Scaffolding Guide](docs/SCAFFOLDING.md) | How the `docs` engine works |
 | [CHANGELOG](CHANGELOG.md) | Release history |
@@ -440,7 +454,7 @@ templates/               # Doc scaffolding templates
 
 ```sh
 cargo build --release       # Compile release binary
-cargo test                  # Run unit tests
+cargo test                  # Run tests (no protoc needed)
 cargo fmt -- --check        # Check formatting
 cargo clippy --all-targets  # Run linter
 ```
@@ -465,12 +479,12 @@ pull requests.
 
 HIEF is built for developers who care about security and privacy.
 
-- **Local-First**: All data stays on your machine. HIEF uses an embedded SQLite database (`.hief/hief.db`) and a local vector store.
+- **Local-First**: All data stays on your machine. HIEF uses an embedded SQLite database (`.hief/hief.db`), which also holds the vectors.
 - **No Cloud Required**: HIEF does not make any external network calls to process your code. Your source code never leaves your local environment.
 - **Sandboxed Execution**: HIEF does not execute your code; it only parses it via tree-sitter or performs structural searches via `ast-grep`.
 - **Path Sanitization**: All CLI and MCP tool inputs are strictly validated to prevent path traversal or flag injection attacks.
 
-## Security
+### Reporting a vulnerability
 
 If you discover a security vulnerability, please see [SECURITY.md](SECURITY.md)
 for responsible disclosure instructions. **Do not open a public issue.**
@@ -486,6 +500,5 @@ HIEF builds on excellent open-source projects:
 
 - [tree-sitter](https://tree-sitter.github.io/) — AST parsing
 - [ast-grep](https://ast-grep.github.io/) — Structural search
-- [libsql](https://libsql.org/) — Embedded database
-- [rmcp](https://github.com/anthropics/rmcp) — MCP server framework
-- [libsql](https://github.com/tursodatabase/libsql) — Database with native vector search
+- [libsql](https://github.com/tursodatabase/libsql) — Embedded database with native vector search
+- [rmcp](https://github.com/modelcontextprotocol/rust-sdk) — MCP server framework
