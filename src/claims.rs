@@ -182,15 +182,15 @@ impl Claims {
             Err(_) => {}
         }
         // A claim exists. An unreadable file counts as abandoned.
-        if let Some(existing) = Self::read(path) {
-            if !existing.is_expired(now) {
-                if existing.holder == claim.holder {
-                    // Renewal by the holder: replace in one step.
-                    std::fs::rename(tmp, path)?;
-                    return Ok(());
-                }
-                return Err(conflict(&existing));
+        if let Some(existing) = Self::read(path)
+            && !existing.is_expired(now)
+        {
+            if existing.holder == claim.holder {
+                // Renewal by the holder: replace in one step.
+                std::fs::rename(tmp, path)?;
+                return Ok(());
             }
+            return Err(conflict(&existing));
         }
         // Expired: remove then link again. If two takers race, one link loses.
         let _ = std::fs::remove_file(path);
@@ -231,10 +231,10 @@ impl Claims {
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().is_some_and(|e| e == "json") {
-                if let Some(claim) = Self::read(&path) {
-                    claims.push(claim);
-                }
+            if path.extension().is_some_and(|e| e == "json")
+                && let Some(claim) = Self::read(&path)
+            {
+                claims.push(claim);
             }
         }
         claims.sort_by(|a, b| a.issue.cmp(&b.issue));

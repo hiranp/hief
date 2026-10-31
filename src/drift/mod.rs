@@ -227,11 +227,10 @@ fn check_convention_patterns(project_root: &Path, _config: &Config, issues: &mut
     for (lineno, line) in content.lines().enumerate() {
         let trimmed = line.trim();
 
-        if trimmed.starts_with("language") {
-            if let Some(val) = trimmed.split('=').nth(1) {
-                current_language =
-                    Some(val.trim().trim_matches('"').trim_matches('\'').to_string());
-            }
+        if trimmed.starts_with("language")
+            && let Some(val) = trimmed.split('=').nth(1)
+        {
+            current_language = Some(val.trim().trim_matches('"').trim_matches('\'').to_string());
         }
 
         if !trimmed.starts_with("check_pattern") {
@@ -760,10 +759,12 @@ fn extract_script_refs(content: &str) -> BTreeSet<String> {
     let tokens: Vec<&str> = content.split_whitespace().collect();
 
     for i in 0..tokens.len() {
-        if tokens[i] == "npm" && i + 2 < tokens.len() && tokens[i + 1] == "run" {
-            if let Some(script) = normalize_script_token(tokens[i + 2]) {
-                refs.insert(script);
-            }
+        if tokens[i] == "npm"
+            && i + 2 < tokens.len()
+            && tokens[i + 1] == "run"
+            && let Some(script) = normalize_script_token(tokens[i + 2])
+        {
+            refs.insert(script);
         }
         if tokens[i] == "pnpm" && i + 1 < tokens.len() {
             let maybe_run = tokens[i + 1];

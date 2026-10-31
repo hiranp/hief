@@ -262,10 +262,10 @@ pub fn auto_populate_variables(
     let mut vars = user_vars.clone();
 
     // Auto-populate project_name if not provided
-    if !vars.contains_key("project_name") {
-        if let Some(name) = detect_project_name(project_root) {
-            vars.insert("project_name".to_string(), name);
-        }
+    if !vars.contains_key("project_name")
+        && let Some(name) = detect_project_name(project_root)
+    {
+        vars.insert("project_name".to_string(), name);
     }
 
     vars
@@ -275,28 +275,23 @@ pub fn auto_populate_variables(
 fn detect_project_name(project_root: &Path) -> Option<String> {
     // 1. Try Cargo.toml
     let cargo_toml = project_root.join("Cargo.toml");
-    if cargo_toml.exists() {
-        if let Ok(content) = std::fs::read_to_string(&cargo_toml) {
-            if let Ok(parsed) = content.parse::<toml::Table>() {
-                if let Some(package) = parsed.get("package").and_then(|p| p.as_table()) {
-                    if let Some(name) = package.get("name").and_then(|n| n.as_str()) {
-                        return Some(name.to_string());
-                    }
-                }
-            }
-        }
+    if cargo_toml.exists()
+        && let Ok(content) = std::fs::read_to_string(&cargo_toml)
+        && let Ok(parsed) = content.parse::<toml::Table>()
+        && let Some(package) = parsed.get("package").and_then(|p| p.as_table())
+        && let Some(name) = package.get("name").and_then(|n| n.as_str())
+    {
+        return Some(name.to_string());
     }
 
     // 2. Try package.json
     let package_json = project_root.join("package.json");
-    if package_json.exists() {
-        if let Ok(content) = std::fs::read_to_string(&package_json) {
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(name) = parsed.get("name").and_then(|n| n.as_str()) {
-                    return Some(name.to_string());
-                }
-            }
-        }
+    if package_json.exists()
+        && let Ok(content) = std::fs::read_to_string(&package_json)
+        && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content)
+        && let Some(name) = parsed.get("name").and_then(|n| n.as_str())
+    {
+        return Some(name.to_string());
     }
 
     // 3. Try git remote
@@ -304,19 +299,17 @@ fn detect_project_name(project_root: &Path) -> Option<String> {
         .args(["remote", "get-url", "origin", "--"])
         .current_dir(project_root)
         .output()
+        && output.status.success()
     {
-        if output.status.success() {
-            let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            // Extract repo name from URL: https://github.com/user/repo.git → repo
-            if let Some(name) = url
-                .rsplit('/')
-                .next()
-                .map(|s| s.trim_end_matches(".git").to_string())
-            {
-                if !name.is_empty() {
-                    return Some(name);
-                }
-            }
+        let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        // Extract repo name from URL: https://github.com/user/repo.git → repo
+        if let Some(name) = url
+            .rsplit('/')
+            .next()
+            .map(|s| s.trim_end_matches(".git").to_string())
+            && !name.is_empty()
+        {
+            return Some(name);
         }
     }
 
@@ -567,25 +560,25 @@ fn upsert_managed_block(
     end_marker: &str,
     block_content: &str,
 ) -> String {
-    if let Some(start) = content.find(start_marker) {
-        if let Some(end_rel) = content[start..].find(end_marker) {
-            let end = start + end_rel + end_marker.len();
-            let mut result = String::new();
-            result.push_str(&content[..start]);
-            if !result.ends_with('\n') {
-                result.push('\n');
-            }
-            result.push_str(block_content);
-            if !block_content.ends_with('\n') {
-                result.push('\n');
-            }
-            let tail = content[end..].trim_start_matches('\n');
-            if !tail.is_empty() {
-                result.push('\n');
-                result.push_str(tail);
-            }
-            return normalize_generated_document(&result);
+    if let Some(start) = content.find(start_marker)
+        && let Some(end_rel) = content[start..].find(end_marker)
+    {
+        let end = start + end_rel + end_marker.len();
+        let mut result = String::new();
+        result.push_str(&content[..start]);
+        if !result.ends_with('\n') {
+            result.push('\n');
         }
+        result.push_str(block_content);
+        if !block_content.ends_with('\n') {
+            result.push('\n');
+        }
+        let tail = content[end..].trim_start_matches('\n');
+        if !tail.is_empty() {
+            result.push('\n');
+            result.push_str(tail);
+        }
+        return normalize_generated_document(&result);
     }
 
     let mut result = content.to_string();
@@ -874,52 +867,55 @@ pub fn check_docs_structure(project_root: &Path, config: &DocsConfig) -> DocsChe
 
     // AST LINT: Check data-model.md structs against codebase
     let data_model_path = project_root.join(&config.specs_path).join("data-model.md");
-    if data_model_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&data_model_path) {
-            let mut expected_structs = Vec::new();
-            for line in content.lines() {
-                if line.starts_with("pub struct ") {
-                    let parts: Vec<&str> = line.split_whitespace().collect();
-                    if parts.len() >= 3 {
-                        let name = parts[2].trim_end_matches('{').trim();
-                        if !name.is_empty() {
-                            expected_structs.push(name.to_string());
-                        }
+    if data_model_path.exists()
+        && let Ok(content) = std::fs::read_to_string(&data_model_path)
+    {
+        let mut expected_structs = Vec::new();
+        for line in content.lines() {
+            if line.starts_with("pub struct ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 3 {
+                    let name = parts[2].trim_end_matches('{').trim();
+                    if !name.is_empty() {
+                        expected_structs.push(name.to_string());
                     }
                 }
             }
+        }
 
-            for root_struct in expected_structs {
-                let pattern = format!("pub struct {} $$$", root_struct);
-                let query = crate::index::structural::StructuralQuery {
-                    pattern,
-                    language: "rust".to_string(),
-                    top_k: 1,
-                };
+        for root_struct in expected_structs {
+            let pattern = format!("pub struct {} $$$", root_struct);
+            let query = crate::index::structural::StructuralQuery {
+                pattern,
+                language: "rust".to_string(),
+                top_k: 1,
+            };
 
-                match crate::index::structural::search(project_root, &query) {
-                    Ok(matches) => {
-                        if matches.is_empty() {
-                            checks.push(DocsCheckItem {
-                                name: format!("data_model_sync_{}", root_struct),
-                                status: "warning".to_string(),
-                                message: format!("Struct '{}' from data-model.md not found in codebase (AST lint)", root_struct),
-                            });
-                        } else {
-                            checks.push(DocsCheckItem {
-                                name: format!("data_model_sync_{}", root_struct),
-                                status: "ok".to_string(),
-                                message: format!("Struct '{}' aligns with codebase", root_struct),
-                            });
-                        }
-                    }
-                    Err(_) => {
+            match crate::index::structural::search(project_root, &query) {
+                Ok(matches) => {
+                    if matches.is_empty() {
                         checks.push(DocsCheckItem {
                             name: format!("data_model_sync_{}", root_struct),
                             status: "warning".to_string(),
-                            message: format!("Failed to run AST lint for struct '{}'", root_struct),
+                            message: format!(
+                                "Struct '{}' from data-model.md not found in codebase (AST lint)",
+                                root_struct
+                            ),
+                        });
+                    } else {
+                        checks.push(DocsCheckItem {
+                            name: format!("data_model_sync_{}", root_struct),
+                            status: "ok".to_string(),
+                            message: format!("Struct '{}' aligns with codebase", root_struct),
                         });
                     }
+                }
+                Err(_) => {
+                    checks.push(DocsCheckItem {
+                        name: format!("data_model_sync_{}", root_struct),
+                        status: "warning".to_string(),
+                        message: format!("Failed to run AST lint for struct '{}'", root_struct),
+                    });
                 }
             }
         }

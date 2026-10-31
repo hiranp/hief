@@ -101,10 +101,10 @@ pub fn list_skills(project_root: &Path, config: &SkillsConfig) -> Result<Vec<Str
     if skills_path.is_dir() {
         for entry in std::fs::read_dir(&skills_path)? {
             let entry = entry?;
-            if let Some(stem) = entry.path().file_stem().and_then(|s| s.to_str()) {
-                if stem != "README" {
-                    names.push(stem.to_string());
-                }
+            if let Some(stem) = entry.path().file_stem().and_then(|s| s.to_str())
+                && stem != "README"
+            {
+                names.push(stem.to_string());
             }
         }
     }

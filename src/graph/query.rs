@@ -260,10 +260,10 @@ pub async fn detect_cycles(db: &Database) -> Result<Vec<String>> {
                 for node in scc {
                     cycle_nodes.insert(node);
                 }
-            } else if let Some(neighbors) = adj.get(v) {
-                if neighbors.contains(v) {
-                    cycle_nodes.insert(v.clone());
-                }
+            } else if let Some(neighbors) = adj.get(v)
+                && neighbors.contains(v)
+            {
+                cycle_nodes.insert(v.clone());
             }
         }
     }

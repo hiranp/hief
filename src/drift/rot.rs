@@ -579,12 +579,11 @@ const CARGO_BUILTINS: &[&str] = &[
 fn cargo_aliases(root: &Path) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     for name in [".cargo/config.toml", ".cargo/config"] {
-        if let Ok(text) = std::fs::read_to_string(root.join(name)) {
-            if let Ok(value) = text.parse::<toml::Table>() {
-                if let Some(aliases) = value.get("alias").and_then(|a| a.as_table()) {
-                    out.extend(aliases.keys().cloned());
-                }
-            }
+        if let Ok(text) = std::fs::read_to_string(root.join(name))
+            && let Ok(value) = text.parse::<toml::Table>()
+            && let Some(aliases) = value.get("alias").and_then(|a| a.as_table())
+        {
+            out.extend(aliases.keys().cloned());
         }
     }
     out
@@ -622,10 +621,10 @@ fn workspace_packages(root: &Path) -> Option<BTreeSet<String>> {
             .ok()?
             .flatten()
         {
-            if let Ok(text) = std::fs::read_to_string(dir.join("Cargo.toml")) {
-                if let Ok(t) = text.parse::<toml::Table>() {
-                    names.extend(name_of(&t));
-                }
+            if let Ok(text) = std::fs::read_to_string(dir.join("Cargo.toml"))
+                && let Ok(t) = text.parse::<toml::Table>()
+            {
+                names.extend(name_of(&t));
             }
         }
     }

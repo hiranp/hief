@@ -1338,10 +1338,10 @@ impl HiefServer {
         let mut names = Vec::new();
         if let Ok(entries) = std::fs::read_dir(&skills_dir) {
             for entry in entries.flatten() {
-                if let Some(stem) = entry.path().file_stem().and_then(|s| s.to_str()) {
-                    if stem != "README" {
-                        names.push(stem.to_string());
-                    }
+                if let Some(stem) = entry.path().file_stem().and_then(|s| s.to_str())
+                    && stem != "README"
+                {
+                    names.push(stem.to_string());
                 }
             }
         }
@@ -1368,10 +1368,10 @@ impl HiefServer {
         let claim = crate::claims::Claims::open(&self.project_root)
             .and_then(|c| c.claim(&params.issue, &holder, lease, crate::claims::unix_now()))
             .map_err(internal)?;
-        if params.github.unwrap_or(self.config.claims.github) {
-            if let Err(e) = crate::claims::sync_github(&self.project_root, &claim, true) {
-                tracing::warn!("claim_issue: GitHub sync failed: {e}");
-            }
+        if params.github.unwrap_or(self.config.claims.github)
+            && let Err(e) = crate::claims::sync_github(&self.project_root, &claim, true)
+        {
+            tracing::warn!("claim_issue: GitHub sync failed: {e}");
         }
         Ok(Json(ObjectResponse { result: claim }))
     }
@@ -1389,10 +1389,10 @@ impl HiefServer {
         let claim = crate::claims::Claims::open(&self.project_root)
             .and_then(|c| c.release(&params.issue, &holder, params.force.unwrap_or(false)))
             .map_err(internal)?;
-        if params.github.unwrap_or(self.config.claims.github) {
-            if let Err(e) = crate::claims::sync_github(&self.project_root, &claim, false) {
-                tracing::warn!("release_issue: GitHub sync failed: {e}");
-            }
+        if params.github.unwrap_or(self.config.claims.github)
+            && let Err(e) = crate::claims::sync_github(&self.project_root, &claim, false)
+        {
+            tracing::warn!("release_issue: GitHub sync failed: {e}");
         }
         Ok(Json(ObjectResponse { result: claim }))
     }

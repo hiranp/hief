@@ -209,20 +209,20 @@ async fn search_literal(
     }
 
     // If diff_only, restrict to changed files
-    if let Some(files) = diff_files {
-        if !files.is_empty() {
-            let placeholders: Vec<String> = files
-                .iter()
-                .enumerate()
-                .map(|(i, _)| format!("?{}", params.len() + i + 1))
-                .collect();
-            sql.push_str(&format!(
-                " AND c.file_path IN ({})",
-                placeholders.join(", ")
-            ));
-            for f in files {
-                params.push(f.clone());
-            }
+    if let Some(files) = diff_files
+        && !files.is_empty()
+    {
+        let placeholders: Vec<String> = files
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("?{}", params.len() + i + 1))
+            .collect();
+        sql.push_str(&format!(
+            " AND c.file_path IN ({})",
+            placeholders.join(", ")
+        ));
+        for f in files {
+            params.push(f.clone());
         }
     }
 
@@ -273,10 +273,10 @@ fn run_structural_check(
                 return false;
             }
             // Check diff filter
-            if let Some(files) = diff_files {
-                if !files.contains(&m.file_path) {
-                    return false;
-                }
+            if let Some(files) = diff_files
+                && !files.contains(&m.file_path)
+            {
+                return false;
             }
             true
         })

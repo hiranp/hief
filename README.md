@@ -8,7 +8,7 @@
 [![Crates.io](https://img.shields.io/crates/v/hief.svg)](https://crates.io/crates/hief)
 [![Docs.rs](https://docs.rs/hief/badge.svg)](https://docs.rs/hief)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org/)
 [![MCP](https://img.shields.io/badge/protocol-MCP-green.svg)](https://modelcontextprotocol.io/)
 
 [Getting Started](#getting-started) •
@@ -69,6 +69,7 @@ HIEF Server
 - **Provenance records** which agent made each change and when
 - **Multi-Tenant / Worktree Isolation** — partitions session telemetry and cognitive memory dynamically by git worktree ID
 - **Intent Soft-Locks** — lease-based soft locks preventing competing worktree ownership on concurrent transitions
+- **Issue Claims** — `hief claim` / `release` / `claims` leases shared by every worktree of a clone, optionally mirrored to GitHub
 - **Task Tracking Web UI** — HITL controls and review panels for active asynchronous worktrees
 - **SQL-Native Observability** — built-in session telemetry and active evaluation loop
 - Lightweight by design — not a project manager, just enough coordination
@@ -80,12 +81,14 @@ HIEF Server
 - **Structural checks** — `structural_must_not_contain` via ast-grep patterns
 - **Differential eval** — `diff_only = true` checks only changed files
 - **Score history** with regression detection
+- **Drift gate for CI** — `hief check` with a baseline, `--diff-base` and GitHub annotations, plus checkers for unlinked TODOs, dead cited paths, stale reference docs and broken instruction commands
 - **Fail-Closed Wave Gates** — programmatically blocks intent pipeline promotion unless the latest evaluation run passes successfully
 
 ### 🌐 MCP Server & Protocol — *"Connect to any agent"*
 
 - **Adaptive Protocol Routing** — dynamically routes workloads across `mcp`, `progressive-mcp`, and `cli` lanes based on token pressure and capabilities
 - **Robust Validation & Security** — strict parameter validation with typed error shapes and path traversal rejection
+- **Configurable tool set** — `[mcp] tools` presets (`minimal`, `default`, `all`) cut per-session context; `hief skills export` moves rare workflows into skill files
 - **Dry-Run Installation** — `hief install` scaffolds and previews agent registration payloads safely
 
 ### 📝 Documentation Scaffolding — *"How do we start?"*
@@ -108,7 +111,7 @@ HIEF Server
 
 ### Prerequisites
 
-- [Rust](https://rustup.rs/) stable toolchain (MSRV **1.85+**)
+- [Rust](https://rustup.rs/) stable toolchain (MSRV **1.88+**)
 - Git (for blame and hooks integration)
 
 ### Install from Source

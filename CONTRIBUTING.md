@@ -45,7 +45,7 @@ By participating, you are expected to uphold this code.
 
 ### Prerequisites
 
-- **Rust** stable toolchain (MSRV 1.85+) — install via [rustup](https://rustup.rs/)
+- **Rust** stable toolchain (MSRV 1.88+) — install via [rustup](https://rustup.rs/)
 - **Git** (for blame integration and hooks)
 - **just** (optional, for [Justfile](Justfile) task runner)
 

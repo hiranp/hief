@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-31
+
+### Upgrading
+
+- Run `hief index build` once. Vectors move from `.hief/vectors/` (LanceDB) into `.hief/hief.db`; delete `.hief/vectors/` afterwards.
+- The minimum Rust version is now 1.88 (required by rmcp 3.8). Building from source no longer needs `protoc`.
+- `hief check` exits `2`, not `1`, for a bad config, an unknown `--diff-base` ref or a corrupt baseline. Scripts that only test for non-zero are unaffected.
+
 ### Security
 
 - Upgrade `rmcp` 0.17 → 3.8. This fixes five advisories in the Streamable HTTP server, including DNS rebinding (GHSA-89vp-x53w-74fx). The HTTP server refuses any request whose `Host` is not local, and a test covers it.
@@ -15,9 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `hief check --write-baseline` saves current drift to `.hief/drift-baseline.json`; later runs fail only on new issues. `--diff-base <ref>` limits issues to changed files, `--format github` prints annotations, `--no-baseline` ignores the file. Exit code `2` now means a usage or config error.
 - Four drift checkers: `todo-issue`, `cited-paths`, `reference-freshness`, `instruction-literals`. Switch any checker off with `[drift] disabled_checkers`; `[drift] ignore_paths` makes `cited-paths` skip docs.
-
 - `hief claim <issue> [--lease 4h]`, `hief release <issue>` and `hief claims` (and the MCP tools `claim_issue`, `release_issue`, `list_claims`) share issue claims across all worktrees of a clone, through files under the git common dir. `--github` also labels and comments on the issue.
-
 - `[mcp] tools` in hief.toml limits the MCP tools `hief serve` exposes (presets `minimal`, `default`, `all`, or tool names). An unknown name is a startup error. `hief mcp status` lists the exposed tools and the token cost of each preset.
 - `hief skills export --target claude|opencode|gemini` writes hief workflows and `.hief/skills` recipes as `SKILL.md` files.
 
@@ -27,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `cargo build --release` uses thin LTO. Release binaries are built with the new `dist` profile (fat LTO).
 - `cog.toml` now runs hief's own checks and pushes the tag. Removed the cocogitto template leftovers.
 - CI runs weekly on `main` and opens a tracking issue if it fails.
+- Minimum supported Rust version raised from 1.85 to 1.88.
 
 ### Fixed
 

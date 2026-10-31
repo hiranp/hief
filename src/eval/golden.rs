@@ -104,10 +104,10 @@ pub fn load_golden_sets(golden_dir: &Path, name: Option<&str>) -> Result<Vec<Gol
         sets.push(set);
     }
 
-    if let Some(name) = name {
-        if sets.is_empty() {
-            return Err(HiefError::GoldenSetNotFound(name.to_string()));
-        }
+    if let Some(name) = name
+        && sets.is_empty()
+    {
+        return Err(HiefError::GoldenSetNotFound(name.to_string()));
     }
 
     Ok(sets)
@@ -125,10 +125,10 @@ pub fn list_sets(golden_dir: &Path) -> Result<Vec<String>> {
     for entry in entries {
         let entry = entry?;
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("toml") {
-            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                names.push(stem.to_string());
-            }
+        if path.extension().and_then(|e| e.to_str()) == Some("toml")
+            && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+        {
+            names.push(stem.to_string());
         }
     }
 

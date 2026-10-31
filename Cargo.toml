@@ -1,8 +1,8 @@
 [package]
 name = "hief"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 description = "Hybrid Intent-Evaluation Framework — a sidecar for AI coding agents"
 license = "MIT OR Apache-2.0"
 readme = "README.md"

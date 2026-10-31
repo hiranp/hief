@@ -379,13 +379,11 @@ pub async fn doctor(
             fixable: true,
             fixed: false,
         };
-        if fix {
-            if let Ok(()) = hooks_install(project_root, false) {
-                check.status = "ok".to_string();
-                check.message = "Git hooks installed".to_string();
-                check.fixed = true;
-                fixes_applied += 1;
-            }
+        if fix && let Ok(()) = hooks_install(project_root, false) {
+            check.status = "ok".to_string();
+            check.message = "Git hooks installed".to_string();
+            check.fixed = true;
+            fixes_applied += 1;
         }
         checks.push(check);
     } else {

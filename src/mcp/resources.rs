@@ -287,42 +287,36 @@ pub async fn get_project_health(
 
     // Try to load golden sets and get latest scores
     let golden_dir = project_root.join(&config.eval.golden_set_path);
-    if golden_dir.exists() {
-        if let Ok(golden_sets) = crate::eval::golden::load_golden_sets(&golden_dir, None) {
-            for gs in &golden_sets {
-                // Get latest score history
-                if let Ok(history) =
-                    crate::eval::history::get_history(db, &gs.metadata.name, 1).await
-                {
-                    if let Some(latest) = history.first() {
-                        let regression = crate::eval::history::check_regression(
-                            db,
-                            &gs.metadata.name,
-                            latest.score,
-                            5,
-                        )
+    if golden_dir.exists()
+        && let Ok(golden_sets) = crate::eval::golden::load_golden_sets(&golden_dir, None)
+    {
+        for gs in &golden_sets {
+            // Get latest score history
+            if let Ok(history) = crate::eval::history::get_history(db, &gs.metadata.name, 1).await
+                && let Some(latest) = history.first()
+            {
+                let regression =
+                    crate::eval::history::check_regression(db, &gs.metadata.name, latest.score, 5)
                         .await
                         .unwrap_or(crate::eval::RegressionStatus::NoHistory);
 
-                        let regression_str = match &regression {
-                            crate::eval::RegressionStatus::Regression { .. } => {
-                                has_regressions = true;
-                                "regression"
-                            }
-                            crate::eval::RegressionStatus::Warning { .. } => "warning",
-                            crate::eval::RegressionStatus::Ok => "ok",
-                            crate::eval::RegressionStatus::NoHistory => "no_history",
-                        };
-
-                        eval_scores.push(EvalScoreSummary {
-                            golden_set: gs.metadata.name.clone(),
-                            score: latest.score,
-                            passed: latest.passed,
-                            git_commit: latest.git_commit.clone(),
-                            regression_status: regression_str.to_string(),
-                        });
+                let regression_str = match &regression {
+                    crate::eval::RegressionStatus::Regression { .. } => {
+                        has_regressions = true;
+                        "regression"
                     }
-                }
+                    crate::eval::RegressionStatus::Warning { .. } => "warning",
+                    crate::eval::RegressionStatus::Ok => "ok",
+                    crate::eval::RegressionStatus::NoHistory => "no_history",
+                };
+
+                eval_scores.push(EvalScoreSummary {
+                    golden_set: gs.metadata.name.clone(),
+                    score: latest.score,
+                    passed: latest.passed,
+                    git_commit: latest.git_commit.clone(),
+                    regression_status: regression_str.to_string(),
+                });
             }
         }
     }
