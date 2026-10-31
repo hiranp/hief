@@ -71,7 +71,7 @@ ast-grep-core = "0.35"
 rmcp = { version = "3.8", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
 axum = "0.8"
 askama = "0.14"
-tower-http = { version = "0.6", features = ["trace"] }
+tower-http = { version = "0.7", features = ["trace"] }
 
 # Templating
 minijinja = "2"
