@@ -8,11 +8,28 @@ on:
   push:
     tags:
       - 'v*'
+  # Re-run a release for an existing tag with the CURRENT workflow file.
+  # "Re-run failed jobs" on a tag reuses the workflow as it was at the tag,
+  # so a broken workflow (e.g. the v0.4.0 protoc rate limit) could otherwise
+  # be fixed only by moving the tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and publish, e.g. v0.4.0"
+        required: true
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   build:
     name: Build (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -36,6 +53,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -59,7 +78,7 @@ jobs:
           sudo apt-get install -y clang libssl-dev pkg-config
 
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --locked --release --target ${{ matrix.target }}
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
@@ -85,8 +104,26 @@ jobs:
     name: Publish Release
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      # The release body is this version's CHANGELOG.md section, so the notes
+      # say what changed, not just a list of commit titles.
+      - name: Release notes from CHANGELOG.md
+        run: |
+          version="${RELEASE_TAG#v}"
+          awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" {on=1; next}
+            on && (/^## \[/ || /^- - -$/) {exit}
+            on {print}
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "::error::CHANGELOG.md has no section for $version"; exit 1
+          fi
+          cat notes.md
 
       - name: Download Artifacts
         uses: actions/download-artifact@v4
@@ -98,7 +135,8 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: artifacts/hief-*
-          generate_release_notes: true
+          body_path: notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
