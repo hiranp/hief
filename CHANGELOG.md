@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Semantic search now stores vectors in libsql** (`code_vectors` table in `.hief/hief.db`) instead of LanceDB. The dependency tree drops from about 750 to 400 crates, and builds no longer need `protoc`. The search contract is unchanged. Turning on `vectors.enabled` (or upgrading) re-embeds every file on the next `hief index build`. `.hief/vectors/` is no longer used and can be deleted. `semantic_search` scans exactly, with no ANN index.
 - `cargo build --release` uses thin LTO. Release binaries are built with the new `dist` profile (fat LTO).
 - `cog.toml` now runs hief's own checks and pushes the tag. Removed the cocogitto template leftovers.
 - CI runs weekly on `main` and opens a tracking issue if it fails.

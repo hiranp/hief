@@ -66,11 +66,6 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Install Dependencies (Linux)
         if: runner.os == 'Linux'
         run: |

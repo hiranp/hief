@@ -73,7 +73,7 @@ async fn test_semantic_cache_hit_miss_and_expiry() {
         language: Some("rust".to_string()),
     };
 
-    let first = search(&db, root, &query_vector, &query, &config)
+    let first = search(&db, &query_vector, &query, &config)
         .await
         .expect("first search");
     assert!(
@@ -82,7 +82,7 @@ async fn test_semantic_cache_hit_miss_and_expiry() {
     );
     assert!(!first.cache_used, "first lookup should miss cache");
 
-    let second = search(&db, root, &query_vector, &query, &config)
+    let second = search(&db, &query_vector, &query, &config)
         .await
         .expect("second search");
     assert_eq!(
@@ -113,7 +113,7 @@ async fn test_semantic_cache_hit_miss_and_expiry() {
         .await
         .expect("expire cache row");
 
-    let third = search(&db, root, &query_vector, &query, &config)
+    let third = search(&db, &query_vector, &query, &config)
         .await
         .expect("third search");
     assert_eq!(
@@ -153,10 +153,10 @@ async fn test_semantic_cache_separates_language_scope() {
         language: Some("python".to_string()),
     };
 
-    let rust_outcome = search(&db, root, &query_vector, &rust_query, &config)
+    let rust_outcome = search(&db, &query_vector, &rust_query, &config)
         .await
         .expect("rust search");
-    let python_outcome = search(&db, root, &query_vector, &python_query, &config)
+    let python_outcome = search(&db, &query_vector, &python_query, &config)
         .await
         .expect("python search");
     assert!(!rust_outcome.cache_used);
@@ -173,4 +173,32 @@ async fn test_semantic_cache_separates_language_scope() {
         count >= 2,
         "language scopes should map to separate cache rows"
     );
+}
+
+/// Enabling vectors after the files were indexed must still embed them.
+#[tokio::test]
+async fn test_enabling_vectors_embeds_already_indexed_files() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path();
+    write_file(&root.join("src/lib.rs"), "pub fn alpha() -> u8 { 1 }\n");
+    let db = Database::open(&Config::db_path(root))
+        .await
+        .expect("open db");
+    let index_config = hief::config::IndexConfig::default();
+
+    let off = VectorConfig::default();
+    hief::index::build(&db, root, &index_config, &off)
+        .await
+        .expect("index without vectors");
+
+    let on = VectorConfig {
+        enabled: true,
+        ..Default::default()
+    };
+    hief::index::build(&db, root, &index_config, &on)
+        .await
+        .expect("index with vectors");
+
+    let stats = hief::index::vectors::stats(&db, &on).await.expect("stats");
+    assert!(stats.total_embeddings > 0);
 }

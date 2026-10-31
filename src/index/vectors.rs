@@ -1,6 +1,6 @@
-//! Semantic vector search via LanceDB.
+//! Semantic vector search, stored in the same libsql database as the index.
 //!
-//! This module provides embedded vector storage and similarity search for code
+//! This module provides vector storage (`F32_BLOB` column, `vector_distance_*`) and similarity search for code
 //! chunks. It complements the FTS5 keyword search in [`search`] and the
 //! structural pattern search in [`structural`].
 //!
@@ -10,15 +10,8 @@
 
 #![allow(dead_code)]
 
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use arrow_array::types::Float32Type;
-use arrow_array::{Array, Float32Array, Int64Array, RecordBatch, RecordBatchIterator, StringArray};
-use arrow_schema::{DataType, Field, Schema};
-use futures::TryStreamExt;
-use lancedb::query::{ExecutableQuery, QueryBase};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -28,8 +21,7 @@ use crate::errors::{HiefError, Result};
 
 use super::chunker::Chunk;
 
-const TABLE_NAME: &str = "code_chunks";
-const VECTOR_COLUMN: &str = "vector";
+const TABLE_NAME: &str = "code_vectors";
 const SEMANTIC_CACHE_TTL_SECS: i64 = 30 * 60;
 
 /// Configuration for the vector search subsystem.
@@ -139,7 +131,7 @@ pub struct SemanticSearchOutcome {
     pub groundedness_score: Option<f64>,
 }
 
-/// Convert indexed chunks into deterministic embeddings for LanceDB storage.
+/// Convert indexed chunks into deterministic embeddings for storage.
 pub fn embed_chunks(chunks: &[Chunk], dimensions: usize) -> Result<Vec<EmbeddedChunk>> {
     chunks
         .iter()
@@ -192,47 +184,77 @@ pub fn embed_text(text: &str, dimensions: usize) -> Result<Vec<f32>> {
     Ok(vector)
 }
 
-/// Returns the path to the LanceDB vectors directory.
-pub fn vectors_dir(project_root: &Path) -> PathBuf {
-    project_root.join(".hief").join("vectors")
-}
-
-/// Initialize the vector store. Creates the LanceDB directory and table
-/// if they don't exist.
-pub async fn init(project_root: &Path, config: &VectorConfig) -> Result<()> {
+/// Create the vector table if it does not exist.
+///
+/// The table lives in the main database, so the column width is fixed here
+/// (from `vectors.dimensions`) instead of in a static migration. Returns
+/// `true` when the table was just created: the caller must then embed every
+/// file, even the unchanged ones.
+pub async fn init(db: &Database, config: &VectorConfig) -> Result<bool> {
     if !config.enabled {
         info!("Vector search is disabled in configuration");
-        return Ok(());
+        return Ok(false);
+    }
+    distance_function(&config.metric)?;
+    if config.dimensions == 0 {
+        return Err(HiefError::Config(
+            "vectors.dimensions must be greater than zero".to_string(),
+        ));
     }
 
-    let dir = vectors_dir(project_root);
-    if !dir.exists() {
-        std::fs::create_dir_all(&dir)?;
-        info!("Created vector store directory: {}", dir.display());
-    }
-
-    let db = connect_db(&dir).await?;
-    let table_names = db.table_names().execute().await.map_err(map_vector_error)?;
-    if !table_names.iter().any(|name| name == TABLE_NAME) {
-        db.create_empty_table(TABLE_NAME, vector_schema(config.dimensions))
-            .execute()
+    let existed = table_exists(db).await?;
+    if !existed {
+        db.conn()
+            .execute(
+                &format!(
+                    "CREATE TABLE {TABLE_NAME} (
+                        chunk_id TEXT PRIMARY KEY,
+                        file_path TEXT NOT NULL,
+                        symbol_name TEXT,
+                        parent_scope TEXT,
+                        language TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        start_line INTEGER NOT NULL,
+                        end_line INTEGER NOT NULL,
+                        embedding F32_BLOB({})
+                    )",
+                    config.dimensions
+                ),
+                (),
+            )
             .await
-            .map_err(map_vector_error)?;
+            .map_err(HiefError::Database)?;
+        db.conn()
+            .execute(
+                &format!("CREATE INDEX idx_{TABLE_NAME}_file ON {TABLE_NAME}(file_path)"),
+                (),
+            )
+            .await
+            .map_err(HiefError::Database)?;
+        info!(
+            "Vector store initialized (dimensions={}, metric={})",
+            config.dimensions, config.metric
+        );
     }
-
-    info!(
-        "Vector store initialized (dimensions={}, metric={})",
-        config.dimensions, config.metric
-    );
-    Ok(())
+    Ok(!existed)
 }
 
-/// Store embeddings for a batch of code chunks.
-///
-/// This is called after the index build phase, once embeddings have been
-/// generated for new/updated chunks.
+/// Whether the vector table exists in this database.
+pub async fn table_exists(db: &Database) -> Result<bool> {
+    let mut rows = db
+        .conn()
+        .query(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            libsql::params![TABLE_NAME],
+        )
+        .await
+        .map_err(HiefError::Database)?;
+    Ok(rows.next().await.map_err(HiefError::Database)?.is_some())
+}
+
+/// Store embeddings for a batch of code chunks (replacing any with the same id).
 pub async fn store_embeddings(
-    project_root: &Path,
+    db: &Database,
     chunks: &[EmbeddedChunk],
     config: &VectorConfig,
 ) -> Result<usize> {
@@ -241,27 +263,42 @@ pub async fn store_embeddings(
     }
 
     validate_dimensions(chunks, config.dimensions)?;
-    if !vectors_dir(project_root).exists() {
-        init(project_root, config).await?;
-    }
+    init(db, config).await?;
 
-    let table = open_table(project_root).await?;
-    let chunk_ids: Vec<String> = chunks.iter().map(|chunk| chunk.chunk_id.clone()).collect();
-    if !chunk_ids.is_empty() {
-        table
-            .delete(&in_predicate("chunk_id", &chunk_ids))
-            .await
-            .map_err(map_vector_error)?;
-    }
-    let batch = chunks_to_record_batch(chunks, config.dimensions)?;
-    let schema = batch.schema();
-    let reader: Box<dyn arrow_array::RecordBatchReader + Send> =
-        Box::new(RecordBatchIterator::new(vec![Ok(batch)], schema));
-    table
-        .add(reader)
-        .execute()
+    let conn = db.conn();
+    conn.execute("BEGIN", ())
         .await
-        .map_err(map_vector_error)?;
+        .map_err(HiefError::Database)?;
+    for chunk in chunks {
+        let result = conn
+            .execute(
+                &format!(
+                    "INSERT OR REPLACE INTO {TABLE_NAME}
+                     (chunk_id, file_path, symbol_name, parent_scope, language,
+                      content, start_line, end_line, embedding)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"
+                ),
+                libsql::params![
+                    chunk.chunk_id.as_str(),
+                    chunk.file_path.as_str(),
+                    chunk.symbol_name.as_deref(),
+                    chunk.parent_scope.as_deref(),
+                    chunk.language.as_str(),
+                    chunk.content.as_str(),
+                    i64::from(chunk.start_line),
+                    i64::from(chunk.end_line),
+                    vector_blob(&chunk.vector),
+                ],
+            )
+            .await;
+        if let Err(error) = result {
+            let _ = conn.execute("ROLLBACK", ()).await;
+            return Err(HiefError::Database(error));
+        }
+    }
+    conn.execute("COMMIT", ())
+        .await
+        .map_err(HiefError::Database)?;
 
     Ok(chunks.len())
 }
@@ -272,7 +309,6 @@ pub async fn store_embeddings(
 /// generated the stored embeddings. The caller provides the query vector.
 pub async fn search(
     db: &Database,
-    project_root: &Path,
     query_vector: &[f32],
     query: &SemanticQuery,
     config: &VectorConfig,
@@ -307,8 +343,7 @@ pub async fn search(
         });
     }
 
-    let dir = vectors_dir(project_root);
-    if !dir.exists() {
+    if !table_exists(db).await? {
         return Ok(SemanticSearchOutcome {
             results: Vec::new(),
             cache_used: false,
@@ -316,41 +351,42 @@ pub async fn search(
         });
     }
 
-    let table = match open_table(project_root).await {
-        Ok(table) => table,
-        Err(_) => {
-            return Ok(SemanticSearchOutcome {
-                results: Vec::new(),
-                cache_used: false,
-                groundedness_score: Some(0.0),
-            });
-        }
-    };
-
-    let mut vector_query = table
-        .query()
-        .limit(query.top_k)
-        .nearest_to(query_vector)
-        .map_err(map_vector_error)?;
-
-    vector_query = vector_query.distance_type(distance_type(&config.metric)?);
-    if let Some(language) = &query.language {
-        vector_query = vector_query.only_if(eq_predicate("language", language));
-    }
-
-    let batches = vector_query
-        .execute()
+    // shortcut: exact scan instead of a DiskANN index, which can't take the
+    // language filter. Fine to ~100k chunks; add libsql_vector_idx beyond that.
+    let distance = distance_function(&config.metric)?;
+    let top_k = i64::try_from(query.top_k).unwrap_or(i64::MAX);
+    let mut rows = db
+        .conn()
+        .query(
+            &format!(
+                "SELECT chunk_id, file_path, symbol_name, parent_scope, language,
+                        content, start_line, end_line,
+                        {distance}(embedding, ?1) AS distance
+                 FROM {TABLE_NAME}
+                 WHERE (?2 IS NULL OR language = ?2)
+                 ORDER BY distance ASC
+                 LIMIT ?3"
+            ),
+            libsql::params![vector_blob(query_vector), query.language.as_deref(), top_k],
+        )
         .await
-        .map_err(map_vector_error)?
-        .try_collect::<Vec<_>>()
-        .await
-        .map_err(map_vector_error)?;
+        .map_err(HiefError::Database)?;
 
     let mut results = Vec::new();
-    for batch in batches {
-        results.extend(batch_to_results(&batch)?);
+    while let Some(row) = rows.next().await.map_err(HiefError::Database)? {
+        let distance: f64 = row.get(8).map_err(HiefError::Database)?;
+        results.push(SemanticResult {
+            chunk_id: row.get(0).map_err(HiefError::Database)?,
+            file_path: row.get(1).map_err(HiefError::Database)?,
+            symbol_name: row.get(2).map_err(HiefError::Database)?,
+            parent_scope: row.get(3).map_err(HiefError::Database)?,
+            language: row.get(4).map_err(HiefError::Database)?,
+            content: row.get(5).map_err(HiefError::Database)?,
+            start_line: row.get::<i64>(6).map_err(HiefError::Database)? as u32,
+            end_line: row.get::<i64>(7).map_err(HiefError::Database)? as u32,
+            score: 1.0 / (1.0 + (distance as f32).max(0.0)),
+        });
     }
-    results.truncate(query.top_k);
 
     let contexts: Vec<&str> = results.iter().map(|r| r.content.as_str()).collect();
     let groundedness = if contexts.is_empty() {
@@ -371,34 +407,27 @@ pub async fn search(
 
 /// Delete all embeddings for files that are no longer in the index.
 pub async fn prune_deleted(
-    project_root: &Path,
+    db: &Database,
     deleted_file_paths: &[String],
     config: &VectorConfig,
 ) -> Result<usize> {
-    if deleted_file_paths.is_empty() {
+    if deleted_file_paths.is_empty() || !config.enabled || !table_exists(db).await? {
         return Ok(0);
     }
 
-    if !config.enabled {
-        return Ok(0);
+    let mut removed = 0usize;
+    for path in deleted_file_paths {
+        let n = db
+            .conn()
+            .execute(
+                &format!("DELETE FROM {TABLE_NAME} WHERE file_path = ?1"),
+                libsql::params![path.as_str()],
+            )
+            .await
+            .map_err(HiefError::Database)?;
+        removed += n as usize;
     }
-
-    let dir = vectors_dir(project_root);
-    if !dir.exists() {
-        return Ok(0);
-    }
-
-    let table = match open_table(project_root).await {
-        Ok(table) => table,
-        Err(_) => return Ok(0),
-    };
-    let predicate = in_predicate("file_path", deleted_file_paths);
-    let rows_to_delete = table
-        .count_rows(Some(predicate.clone()))
-        .await
-        .map_err(map_vector_error)?;
-    table.delete(&predicate).await.map_err(map_vector_error)?;
-    Ok(rows_to_delete)
+    Ok(removed)
 }
 
 /// Get statistics about the vector store.
@@ -407,16 +436,18 @@ pub struct VectorStats {
     pub total_embeddings: usize,
     pub dimensions: usize,
     pub metric: String,
-    pub store_size_bytes: u64,
 }
 
-pub async fn stats(project_root: &Path, config: &VectorConfig) -> Result<VectorStats> {
-    let dir = vectors_dir(project_root);
-    let store_size = if dir.exists() { dir_size(&dir) } else { 0 };
-    let total_embeddings = if config.enabled && dir.exists() {
-        match open_table(project_root).await {
-            Ok(table) => table.count_rows(None).await.map_err(map_vector_error)?,
-            Err(_) => 0,
+pub async fn stats(db: &Database, config: &VectorConfig) -> Result<VectorStats> {
+    let total_embeddings = if config.enabled && table_exists(db).await? {
+        let mut rows = db
+            .conn()
+            .query(&format!("SELECT COUNT(*) FROM {TABLE_NAME}"), ())
+            .await
+            .map_err(HiefError::Database)?;
+        match rows.next().await.map_err(HiefError::Database)? {
+            Some(row) => row.get::<i64>(0).map_err(HiefError::Database)? as usize,
+            None => 0,
         }
     } else {
         0
@@ -426,7 +457,6 @@ pub async fn stats(project_root: &Path, config: &VectorConfig) -> Result<VectorS
         total_embeddings,
         dimensions: config.dimensions,
         metric: config.metric.clone(),
-        store_size_bytes: store_size,
     })
 }
 
@@ -487,43 +517,6 @@ fn chunk_id(chunk: &Chunk) -> String {
     )
 }
 
-async fn connect_db(path: &Path) -> Result<lancedb::connection::Connection> {
-    lancedb::connect(path.to_string_lossy().as_ref())
-        .execute()
-        .await
-        .map_err(map_vector_error)
-}
-
-async fn open_table(project_root: &Path) -> Result<lancedb::Table> {
-    let dir = vectors_dir(project_root);
-    let db = connect_db(&dir).await?;
-    db.open_table(TABLE_NAME)
-        .execute()
-        .await
-        .map_err(map_vector_error)
-}
-
-fn vector_schema(dimensions: usize) -> Arc<Schema> {
-    Arc::new(Schema::new(vec![
-        Field::new("chunk_id", DataType::Utf8, false),
-        Field::new("file_path", DataType::Utf8, false),
-        Field::new("symbol_name", DataType::Utf8, true),
-        Field::new("parent_scope", DataType::Utf8, true),
-        Field::new("language", DataType::Utf8, false),
-        Field::new("content", DataType::Utf8, false),
-        Field::new("start_line", DataType::Int64, false),
-        Field::new("end_line", DataType::Int64, false),
-        Field::new(
-            VECTOR_COLUMN,
-            DataType::FixedSizeList(
-                Arc::new(Field::new("item", DataType::Float32, true)),
-                dimensions as i32,
-            ),
-            false,
-        ),
-    ]))
-}
-
 fn validate_dimensions(chunks: &[EmbeddedChunk], dimensions: usize) -> Result<()> {
     for chunk in chunks {
         if chunk.vector.len() != dimensions {
@@ -538,188 +531,24 @@ fn validate_dimensions(chunks: &[EmbeddedChunk], dimensions: usize) -> Result<()
     Ok(())
 }
 
-fn chunks_to_record_batch(chunks: &[EmbeddedChunk], dimensions: usize) -> Result<RecordBatch> {
-    let schema = vector_schema(dimensions);
-    let chunk_ids = StringArray::from(
-        chunks
-            .iter()
-            .map(|chunk| chunk.chunk_id.as_str())
-            .collect::<Vec<_>>(),
-    );
-    let file_paths = StringArray::from(
-        chunks
-            .iter()
-            .map(|chunk| chunk.file_path.as_str())
-            .collect::<Vec<_>>(),
-    );
-    let symbol_names = StringArray::from(
-        chunks
-            .iter()
-            .map(|chunk| chunk.symbol_name.as_deref())
-            .collect::<Vec<_>>(),
-    );
-    let parent_scopes = StringArray::from(
-        chunks
-            .iter()
-            .map(|chunk| chunk.parent_scope.as_deref())
-            .collect::<Vec<_>>(),
-    );
-    let languages = StringArray::from(
-        chunks
-            .iter()
-            .map(|chunk| chunk.language.as_str())
-            .collect::<Vec<_>>(),
-    );
-    let contents = StringArray::from(
-        chunks
-            .iter()
-            .map(|chunk| chunk.content.as_str())
-            .collect::<Vec<_>>(),
-    );
-    let start_lines = Int64Array::from(
-        chunks
-            .iter()
-            .map(|chunk| chunk.start_line as i64)
-            .collect::<Vec<_>>(),
-    );
-    let end_lines = Int64Array::from(
-        chunks
-            .iter()
-            .map(|chunk| chunk.end_line as i64)
-            .collect::<Vec<_>>(),
-    );
-    let vectors = arrow_array::FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
-        chunks
-            .iter()
-            .map(|chunk| Some(chunk.vector.iter().copied().map(Some))),
-        dimensions as i32,
-    );
-
-    RecordBatch::try_new(
-        schema,
-        vec![
-            Arc::new(chunk_ids),
-            Arc::new(file_paths),
-            Arc::new(symbol_names),
-            Arc::new(parent_scopes),
-            Arc::new(languages),
-            Arc::new(contents),
-            Arc::new(start_lines),
-            Arc::new(end_lines),
-            Arc::new(vectors),
-        ],
-    )
-    .map_err(|error| HiefError::Other(format!("failed to build vector batch: {error}")))
-}
-
-fn batch_to_results(batch: &RecordBatch) -> Result<Vec<SemanticResult>> {
-    let chunk_ids = batch
-        .column_by_name("chunk_id")
-        .and_then(|column| column.as_any().downcast_ref::<StringArray>())
-        .ok_or_else(|| {
-            HiefError::Other("missing chunk_id column in vector search result".to_string())
-        })?;
-    let file_paths = batch
-        .column_by_name("file_path")
-        .and_then(|column| column.as_any().downcast_ref::<StringArray>())
-        .ok_or_else(|| {
-            HiefError::Other("missing file_path column in vector search result".to_string())
-        })?;
-    let symbol_names = batch
-        .column_by_name("symbol_name")
-        .and_then(|column| column.as_any().downcast_ref::<StringArray>())
-        .ok_or_else(|| {
-            HiefError::Other("missing symbol_name column in vector search result".to_string())
-        })?;
-    let parent_scopes = batch
-        .column_by_name("parent_scope")
-        .and_then(|column| column.as_any().downcast_ref::<StringArray>())
-        .ok_or_else(|| {
-            HiefError::Other("missing parent_scope column in vector search result".to_string())
-        })?;
-    let languages = batch
-        .column_by_name("language")
-        .and_then(|column| column.as_any().downcast_ref::<StringArray>())
-        .ok_or_else(|| {
-            HiefError::Other("missing language column in vector search result".to_string())
-        })?;
-    let contents = batch
-        .column_by_name("content")
-        .and_then(|column| column.as_any().downcast_ref::<StringArray>())
-        .ok_or_else(|| {
-            HiefError::Other("missing content column in vector search result".to_string())
-        })?;
-    let start_lines = batch
-        .column_by_name("start_line")
-        .and_then(|column| column.as_any().downcast_ref::<Int64Array>())
-        .ok_or_else(|| {
-            HiefError::Other("missing start_line column in vector search result".to_string())
-        })?;
-    let end_lines = batch
-        .column_by_name("end_line")
-        .and_then(|column| column.as_any().downcast_ref::<Int64Array>())
-        .ok_or_else(|| {
-            HiefError::Other("missing end_line column in vector search result".to_string())
-        })?;
-
-    let mut results = Vec::with_capacity(batch.num_rows());
-    for row in 0..batch.num_rows() {
-        let distance = distance_at(batch, row)?;
-        results.push(SemanticResult {
-            chunk_id: chunk_ids.value(row).to_string(),
-            file_path: file_paths.value(row).to_string(),
-            symbol_name: (!symbol_names.is_null(row)).then(|| symbol_names.value(row).to_string()),
-            parent_scope: (!parent_scopes.is_null(row))
-                .then(|| parent_scopes.value(row).to_string()),
-            language: languages.value(row).to_string(),
-            content: contents.value(row).to_string(),
-            start_line: start_lines.value(row) as u32,
-            end_line: end_lines.value(row) as u32,
-            score: 1.0 / (1.0 + distance.max(0.0)),
-        });
-    }
-
-    Ok(results)
-}
-
-fn distance_at(batch: &RecordBatch, row: usize) -> Result<f32> {
-    if let Some(column) = batch.column_by_name("_distance") {
-        if let Some(distances) = column.as_any().downcast_ref::<Float32Array>() {
-            return Ok(distances.value(row));
-        }
-    }
-    Ok(0.0)
-}
-
-fn eq_predicate(column: &str, value: &str) -> String {
-    format!("{column} = '{}'", sql_quote(value))
-}
-
-fn in_predicate(column: &str, values: &[String]) -> String {
-    let quoted = values
+/// Little-endian f32 bytes, the on-disk form of an `F32_BLOB` column.
+fn vector_blob(vector: &[f32]) -> Vec<u8> {
+    vector
         .iter()
-        .map(|value| format!("'{}'", sql_quote(value)))
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!("{column} IN ({quoted})")
+        .flat_map(|value| value.to_le_bytes())
+        .collect()
 }
 
-fn sql_quote(value: &str) -> String {
-    value.replace('\'', "''")
-}
-
-fn distance_type(metric: &str) -> Result<lancedb::DistanceType> {
+/// SQL function for the configured metric. Only these two names are ever
+/// interpolated into SQL.
+fn distance_function(metric: &str) -> Result<&'static str> {
     match metric {
-        "cosine" => Ok(lancedb::DistanceType::Cosine),
-        "l2" => Ok(lancedb::DistanceType::L2),
+        "cosine" => Ok("vector_distance_cos"),
+        "l2" => Ok("vector_distance_l2"),
         other => Err(HiefError::Config(format!(
             "unsupported vector metric '{other}' (expected 'cosine' or 'l2')"
         ))),
     }
-}
-
-fn map_vector_error<E: std::fmt::Display>(error: E) -> HiefError {
-    HiefError::Other(format!("vector store error: {error}"))
 }
 
 fn semantic_cache_key(query_vector: &[f32], query: &SemanticQuery) -> (String, String, String) {
@@ -832,24 +661,6 @@ fn unix_now() -> i64 {
         .unwrap_or(0)
 }
 
-/// Calculate total size of a directory.
-fn dir_size(path: &Path) -> u64 {
-    let mut total = 0u64;
-    if let Ok(entries) = std::fs::read_dir(path) {
-        for entry in entries.flatten() {
-            let metadata = entry.metadata();
-            if let Ok(meta) = metadata {
-                if meta.is_file() {
-                    total += meta.len();
-                } else if meta.is_dir() {
-                    total += dir_size(&entry.path());
-                }
-            }
-        }
-    }
-    total
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -878,41 +689,42 @@ mod tests {
         assert_eq!(left, right);
     }
 
-    #[test]
-    fn test_vectors_dir() {
-        let dir = vectors_dir(Path::new("/tmp/project"));
-        assert_eq!(dir, PathBuf::from("/tmp/project/.hief/vectors"));
-    }
-
     #[tokio::test]
     async fn test_init_disabled() {
-        let config = VectorConfig::default(); // enabled = false
-        let tmp = tempfile::tempdir().unwrap();
-        let result = init(tmp.path(), &config).await;
-        assert!(result.is_ok());
-        // Should not create directory when disabled
-        assert!(!vectors_dir(tmp.path()).exists());
+        let db = Database::open_memory().await.unwrap();
+        assert!(!init(&db, &VectorConfig::default()).await.unwrap());
+        assert!(!table_exists(&db).await.unwrap());
     }
 
     #[tokio::test]
-    async fn test_init_enabled() {
+    async fn test_init_enabled_reports_creation_once() {
+        let db = Database::open_memory().await.unwrap();
         let config = VectorConfig {
             enabled: true,
             ..Default::default()
         };
-        let tmp = tempfile::tempdir().unwrap();
-        let result = init(tmp.path(), &config).await;
-        assert!(result.is_ok());
-        assert!(vectors_dir(tmp.path()).exists());
+        assert!(init(&db, &config).await.unwrap());
+        assert!(!init(&db, &config).await.unwrap());
+        assert!(table_exists(&db).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_unknown_metric_is_rejected() {
+        let db = Database::open_memory().await.unwrap();
+        let config = VectorConfig {
+            enabled: true,
+            metric: "dot".to_string(),
+            ..Default::default()
+        };
+        assert!(init(&db, &config).await.is_err());
     }
 
     #[tokio::test]
     async fn test_search_empty() {
         let config = VectorConfig::default();
-        let tmp = tempfile::tempdir().unwrap();
         let db = Database::open_memory().await.unwrap();
         let query = SemanticQuery::new("test");
-        let outcome = search(&db, tmp.path(), &[], &query, &config).await.unwrap();
+        let outcome = search(&db, &[], &query, &config).await.unwrap();
         assert!(outcome.results.is_empty());
         assert!(!outcome.cache_used);
     }
@@ -924,9 +736,8 @@ mod tests {
             dimensions: 32,
             ..Default::default()
         };
-        let tmp = tempfile::tempdir().unwrap();
         let db = Database::open_memory().await.unwrap();
-        init(tmp.path(), &config).await.unwrap();
+        init(&db, &config).await.unwrap();
 
         let chunks = vec![EmbeddedChunk {
             chunk_id: "src/auth.rs:1:3:hash".to_string(),
@@ -941,15 +752,12 @@ mod tests {
             vector: embed_text("authenticate user bearer token", config.dimensions).unwrap(),
         }];
 
-        store_embeddings(tmp.path(), &chunks, &config)
-            .await
-            .unwrap();
+        store_embeddings(&db, &chunks, &config).await.unwrap();
 
         let mut query = SemanticQuery::new("bearer token auth");
         query.top_k = 5;
         let outcome = search(
             &db,
-            tmp.path(),
             &embed_text(&query.query, config.dimensions).unwrap(),
             &query,
             &config,
@@ -974,8 +782,8 @@ mod tests {
             dimensions: 24,
             ..Default::default()
         };
-        let tmp = tempfile::tempdir().unwrap();
-        init(tmp.path(), &config).await.unwrap();
+        let db = Database::open_memory().await.unwrap();
+        init(&db, &config).await.unwrap();
 
         let chunks = vec![EmbeddedChunk {
             chunk_id: "src/old.rs:1:1:hash".to_string(),
@@ -989,15 +797,13 @@ mod tests {
             vector: embed_text("legacy cleanup function", config.dimensions).unwrap(),
         }];
 
-        store_embeddings(tmp.path(), &chunks, &config)
-            .await
-            .unwrap();
-        let removed = prune_deleted(tmp.path(), &["src/old.rs".to_string()], &config)
+        store_embeddings(&db, &chunks, &config).await.unwrap();
+        let removed = prune_deleted(&db, &["src/old.rs".to_string()], &config)
             .await
             .unwrap();
         assert_eq!(removed, 1);
 
-        let stats = stats(tmp.path(), &config).await.unwrap();
+        let stats = stats(&db, &config).await.unwrap();
         assert_eq!(stats.total_embeddings, 0);
     }
 
@@ -1008,9 +814,8 @@ mod tests {
             dimensions: 24,
             ..Default::default()
         };
-        let tmp = tempfile::tempdir().unwrap();
         let db = Database::open_memory().await.unwrap();
-        init(tmp.path(), &config).await.unwrap();
+        init(&db, &config).await.unwrap();
 
         let chunks = vec![
             EmbeddedChunk {
@@ -1036,15 +841,12 @@ mod tests {
                 vector: embed_text("authentication logic", config.dimensions).unwrap(),
             },
         ];
-        store_embeddings(tmp.path(), &chunks, &config)
-            .await
-            .unwrap();
+        store_embeddings(&db, &chunks, &config).await.unwrap();
 
         let mut query = SemanticQuery::new("authentication logic");
         query.language = Some("python".to_string());
         let outcome = search(
             &db,
-            tmp.path(),
             &embed_text(&query.query, config.dimensions).unwrap(),
             &query,
             &config,

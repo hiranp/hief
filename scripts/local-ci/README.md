@@ -36,11 +36,10 @@ expensive runner on GitHub, without using Actions minutes.
 ```bash
 xcode-select --install          # compiler and linker
 curl https://sh.rustup.rs -sSf | sh
-brew install protobuf cargo-nextest
+brew install cargo-nextest
 ```
 
-`protoc` is needed only while hief depends on lancedb (hiranp/hief#12). If
-nextest is missing, the script falls back to `cargo test` and says so.
+If nextest is missing, the script falls back to `cargo test` and says so.
 
 ## Pre-push hook
 

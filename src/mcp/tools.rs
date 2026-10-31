@@ -1409,7 +1409,6 @@ impl HiefServer {
         };
         let outcome = match crate::index::vectors::search(
             &self.db,
-            &self.project_root,
             &query_vector,
             &query,
             &self.config.vectors,

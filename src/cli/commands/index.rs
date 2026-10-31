@@ -182,14 +182,8 @@ pub async fn index_semantic(
     };
     let db_path = Config::db_path(project_root);
     let db = crate::db::Database::open(&db_path).await?;
-    let outcome = crate::index::vectors::search(
-        &db,
-        project_root,
-        &query_vector,
-        &semantic_query,
-        &config.vectors,
-    )
-    .await?;
+    let outcome =
+        crate::index::vectors::search(&db, &query_vector, &semantic_query, &config.vectors).await?;
 
     print_semantic_results(query, &outcome.results, json);
 

@@ -58,8 +58,6 @@ need() {
 run_here() {
   cd "$ROOT"
   need cargo rustup "https://rustup.rs"
-  # protoc is needed only by lancedb (hiranp/hief#12). Respect $PROTOC if set.
-  if [[ -z "${PROTOC:-}" ]]; then need protoc protobuf "your package manager's protobuf-compiler"; fi
 
   local start=$SECONDS
   echo "local-ci: $(uname -sm), $(rustc --version)"

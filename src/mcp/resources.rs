@@ -160,7 +160,7 @@ pub async fn get_project_overview(db: &Database, project_root: &Path) -> Result<
                 .map(|dt| dt.to_rfc3339())
                 .unwrap_or_else(|| ts.to_string())
         }),
-        has_vector_index: crate::index::vectors::vectors_dir(project_root).exists(),
+        has_vector_index: crate::index::vectors::table_exists(db).await?,
     };
 
     // Get active intents

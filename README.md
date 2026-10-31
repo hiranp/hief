@@ -56,7 +56,7 @@ HIEF Server
 - **AST-aware chunking** via tree-sitter (Rust, Python, TypeScript/JavaScript)
 - **Keyword search** via FTS5 full-text search
 - **Structural search** via [ast-grep](https://ast-grep.github.io/) pattern matching (e.g., find every `$X.unwrap()`)
-- **Semantic search** via LanceDB vector embeddings with TTL-bounded caching
+- **Semantic search** via vector embeddings stored in libsql with TTL-bounded caching
 - **Incremental updates** via blake3 content hashing — only re-indexes what changed
 - **Response Budgeting** — automatically truncates oversized search responses while preserving metadata and snippets
 - **Query Routing** — deterministic routing across lexical, semantic, and hybrid lanes
@@ -259,7 +259,6 @@ hief skills show create_database_migration    # Print a specific skill
 ```
 .hief/
 ├── hief.db              # SQLite database (FTS5 index, intents, eval scores)
-├── vectors/             # LanceDB directory (semantic embeddings)
 ├── conventions.toml     # Machine-readable project rules
 ├── context/             # Agent-maintained context docs (architecture/setup/etc.)
 ├── patterns/            # Project-specific task patterns + INDEX.md
@@ -279,7 +278,7 @@ src/
 │   ├── chunker.rs       # tree-sitter based chunking
 │   ├── search.rs        # FTS5 keyword search
 │   ├── structural.rs    # ast-grep pattern matching
-│   ├── vectors.rs       # LanceDB semantic search
+│   ├── vectors.rs       # Semantic search (libsql vectors)
 │   └── walker.rs        # File system walker
 ├── mcp/                 # MCP server (rmcp)
 │   ├── tools.rs         # Tool implementations
@@ -372,4 +371,4 @@ HIEF builds on excellent open-source projects:
 - [ast-grep](https://ast-grep.github.io/) — Structural search
 - [libsql](https://libsql.org/) — Embedded database
 - [rmcp](https://github.com/anthropics/rmcp) — MCP server framework
-- [LanceDB](https://lancedb.com/) — Vector database
+- [libsql](https://github.com/tursodatabase/libsql) — Database with native vector search

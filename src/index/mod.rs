@@ -55,7 +55,8 @@ pub async fn build(
     let mut files_updated = 0usize;
     let mut total_chunks = 0usize;
 
-    vectors::init(project_root, vector_config).await?;
+    // A freshly created vector table is empty: embed every file, not just changed ones.
+    let reembed_all = vectors::init(db, vector_config).await?;
 
     let walker = FileWalker::new(project_root);
     let chunker = Chunker::new(config.max_chunk_tokens);
@@ -80,7 +81,7 @@ pub async fn build(
 
         // Check if file is already indexed with the same hash
         let existing_hash = get_file_hash(db, &rel_path).await?;
-        if existing_hash.as_deref() == Some(file_hash.as_str()) {
+        if existing_hash.as_deref() == Some(file_hash.as_str()) && !reembed_all {
             // File unchanged, skip
             let count = get_chunk_count(db, &rel_path).await?;
             total_chunks += count;
@@ -108,8 +109,7 @@ pub async fn build(
         let chunks = chunker.chunk(&content, &language, &rel_path);
 
         if vector_config.enabled {
-            vectors::prune_deleted(project_root, std::slice::from_ref(&rel_path), vector_config)
-                .await?;
+            vectors::prune_deleted(db, std::slice::from_ref(&rel_path), vector_config).await?;
         }
 
         // Insert chunks
@@ -120,7 +120,7 @@ pub async fn build(
 
         if vector_config.enabled && !chunks.is_empty() {
             let embedded_chunks = vectors::embed_chunks(&chunks, vector_config.dimensions)?;
-            vectors::store_embeddings(project_root, &embedded_chunks, vector_config).await?;
+            vectors::store_embeddings(db, &embedded_chunks, vector_config).await?;
         }
 
         // Update file metadata
@@ -131,7 +131,7 @@ pub async fn build(
     // Prune files no longer on disk
     let deleted_paths = prune_deleted_files(db, &seen_paths).await?;
     if vector_config.enabled && !deleted_paths.is_empty() {
-        vectors::prune_deleted(project_root, &deleted_paths, vector_config).await?;
+        vectors::prune_deleted(db, &deleted_paths, vector_config).await?;
     }
     let files_removed = deleted_paths.len();
 
