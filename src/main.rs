@@ -426,6 +426,16 @@ async fn run(cli: Cli, project_root: PathBuf) -> anyhow::Result<()> {
                 SkillsCmd::Show { name } => {
                     cli::commands::skills_show(&project_root, &config, &name, json)?;
                 }
+                SkillsCmd::Export { target, out, force } => {
+                    cli::commands::skills_export(
+                        &project_root,
+                        &config,
+                        target,
+                        out.as_deref(),
+                        force,
+                        json,
+                    )?;
+                }
             }
         }
 
@@ -438,6 +448,8 @@ async fn run(cli: Cli, project_root: PathBuf) -> anyhow::Result<()> {
             }
             McpCmd::Status => {
                 cli::commands::mcp_status(&project_root, json)?;
+                let config = Config::load(&config_path)?;
+                cli::commands::mcp_tools_report(&project_root, &config, json)?;
             }
         },
 

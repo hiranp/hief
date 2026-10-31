@@ -261,6 +261,7 @@ hief docs generate harness --name "feature"  # Scaffold a new test harness
 hief skills init                              # Create skills directory for recipes
 hief skills list                              # List available skill files
 hief skills show create_database_migration    # Print a specific skill
+hief skills export --target claude           # Write workflows as SKILL.md files
 ```
 
 ### Gating CI with `hief check`
@@ -316,6 +317,37 @@ each worktree's database, and claims say who works on an issue.
 default_lease = "4h"
 github = false
 ```
+
+### Trimming the MCP tool list
+
+Every exposed tool's schema is sent to the agent on every session. Narrow the
+list in `hief.toml`:
+
+```toml
+[mcp]
+tools = "minimal"                      # preset: minimal | default | all (default: all)
+# tools = ["minimal", "run_evaluation"] # presets and tool names mix
+```
+
+| Preset | Tools | Approx. tokens |
+|---|---|---|
+| `minimal` (search, context, drift check, claims) | 11 | ~4,400 |
+| `default` (all but rarely used tools) | 25 | ~8,200 |
+| `all` | 38 | ~11,500 |
+
+An unknown name stops `hief serve` at startup. `hief mcp status` shows the
+exposed tools and the cost of each preset. To keep the less common workflows
+without paying for their tools, export them as skills, which cost context only
+when the agent loads them:
+
+```sh
+hief skills export --target claude      # .claude/skills/<name>/SKILL.md
+hief skills export --target opencode    # .opencode/skills/
+hief skills export --target gemini      # .gemini/skills/
+```
+
+The export covers intents, eval, drift, patterns, docs and claims, plus your own
+`.hief/skills` recipes. Existing files are kept unless you pass `--force`.
 
 ### Drift checkers
 

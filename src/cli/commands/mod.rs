@@ -37,7 +37,7 @@ pub use graph::*;
 pub use hooks::*;
 pub use index::*;
 pub use init::*;
-pub use mcp::{mcp_install, mcp_status, mcp_uninstall};
+pub use mcp::{mcp_install, mcp_status, mcp_tools_report, mcp_uninstall};
 pub use patterns::*;
 pub use skills::*;
 pub use sync::*;

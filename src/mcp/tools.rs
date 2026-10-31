@@ -41,10 +41,55 @@ pub struct HiefServer {
     skills: SkillRegistry,
 }
 
+/// Build the tool router for `config`: static tools, dynamic skill tools, then
+/// the `[mcp] tools` allow-list applied. Errors on an unknown name.
+fn build_router(
+    skills: &SkillRegistry,
+    config: &Config,
+) -> crate::errors::Result<ToolRouter<HiefServer>> {
+    let mut tool_router = HiefServer::tool_router();
+    let static_names: Vec<String> = tool_router
+        .list_all()
+        .into_iter()
+        .map(|t| t.name.to_string())
+        .collect();
+
+    // Register each skill using the generic handler; ToolRoute ensures both
+    // schema and handler are wired up.
+    let mut skill_names = Vec::new();
+    for tool in skills.tool_defs() {
+        skill_names.push(tool.name.to_string());
+        let route = rmcp::handler::server::router::tool::ToolRoute::new(
+            tool.clone(),
+            HiefServer::execute_dynamic_skill,
+        );
+        tool_router = tool_router.with_route(route);
+    }
+
+    let keep = super::toolset::resolve(&config.mcp.tools, &static_names, &skill_names)?;
+    for name in static_names.iter().chain(&skill_names) {
+        if !keep.contains(name) {
+            tool_router.remove_route(name);
+        }
+    }
+    Ok(tool_router)
+}
+
+/// The tools `hief serve` would expose for this project, without starting it.
+pub fn exposed_tools(
+    project_root: &std::path::Path,
+    config: &Config,
+) -> crate::errors::Result<Vec<rmcp::model::Tool>> {
+    let skills = SkillRegistry::new();
+    if let Err(e) = skills.load_from_disk(project_root) {
+        tracing::warn!("failed to load skills: {}", e);
+    }
+    Ok(build_router(&skills, config)?.list_all())
+}
+
 impl HiefServer {
-    /// Construct a new server instance and register dynamic skill tools.
-    pub fn new(db: Database, project_root: PathBuf) -> Self {
-        let mut tool_router = Self::tool_router();
+    /// Construct a server, failing if `[mcp] tools` names something unknown.
+    pub fn try_new(db: Database, project_root: PathBuf) -> crate::errors::Result<Self> {
         let worktree_id = crate::scope::derive_worktree_id(&project_root);
 
         // Load config once at startup; fall back to safe defaults if hief.toml is absent.
@@ -55,24 +100,16 @@ impl HiefServer {
         if let Err(e) = skills.load_from_disk(&project_root) {
             tracing::warn!("failed to load skills: {}", e);
         }
-        // register each skill using the generic handler; ToolRoute ensures both
-        // schema and handler are wired up.
-        for tool in skills.tool_defs() {
-            let route = rmcp::handler::server::router::tool::ToolRoute::new(
-                tool.clone(),
-                HiefServer::execute_dynamic_skill,
-            );
-            tool_router = tool_router.with_route(route);
-        }
+        let tool_router = build_router(&skills, &config)?;
 
-        Self {
+        Ok(Self {
             db,
             project_root,
             worktree_id,
             config,
             tool_router,
             skills,
-        }
+        })
     }
 
     /// Validates that a path is relative to the project root and doesn't escape it.
@@ -2174,7 +2211,7 @@ mod tests {
         let tmp = tempdir().expect("failed to create tempdir");
         let db_path = tmp.path().join("hief.db");
         let db = Database::open(&db_path).await.expect("db operation failed");
-        let server = HiefServer::new(db.clone(), tmp.path().to_path_buf());
+        let server = HiefServer::try_new(db.clone(), tmp.path().to_path_buf()).expect("server");
 
         // create skills directory and file
         let config = Config::default();
@@ -2211,7 +2248,7 @@ mod tests {
         std::fs::write(skills_dir.join("foo.md"), "# Foo\nstep1")
             .expect("failed to write skill file");
 
-        let server = HiefServer::new(db.clone(), tmp.path().to_path_buf());
+        let server = HiefServer::try_new(db.clone(), tmp.path().to_path_buf()).expect("server");
 
         // registry should contain execute_skill_foo
         let opt = server.skills.by_tool("execute_skill_foo");
@@ -2242,7 +2279,7 @@ mod tests {
         std::fs::write(skills_dir.join("deploy.md"), "# Deploy\nold step")
             .expect("failed to write skill file");
 
-        let server = HiefServer::new(db.clone(), tmp.path().to_path_buf());
+        let server = HiefServer::try_new(db.clone(), tmp.path().to_path_buf()).expect("server");
         assert!(server.skills.by_tool("execute_skill_deploy").is_some());
 
         // overwrite with updated content
@@ -2279,7 +2316,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let db_path = tmp.path().join("test.db");
         let db = crate::db::Database::open(&db_path).await.expect("open db");
-        let server = HiefServer::new(db, tmp.path().to_path_buf());
+        let server = HiefServer::try_new(db, tmp.path().to_path_buf()).expect("server");
 
         // Edge case: empty session_id, empty query, zero-length strategy
         // Must complete without panicking.
@@ -2318,7 +2355,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let db_path = tmp.path().join("test.db");
         let db = crate::db::Database::open(&db_path).await.expect("open db");
-        let server = HiefServer::new(db, tmp.path().to_path_buf());
+        let server = HiefServer::try_new(db, tmp.path().to_path_buf()).expect("server");
 
         // NaN is not storable as a meaningful groundedness score. Even if
         // libsql coerces it, the shim must not panic or propagate.
@@ -2348,5 +2385,58 @@ mod tests {
             .await;
 
         // Reaching this line proves the shim is a true fire-and-forget guard.
+    }
+
+    fn exposed(tools: &[&str]) -> crate::errors::Result<Vec<String>> {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut config = Config::default();
+        config.mcp.tools = tools.iter().map(|s| s.to_string()).collect();
+        let mut names: Vec<String> = exposed_tools(dir.path(), &config)?
+            .into_iter()
+            .map(|t| t.name.to_string())
+            .collect();
+        names.sort();
+        Ok(names)
+    }
+
+    #[test]
+    fn mcp_tools_presets_match_the_real_tool_list() {
+        use crate::mcp::toolset::{MINIMAL, NICHE};
+        let all = exposed(&["all"]).expect("all");
+        for name in MINIMAL.iter().chain(NICHE) {
+            assert!(
+                all.contains(&name.to_string()),
+                "preset names a tool that does not exist: {name}"
+            );
+        }
+        let mut minimal: Vec<String> = MINIMAL.iter().map(|s| s.to_string()).collect();
+        minimal.sort();
+        assert_eq!(exposed(&["minimal"]).expect("minimal"), minimal);
+        assert_eq!(
+            exposed(&["default"]).expect("default").len(),
+            all.len() - NICHE.len()
+        );
+        assert_eq!(
+            exposed(&["search_code", "claim_issue"]).expect("names"),
+            vec!["claim_issue", "search_code"]
+        );
+    }
+
+    #[test]
+    fn mcp_tools_unknown_name_is_an_error() {
+        let err = exposed(&["search_code", "serch_code"])
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("serch_code"), "{err}");
+    }
+
+    #[test]
+    fn mcp_tools_config_accepts_string_or_list() {
+        let one: Config = toml::from_str("[hief]\n[mcp]\ntools = \"minimal\"").expect("string");
+        assert_eq!(one.mcp.tools, vec!["minimal"]);
+        let many: Config =
+            toml::from_str("[hief]\n[mcp]\ntools = [\"minimal\", \"check_drift\"]").expect("list");
+        assert_eq!(many.mcp.tools.len(), 2);
+        assert_eq!(Config::default().mcp.tools, vec!["all"]);
     }
 }

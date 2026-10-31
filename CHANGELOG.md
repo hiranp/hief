@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `hief claim <issue> [--lease 4h]`, `hief release <issue>` and `hief claims` (and the MCP tools `claim_issue`, `release_issue`, `list_claims`) share issue claims across all worktrees of a clone, through files under the git common dir. `--github` also labels and comments on the issue.
 
+- `[mcp] tools` in hief.toml limits the MCP tools `hief serve` exposes (presets `minimal`, `default`, `all`, or tool names). An unknown name is a startup error. `hief mcp status` lists the exposed tools and the token cost of each preset.
+- `hief skills export --target claude|opencode|gemini` writes hief workflows and `.hief/skills` recipes as `SKILL.md` files.
+
 ### Changed
 
 - **Semantic search now stores vectors in libsql** (`code_vectors` table in `.hief/hief.db`) instead of LanceDB. The dependency tree drops from about 750 to 400 crates, and builds no longer need `protoc`. The search contract is unchanged. Turning on `vectors.enabled` (or upgrading) re-embeds every file on the next `hief index build`. `.hief/vectors/` is no longer used and can be deleted. `semantic_search` scans exactly, with no ANN index.

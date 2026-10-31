@@ -37,6 +37,8 @@ pub struct Config {
     pub vectors: crate::index::vectors::VectorConfig,
     #[serde(default)]
     pub claims: ClaimsConfig,
+    #[serde(default)]
+    pub mcp: McpConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -211,6 +213,43 @@ pub struct SkillsConfig {
     /// Path where skill files live (relative to project root)
     #[serde(default = "default_skills_path")]
     pub skills_path: String,
+}
+
+/// `[mcp]` — which tools `hief serve` exposes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpConfig {
+    /// Preset (`minimal`, `default`, `all`) and/or tool names. Accepts a
+    /// single string or a list. Default: `all`.
+    #[serde(default = "default_tools", deserialize_with = "string_or_list")]
+    pub tools: Vec<String>,
+}
+
+impl Default for McpConfig {
+    fn default() -> Self {
+        Self {
+            tools: default_tools(),
+        }
+    }
+}
+
+fn default_tools() -> Vec<String> {
+    vec!["all".to_string()]
+}
+
+fn string_or_list<'de, D>(d: D) -> std::result::Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum One {
+        Str(String),
+        List(Vec<String>),
+    }
+    Ok(match One::deserialize(d)? {
+        One::Str(s) => vec![s],
+        One::List(l) => l,
+    })
 }
 
 /// `[claims]` — issue claims shared across worktrees (`hief claim`).
@@ -488,6 +527,7 @@ impl Default for Config {
             watcher: WatcherConfig::default(),
             vectors: crate::index::vectors::VectorConfig::default(),
             claims: ClaimsConfig::default(),
+            mcp: McpConfig::default(),
         }
     }
 }

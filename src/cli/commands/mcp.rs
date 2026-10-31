@@ -575,6 +575,61 @@ fn print_results(results: &[McpRegistration], action: &str, json_output: bool) {
     }
 }
 
+/// Show which tools `hief serve` exposes under `[mcp] tools`, with the token
+/// cost of the list and of each preset. Errors on an unknown tool name.
+pub fn mcp_tools_report(
+    project_root: &Path,
+    config: &crate::config::Config,
+    json: bool,
+) -> Result<()> {
+    use crate::mcp::toolset::{PRESETS, estimate_tokens};
+
+    let exposed = crate::mcp::tools::exposed_tools(project_root, config)?;
+    let mut presets = Vec::new();
+    for preset in PRESETS {
+        let mut cfg = config.clone();
+        cfg.mcp.tools = vec![(*preset).to_string()];
+        let tools = crate::mcp::tools::exposed_tools(project_root, &cfg)?;
+        presets.push((*preset, tools.len(), estimate_tokens(&tools)));
+    }
+    let names: Vec<String> = exposed.iter().map(|t| t.name.to_string()).collect();
+    let tokens = estimate_tokens(&exposed);
+
+    if json {
+        let by_preset: Vec<Value> = presets
+            .iter()
+            .map(|(p, n, t)| json!({ "preset": p, "tools": n, "approx_tokens": t }))
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "configured": config.mcp.tools,
+                "exposed": names,
+                "approx_tokens": tokens,
+                "presets": by_preset,
+            }))
+            .unwrap_or_default()
+        );
+        return Ok(());
+    }
+
+    println!(
+        "  Exposed tools: {} (~{} tokens), from [mcp] tools = {:?}",
+        names.len(),
+        tokens,
+        config.mcp.tools
+    );
+    for name in &names {
+        println!("    {name}");
+    }
+    println!();
+    for (preset, count, tokens) in &presets {
+        println!("  preset {preset:<8} {count:>3} tools  ~{tokens} tokens");
+    }
+    println!();
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

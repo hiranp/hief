@@ -1,5 +1,7 @@
 //! Support for "skills" — executable conventions stored in .hief/skills.
 
+pub mod export;
+
 use std::path::Path;
 
 use serde::Serialize;

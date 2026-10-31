@@ -3,6 +3,7 @@
 pub mod resources;
 pub mod skills;
 pub mod tools;
+pub mod toolset;
 
 #[allow(unused_imports)]
 pub use tools::{CorrectionHint, ToolValidationPayload};
@@ -25,7 +26,8 @@ pub async fn start(
     let transport = transport_override.unwrap_or(&config.transport);
     let port = port_override.unwrap_or(config.port);
 
-    let server = tools::HiefServer::new(db, project_root);
+    // Fails on an unknown name in `[mcp] tools` instead of ignoring it.
+    let server = tools::HiefServer::try_new(db, project_root)?;
 
     match transport {
         "stdio" => {
@@ -110,7 +112,7 @@ mod tests {
         let db = crate::db::Database::open(&dir.path().join("hief.db"))
             .await
             .expect("open db");
-        let server = tools::HiefServer::new(db, dir.path().to_path_buf());
+        let server = tools::HiefServer::try_new(db, dir.path().to_path_buf()).expect("server");
         let req = Request::post("/mcp")
             .header("host", host_header)
             .header("content-type", "application/json")

@@ -67,6 +67,32 @@ pub fn skills_show(project_root: &Path, config: &Config, name: &str, json: bool)
     Ok(())
 }
 
+/// Export workflows as SKILL.md files for an agent harness.
+pub fn skills_export(
+    project_root: &Path,
+    config: &Config,
+    target: crate::skills::export::SkillTarget,
+    out: Option<&Path>,
+    force: bool,
+    json: bool,
+) -> Result<()> {
+    let report = crate::skills::export::export(project_root, &config.skills, target, out, force)?;
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({ "written": report.written, "skipped": report.skipped })
+        );
+    } else {
+        for p in &report.written {
+            println!("wrote {}", p.display());
+        }
+        for p in &report.skipped {
+            println!("kept  {} (use --force to overwrite)", p.display());
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

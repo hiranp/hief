@@ -390,6 +390,18 @@ pub enum SkillsCmd {
         /// Skill name (filename without extension)
         name: String,
     },
+    /// Write hief workflows (and .hief/skills) as SKILL.md files for an agent harness
+    Export {
+        /// Harness to export for
+        #[arg(long, value_enum)]
+        target: crate::skills::export::SkillTarget,
+        /// Output directory (default: .claude/skills, .opencode/skills or .gemini/skills)
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Overwrite skill files that already exist
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 #[derive(clap::Args, Debug, Clone)]
